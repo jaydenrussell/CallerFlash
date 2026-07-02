@@ -17,11 +17,10 @@ jobs:
     name: Push main → alpha
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
-          # PAT is required — GITHUB_TOKEN pushes don't trigger workflows.
           token: ${{ secrets.PAT_TOKEN }}
 
       - name: Push to alpha
