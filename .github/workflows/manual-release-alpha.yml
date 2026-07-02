@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag to publish. If blank, auto-generates 0.1.0-alpha.N.'
+        description: 'Tag to publish. If blank, auto-generates 0.1.N-alpha.'
         required: false
         type: string
 
