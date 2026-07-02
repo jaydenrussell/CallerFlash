@@ -98,11 +98,11 @@ try {
       process.exit(1);
     }
   } else if (channel === 'stable') {
-    result = nextStable(tags, baseVer);
+    result = nextStable(gitTags(), baseVer);
   } else if (channel === 'beta') {
-    result = nextBeta(tags, baseVer);
+    result = nextBeta(gitTags(), baseVer);
   } else if (channel === 'alpha') {
-    result = nextAlpha(tags);
+    result = nextAlpha(gitTags());
   } else {
     console.error(`Unknown channel: ${channel} (expected: stable | beta | alpha)`);
     process.exit(1);
