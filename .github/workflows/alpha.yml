@@ -36,5 +36,6 @@ jobs:
     with:
       channel: alpha
       tag_name: v${{ needs.compute-version.outputs.next_version }}
+      prerelease: true
       artifact_name: windows-alpha-${{ github.sha }}
     secrets: inherit
