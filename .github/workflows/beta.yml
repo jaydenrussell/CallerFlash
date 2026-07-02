@@ -1,9 +1,10 @@
 name: Release — Beta
 
 # Triggered by manual dispatch ONLY.
-# Automatically merges the latest alpha branch before building.
+# Merges the latest alpha branch into beta, computes the next beta
+# semver tag (X.Y.Z-beta.N), then triggers the reusable Windows build.
 #
-# Build context: the merged result (alpha → beta).
+# Flow: main → alpha (auto) → beta (manual) → stable (manual) → main (sync)
 
 on:
   workflow_dispatch:
@@ -13,10 +14,10 @@ permissions:
 
 jobs:
   sync:
-    name: Merge alpha → beta
+    name: Merge alpha into beta
     runs-on: ubuntu-latest
     outputs:
-      beta_ref: ${{ steps.promote.outputs.beta_ref }}
+      version: ${{ steps.gen.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,15 +25,19 @@ jobs:
           token: ${{ secrets.PAT_TOKEN }}
 
       - name: Merge alpha into beta
-        id: promote
+        id: merge
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin alpha
           git checkout beta || git checkout -b beta
           git reset origin/beta --hard
-          git merge origin/alpha --no-ff -m "chore: merge alpha → beta for release" || true
-          echo "beta_ref=$(git rev-parse --abbrev-ref HEAD)" >> "$GITHUB_OUTPUT"
+          git merge origin/alpha --no-ff -m "chore: merge alpha -> beta for release" || true
+
+      - name: Compute next beta version
+        id: gen
+        shell: bash
+        run: echo "version=$(node scripts/next-version.cjs beta)" >> "$GITHUB_OUTPUT"
 
       - name: Push beta
         run: git push origin beta --force
@@ -43,6 +48,7 @@ jobs:
     uses: ./.github/workflows/release.yml
     with:
       channel: beta
-      tag_name: v${{ needs.sync.outputs.beta_ref }}
+      tag_name: v${{ needs.sync.outputs.version }}
       artifact_name: windows-beta-${{ github.sha }}
+      prerelease: true
     secrets: inherit
