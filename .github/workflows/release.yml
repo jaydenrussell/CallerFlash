@@ -34,6 +34,7 @@ jobs:
       WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD || '' }}
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       RELEASE_TAG: ${{ inputs.tag_name }}
+      APP_VERSION: ${{ inputs.tag_name }}
     outputs:
       tag: ${{ inputs.tag_name }}
     steps:
