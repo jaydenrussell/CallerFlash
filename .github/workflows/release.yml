@@ -1,7 +1,6 @@
 name: Build & Release
 
 # Reusable Windows build + GitHub Release workflow.
-# Callers specify channel, tag, and artifact name.
 
 on:
   workflow_call:
@@ -16,11 +15,14 @@ on:
         required: false
         type: string
         default: windows-artifact
+      prerelease:
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
 
 jobs:
-  build-windows:
-    name: Build Windows (unsigned)
+  build:
     runs-on: windows-latest
     permissions:
       contents: write
@@ -31,6 +33,9 @@ jobs:
       WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK || '' }}
       WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD || '' }}
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      RELEASE_TAG: ${{ inputs.tag_name }}
+    outputs:
+      tag: ${{ inputs.tag_name }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -66,13 +71,13 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
-  publish-release:
-    name: Publish GitHub Release
-    needs: build-windows
+  publish:
+    needs: build
     runs-on: ubuntu-latest
-    if: always() && needs.build-windows.result == 'success'
+    if: always() && needs.build.result == 'success'
     permissions:
       contents: write
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -95,7 +100,7 @@ jobs:
             release/*.exe
             release/*.exe.blockmap
           draft: false
-          prerelease: ${{ inputs.channel != 'stable' }}
+          prerelease: ${{ inputs.prerelease }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OWNER: jaydenrussell
