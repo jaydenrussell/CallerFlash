@@ -74,9 +74,6 @@
       "owner": "jaydenrussell",
       "repo": "CallerFlash"
     },
-    "win": {
-      "publisherName": "CallerFlash"
-    },
     "extraResources": [
       {
         "from": "buildResources/cflogo.ico",
