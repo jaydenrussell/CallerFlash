@@ -18,7 +18,8 @@
     "electron:publish": "npm run build && npx electron-builder --win --x64 --publish always"
   },
   "dependencies": {
-    "sip": "^0.0.6"
+    "electron-log": "^5.0.1",
+    "electron-updater": "^6.3.9"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.1",
@@ -29,8 +30,6 @@
     "clsx": "2.1.1",
     "electron": "^42.5.0",
     "electron-builder": "^26.15.3",
-    "electron-log": "^5.0.1",
-    "electron-updater": "^6.3.9",
     "ico-endec": "^0.1.6",
     "lucide-react": "^1.21.0",
     "react": "19.2.7",
