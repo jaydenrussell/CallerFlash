@@ -11,7 +11,7 @@
  *               version if no stable tags exist yet)
  *   - beta    → bump `-beta.N` for the current X.Y.Z; if X.Y.Z is already
  *               promoted to stable, advance to `X.(Y+1).0-beta.1`
- *   - alpha  → `0.1.0-alpha.N` (auto-incrementing prerelease, testing only)
+ *   - alpha  → `0.1.N-alpha` (auto-incrementing prerelease, testing only)
  *
  * Usage:
  *   node scripts/next-version.cjs stable
@@ -94,9 +94,6 @@ function nextStable(tags, baseVer) {
 function nextBeta(tags, baseVer) {
   const parsed = tags.map(parseTag).filter(Boolean);
   // Only count betas with a strict numeric suffix (e.g. `-beta.3`).
-  // Legacy tags with non-numeric suffixes (e.g. `-beta.c15ab27` from
-  // the old short-SHA flow) are ignored — they predate the auto-increment
-  // scheme and would otherwise confuse the N calculation.
   const betas = parsed.filter((t) => t.pre && /^beta\.\d+$/.test(t.pre));
   const stables = parsed.filter((t) => !t.pre);
 
@@ -131,11 +128,9 @@ function nextBeta(tags, baseVer) {
 
 function nextAlpha(tags) {
   // Alpha uses semver: 0.1.N-alpha
-  // Find all existing alpha prefixed tags and increment N
   const parsed = tags.map(parseTag).filter(Boolean);
-  const alphas = parsed.filter((t) => t.pre && /^alpha-\d+$/.test(t.pre));
+  const alphas = parsed.filter((t) => t.pre && t.pre.startsWith('alpha-'));
 
-  // Find highest N in 0.1.N-alpha
   let maxN = 0;
   for (const t of alphas) {
     const m = t.pre.match(/^alpha-(\d+)$/);
@@ -144,7 +139,6 @@ function nextAlpha(tags) {
       if (!isNaN(n) && n > maxN) maxN = n;
     }
   }
-
   return `0.1.${maxN + 1}-alpha`;
 }
 
