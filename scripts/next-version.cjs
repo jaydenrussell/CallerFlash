@@ -130,19 +130,22 @@ function nextBeta(tags, baseVer) {
 }
 
 function nextAlpha(tags) {
-  // Alpha uses prerelease semver: 0.1.0-alpha.N
-  // Find all existing alpha tags and increment N
+  // Alpha uses semver: 0.1.N-alpha
+  // Find all existing alpha prefixed tags and increment N
   const parsed = tags.map(parseTag).filter(Boolean);
-  const alphas = parsed.filter((t) => t.pre && /^alpha\.\d+$/.test(t.pre));
+  const alphas = parsed.filter((t) => t.pre && /^alpha-\d+$/.test(t.pre));
 
-  // Find highest alpha.N
+  // Find highest N in 0.1.N-alpha
   let maxN = 0;
   for (const t of alphas) {
-    const n = parseInt(t.pre.split('.')[1], 10);
-    if (!isNaN(n) && n > maxN) maxN = n;
+    const m = t.pre.match(/^alpha-(\d+)$/);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (!isNaN(n) && n > maxN) maxN = n;
+    }
   }
 
-  return `0.1.0-alpha.${maxN + 1}`;
+  return `0.1.${maxN + 1}-alpha`;
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────
