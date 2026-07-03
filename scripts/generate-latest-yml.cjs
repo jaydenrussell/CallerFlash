@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /**
  * CallerFlash — Update-manifest generator.
  *
@@ -76,8 +76,7 @@ for (const name of fs.readdirSync(releaseDir).sort()) {
 
 if (!mainExe) {
   // No installer in the directory at all. Skip silently rather than
-  // failing the build — Linux releases without electron-updater
-  // support (e.g. .deb-only) don't need a manifest.
+  // Windows-only - always has an .exe, but guard against missing installer
   console.error(
     `[generate-latest-yml] No installer (.exe/.msi) found in ${releaseDir}; skipping manifest.`
   );
