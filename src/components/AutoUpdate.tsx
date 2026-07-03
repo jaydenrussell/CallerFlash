@@ -341,32 +341,23 @@ export function AutoUpdate() {
     // Use Electron main process to check
     if (window.callerflash?.updater?.check) {
       const result = await window.callerflash.updater.check(updateInfo.updateChannel);
-      if (result?.error) {
-        setOutcome({ kind: 'verification-failed', message: result.error });
-        setPhase('idle');
-        return;
-      }
-      if (result?.version && result.version !== result.currentVersion) {
+      if (result?.version) {
         setUpdateInfo({ latestVersion: result.version, updateAvailable: true, lastChecked: new Date() });
+        setDownloadUrl(result.downloadUrl);
         addDiagnosticLog({
           level: 'info',
           category: 'UPDATE',
           message: `Update found: ${result.friendlyName || result.version}`,
         });
-
-        // Auto-download if enabled
-        if (updateInfo.autoDownload) {
-          setPhase('downloading');
-          setUpdateInfo({ isDownloading: true });
-          if (window.callerflash?.updater?.download) {
-            window.callerflash.updater.download();
-          }
-        }
-      } else {
+        setPhase('idle');
+      } else if (result?.upToDate) {
         setOutcome({ kind: 'no-update', message: `You're running the latest version (${formatVersion(updateInfo.currentVersion)}).` });
         setUpdateInfo({ updateAvailable: false, lastChecked: new Date() });
+        setPhase('idle');
+      } else if (result?.error) {
+        setOutcome({ kind: 'verification-failed', message: result.error });
+        setPhase('idle');
       }
-      setPhase('idle');
       return;
     }
 
@@ -473,7 +464,7 @@ export function AutoUpdate() {
 
     if (window.callerflash?.updater?.install) {
       console.log('[UI] handleInstall: calling IPC updater.install');
-      window.callerflash.updater.install();
+      window.callerflash.updater.install(updateInfo.latestVersion);
       setPhase('installing');
       setUpdateInfo({ isInstalling: true });
     } else {
@@ -503,7 +494,7 @@ export function AutoUpdate() {
 
     if (window.callerflash?.updater?.download) {
       console.log('[UI] handleUpdate: calling IPC updater.download');
-      window.callerflash.updater.download();
+      window.callerflash.updater.download(updateInfo.updateChannel, updateInfo.latestVersion, downloadUrl);
       setPhase('downloading');
       setUpdateInfo({ isDownloading: true });
     } else {

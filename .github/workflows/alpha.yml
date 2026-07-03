@@ -20,22 +20,8 @@ permissions:
   contents: write
 
 jobs:
-  compute-version:
-    runs-on: windows-latest
-    outputs:
-      next_version: ${{ steps.gen.outputs.next_version }}
-    steps:
-      - name: Compute next alpha version
-        id: gen
-        shell: bash
-        run: echo "next_version=$(node scripts/next-version.cjs alpha)" >> "$GITHUB_OUTPUT"
-
   release:
-    needs: compute-version
     uses: ./.github/workflows/release.yml
     with:
       channel: alpha
-      tag_name: v${{ needs.compute-version.outputs.next_version }}
-      prerelease: true
-      artifact_name: windows-alpha-${{ github.sha }}
     secrets: inherit
