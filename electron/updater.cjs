@@ -68,7 +68,7 @@ async function findLatestRelease(channel) {
   if (!exe) return null;
 
   return {
-    version: latest.tag_name,           // e.g. "v0.1.0-alpha.1"
+    version: latest.tag_name,           // e.g. "v1.4.3-alpha.1"
     downloadUrl: exe.browser_download_url,
     publishedAt: latest.published_at,
   };
@@ -88,7 +88,7 @@ function normaliseVersion(v) {
 // ── Version comparison ────────────────────────────────────────────────
 // Returns true if remoteVersion is newer than currentVersion
 // Uses standard semver comparison with prerelease support.
-// alpha: 0.1.0-alpha.1 < 0.1.0-alpha.2 (higher alpha = newer)
+// alpha: 1.4.3-alpha.1 < 1.4.3-alpha.2 (higher alpha = newer)
 // beta: 1.5.0-beta.1 < 1.5.0-beta.2 (higher beta = newer)
 // stable: 1.4.2 < 1.5.0 (standard semver)
 function isUpdateAvailable(currentVersion, remoteVersion) {
