@@ -52,7 +52,7 @@ function sha512Base64(filePath) {
 // Recognize installers for every supported platform. The manifest's
 // `path` is the file electron-updater will fetch, so it has to be one
 // of these.
-const INSTALLER_RE = /\.(exe|msi|dmg|zip|deb|AppImage|appimage)$/i;
+const INSTALLER_RE = /\.(exe|msi|dmg|zip)$/i;
 
 const files = [];
 let mainExe = null;
@@ -76,7 +76,7 @@ for (const name of fs.readdirSync(releaseDir).sort()) {
 
 if (!mainExe) {
   // No installer in the directory at all. Skip silently rather than
-  // Windows-only - always has an .exe, but guard against missing installer
+  // Windows-only app - always has an .exe, but guard against missing installer
   console.error(
     `[generate-latest-yml] No installer (.exe/.msi) found in ${releaseDir}; skipping manifest.`
   );
