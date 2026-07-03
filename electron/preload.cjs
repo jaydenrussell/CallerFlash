@@ -92,6 +92,7 @@ contextBridge.exposeInMainWorld('callerflash', {
       ipcRenderer.on('updater:progress', handler);
       return () => ipcRenderer.removeListener('updater:progress', handler);
     },
+    notifySettingsChanged: () => ipcRenderer.send('updater:settings-changed'),
     onBackgroundCheck: (callback) => {
       const handler = (_event, data) => callback(data);
       ipcRenderer.on('updater:background-check', handler);
