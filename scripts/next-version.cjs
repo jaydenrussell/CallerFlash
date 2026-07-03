@@ -74,7 +74,7 @@ function nextBeta(tags, baseVer) {
 
 function nextAlpha(tags) {
   const parsed = tags.map(parseTag).filter(Boolean);
-  const newStyle = parsed.filter((t) => t.pre === 'alpha');
+  const newStyle = parsed.filter((t) => t.pre && /^alpha(\.\d+)?$/.test(t.pre));
   let maxMinor = 0;
   for (const t of newStyle) {
     const parts = t.base.split('.').map(Number);
