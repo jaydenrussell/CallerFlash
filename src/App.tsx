@@ -458,7 +458,7 @@ export default function App() {
       
       // Native notification fallback
       if (window.callerflash?.notify?.show) {
-        window.callerflash.notify.show('Incoming Call', `${safeNumber}${safeName ? ` - ${safeName}` : ''}`);
+        window.callerflash.notify.show({ title: 'Incoming Call', body: `${safeNumber}${safeName ? ` - ${safeName}` : ''}`, urgency: 'critical', timeoutType: 'never' });
       }
     });
   }, [addDiagnosticLog]);
