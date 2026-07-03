@@ -906,6 +906,11 @@ async function schedulePeriodicCheck() {
   }, ms);
 }
 
+// Re-schedule periodic checks when renderer saves new preferences
+ipcMain.on('updater:settings-changed', () => {
+  schedulePeriodicCheck();
+});
+
 // ── App lifecycle ──────────────────────────────────────────────────────
 app.whenReady().then(() => {
   createWindow();
