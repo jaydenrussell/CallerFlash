@@ -52,40 +52,22 @@ function nextStable(tags, baseVer) {
 
 function nextBeta(tags, baseVer) {
   const parsed = tags.map(parseTag).filter(Boolean);
-  const betas = parsed.filter((t) => t.pre && /^beta\.\d+$/.test(t.pre));
-  const stables = parsed.filter((t) => !t.pre);
-  const byBase = new Map();
-  for (const t of betas) {
-    if (!byBase.has(t.base)) byBase.set(t.base, []);
-    byBase.get(t.base).push(parseInt(t.pre.split('.')[1], 10));
-  }
-  const basesWithBetas = [...byBase.keys()].sort(compareBase);
+  const betaTags = parsed.filter((t) => t.pre && /^beta(\.\d+)?$/.test(t.pre));
+  const basesWithBetas = [...new Set(betaTags.map((t) => t.base))].sort(compareBase);
   const currentBase = basesWithBetas.length > 0 ? basesWithBetas[basesWithBetas.length - 1] : null;
-  if (!currentBase) return `${baseVer}-beta.1`;
-  const stableForCurrent = stables.some((t) => t.base === currentBase);
-  if (stableForCurrent) {
-    const [maj, min] = currentBase.split('.').map(Number);
-    return `${maj}.${min + 1}.0-beta.1`;
-  }
-  const ns = byBase.get(currentBase);
-  const maxN = Math.max(...ns);
-  return `${currentBase}-beta.${maxN + 1}`;
+  if (!currentBase) return `${baseVer}-beta`;
+  const [maj, min, patch] = currentBase.split('.').map(Number);
+  return `${maj}.${min}.${patch + 1}-beta`;
 }
 
-function nextAlpha(tags) {
+function nextAlpha(tags, baseVer) {
   const parsed = tags.map(parseTag).filter(Boolean);
-  const newStyle = parsed.filter((t) => t.pre && /^alpha(\.\d+)?$/.test(t.pre));
-  let maxMinor = 0;
-  for (const t of newStyle) {
-    const parts = t.base.split('.').map(Number);
-    if (parts.length >= 2 && parts[1] > maxMinor) {
-      maxMinor = parts[1];
-    }
-  }
-  if (newStyle.length > 0) {
-    return `0.1.${maxMinor + 1}-alpha`;
-  }
-  return '0.1.1-alpha';
+  const alphaTags = parsed.filter((t) => t.pre && /^alpha(\.\d+)?$/.test(t.pre));
+  const basesWithAlphas = [...new Set(alphaTags.map((t) => t.base))].sort(compareBase);
+  const currentBase = basesWithAlphas.length > 0 ? basesWithAlphas[basesWithAlphas.length - 1] : null;
+  if (!currentBase) return `${baseVer}-alpha`;
+  const [maj, min, patch] = currentBase.split('.').map(Number);
+  return `${maj}.${min}.${patch + 1}-alpha`;
 }
 
 let result;
@@ -102,7 +84,7 @@ try {
   } else if (channel === 'beta') {
     result = nextBeta(gitTags(), baseVer);
   } else if (channel === 'alpha') {
-    result = nextAlpha(gitTags());
+    result = nextAlpha(gitTags(), baseVer);
   } else {
     console.error(`Unknown channel: ${channel} (expected: stable | beta | alpha)`);
     process.exit(1);
