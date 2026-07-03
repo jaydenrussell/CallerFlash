@@ -58,6 +58,13 @@ export function ToastWindow() {
     } catch {
       // Ignore parse errors; fall through to default position.
     }
+
+    // Claim any call data that was sent before this window was ready
+    if (window.callerflash?.toast?.getInitial) {
+      window.callerflash.toast.getInitial().then((data) => {
+        if (data) setActiveToasts((prev) => [...prev, data as ActiveToast]);
+      });
+    }
   }, []);
 
   useEffect(() => {
