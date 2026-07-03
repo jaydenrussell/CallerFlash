@@ -472,6 +472,8 @@ export const useAppStore = create<AppState>((set) => ({
       lastCheckedAt: next.lastChecked ? next.lastChecked.toISOString() : undefined,
       releasePageUrl: next.releasePageUrl || undefined,
     });
+    // Notify main process so periodic check timer reschedules immediately
+    window.callerflash?.updater?.notifySettingsChanged?.();
     return { updateInfo: next };
   }),
 
