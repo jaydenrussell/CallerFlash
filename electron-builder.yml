@@ -44,7 +44,7 @@ linux:
   category: Network
   maintainer: jaydenrussell <jaydenrussell@hotmail.com>
   vendor: CallerFlash
-  synopsis: SIP-compliant Windows / Linux client with toast notifications
+  synopsis: SIP-compliant Windows client with toast notifications
   description: |
     CallerFlash is a SIP-compliant desktop client with toast
     notifications, clipboard auto-copy, and a system-tray background
