@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Download, RefreshCw,
   Shield, GitBranch,
@@ -181,8 +181,8 @@ export function AutoUpdate() {
   const [artifactUrl, setArtifactUrl] = useState<string | null>(null);
   const [verifiedArtifact, setVerifiedArtifact] = useState<UpdateArtifact | null>(null);
   const [downloadedBlobUrl, setDownloadedBlobUrl] = useState<string | null>(null);
-  const [updateReady, setUpdateReady] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const pendingInstallRef = useRef(false);
 
 
   // The displayed list — strictly filtered by the active channel,
@@ -242,10 +242,16 @@ export function AutoUpdate() {
         setPhase('downloading');
         setUpdateInfo({ isDownloading: true });
       } else if (status.status === 'ready') {
-        // Download complete — ready to install
         setPhase('idle');
         setUpdateInfo({ isDownloading: false, isInstalling: false, updateAvailable: true });
-        setUpdateReady(true);
+        if (pendingInstallRef.current) {
+          pendingInstallRef.current = false;
+          if (window.callerflash?.updater?.install) {
+            window.callerflash.updater.install(status.version || updateInfo.latestVersion);
+            setPhase('installing');
+            setUpdateInfo({ isInstalling: true });
+          }
+        }
       } else if (status.status === 'update-available') {
         // Main process found an update during startup check
         setUpdateInfo({
@@ -266,8 +272,7 @@ export function AutoUpdate() {
       } else if (status.status === 'error') {
         setPhase('idle');
         setUpdateInfo({ isDownloading: false, isInstalling: false });
-        setUpdateReady(false);
-        addDiagnosticLog({ level: 'error', category: 'UPDATE', message: `Update failed: ${status.message}` });
+        setOutcome({ kind: 'verification-failed', message: status.message || 'Update failed' });
       }
     });
   }, [addDiagnosticLog]);
@@ -293,7 +298,6 @@ export function AutoUpdate() {
     if (!window.callerflash?.updater?.getDownloadState) return;
     window.callerflash.updater.getDownloadState().then((state: any) => {
       if (state?.status === 'ready' && state?.version) {
-        setUpdateReady(true);
         setUpdateInfo({
           latestVersion: state.version,
           updateAvailable: true,
@@ -334,7 +338,6 @@ export function AutoUpdate() {
     setVerification(null);
     setVerifiedArtifact(null);
     setOutcome(null);
-    setUpdateReady(false);
     addDiagnosticLog({
       level: 'info',
       category: 'UPDATE',
@@ -450,58 +453,48 @@ export function AutoUpdate() {
   };
 
   /**
-   * One-click install: triggers electron-updater to download + install.
-   * The main process handles everything — shows the Discord-style
-   * progress window, downloads, verifies, runs NSIS, relaunches.
+   * Smart update: checks if the update file is already downloaded,
+   * installs immediately if so, otherwise downloads then auto-installs.
    */
-  const handleInstall = () => {
-    console.log('[UI] handleInstall clicked, phase=' + phase + ' latestVersion=' + updateInfo.latestVersion + ' updateReady=' + updateReady);
-    if (phase === 'installing') return;
+  const handleUpdate = async () => {
+    if (phase === 'downloading' || phase === 'installing') return;
     if (!updateInfo.latestVersion) return;
 
     addDiagnosticLog({
       level: 'info',
       category: 'UPDATE',
-      message: `Installing update ${formatVersion(updateInfo.latestVersion)}…`,
+      message: `Update ${formatVersion(updateInfo.latestVersion)}: checking download state…`,
     });
 
-    if (window.callerflash?.updater?.install) {
-      console.log('[UI] handleInstall: calling IPC updater.install');
-      window.callerflash.updater.install(updateInfo.latestVersion);
-      setPhase('installing');
-      setUpdateInfo({ isInstalling: true });
-    } else {
-      console.log('[UI] handleInstall: IPC bridge NOT available!');
-    }
-  };
-
-  /**
-   * Update: download the file, then install when ready.
-   */
-  const handleUpdate = () => {
-    console.log('[UI] handleUpdate clicked, phase=' + phase + ' latestVersion=' + updateInfo.latestVersion + ' downloadUrl=' + downloadUrl);
-    if (phase === 'downloading' || phase === 'installing') {
-      console.log('[UI] handleUpdate: blocked, already busy');
-      return;
-    }
-    if (!updateInfo.latestVersion) {
-      console.log('[UI] handleUpdate: blocked, no latestVersion');
-      return;
+    // Check if already downloaded
+    if (window.callerflash?.updater?.getDownloadState) {
+      try {
+        const state = await window.callerflash.updater.getDownloadState();
+        if (state?.status === 'ready' && state?.version === updateInfo.latestVersion) {
+          addDiagnosticLog({ level: 'info', category: 'UPDATE', message: `Installing ${formatVersion(updateInfo.latestVersion)}…` });
+          window.callerflash.updater.install(updateInfo.latestVersion);
+          setPhase('installing');
+          setUpdateInfo({ isInstalling: true });
+          return;
+        }
+      } catch { /* state check failed — proceed to download */ }
     }
 
-    addDiagnosticLog({
-      level: 'info',
-      category: 'UPDATE',
-      message: `Downloading update ${formatVersion(updateInfo.latestVersion)}…`,
-    });
+    // Need to download first — auto-install when ready
+    if (!downloadUrl && window.callerflash?.updater?.check) {
+      try {
+        const result = await window.callerflash.updater.check(updateInfo.updateChannel);
+        if (result?.downloadUrl) setDownloadUrl(result.downloadUrl);
+      } catch { /* proceed with whatever we have */ }
+    }
+
+    addDiagnosticLog({ level: 'info', category: 'UPDATE', message: `Downloading ${formatVersion(updateInfo.latestVersion)}…` });
 
     if (window.callerflash?.updater?.download) {
-      console.log('[UI] handleUpdate: calling IPC updater.download');
+      pendingInstallRef.current = true;
       window.callerflash.updater.download(updateInfo.updateChannel, updateInfo.latestVersion, downloadUrl);
       setPhase('downloading');
       setUpdateInfo({ isDownloading: true });
-    } else {
-      console.log('[UI] handleUpdate: IPC bridge NOT available! window.callerflash.updater.download is undefined');
     }
   };
 
@@ -579,7 +572,8 @@ export function AutoUpdate() {
             </p>
             <p className="text-[11px] text-win-text-secondary mt-0.5">
               {phase === 'installing' ? 'Installing…'
-                : updateReady ? 'Downloaded and ready to install.'
+                : phase === 'downloading' ? `Downloading ${Math.round(updateInfo.downloadProgress)}%…`
+                : updateInfo.autoDownload ? 'Downloaded and ready to install.'
                 : `Newer than your current ${formatVersion(updateInfo.currentVersion)}.`}
             </p>
           </div>
@@ -589,15 +583,10 @@ export function AutoUpdate() {
                 <div className="w-4 h-4 border-2 border-win-text-secondary border-t-transparent rounded-full animate-spin" />
                 Installing…
               </button>
-            ) : updateReady ? (
-              <button onClick={handleInstall} className="flex items-center gap-2 px-4 py-2 bg-win-success hover:bg-win-success/85 text-black rounded-lg text-sm font-semibold transition-colors">
-                <Download className="w-4 h-4" />
-                Install
-              </button>
             ) : (
-              <button onClick={handleUpdate} className="flex items-center gap-2 px-4 py-2 bg-win-accent hover:bg-win-accent-hover text-black rounded-lg text-sm font-semibold transition-colors">
+              <button onClick={handleUpdate} disabled={isBusy} className="flex items-center gap-2 px-4 py-2 bg-win-accent hover:bg-win-accent-hover text-black rounded-lg text-sm font-semibold transition-colors disabled:opacity-50">
                 <Download className="w-4 h-4" />
-                Update
+                {phase === 'downloading' ? 'Downloading…' : 'Update & Install'}
               </button>
             )}
           </div>
@@ -693,11 +682,8 @@ export function AutoUpdate() {
                 <button
                   key={channelOpt}
                   onClick={() => {
-                    // Just switch channel — don't auto-check
-                    setUpdateInfo({ updateChannel: channelOpt });
+                    setUpdateInfo({ updateChannel: channelOpt, updateAvailable: false, latestVersion: '' });
                     setOutcome(null);
-                    setUpdateReady(false);
-                    setUpdateInfo({ updateAvailable: false, latestVersion: '' });
                   }}
                   className={`flex-1 px-2 py-1.5 rounded-lg text-xs font-medium transition-all ${
                     updateInfo.updateChannel === channelOpt
@@ -751,8 +737,8 @@ export function AutoUpdate() {
               <p className="text-sm font-medium text-win-text">Auto-download updates</p>
               <p className="text-[11px] text-win-text-tertiary">
                 {updateInfo.autoDownload
-                  ? `Verified ${updateInfo.updateChannel} updates download in the background. You'll be prompted to install.`
-                  : 'Updates are shown but not downloaded. Click Download to get them manually.'}
+                  ? `Verified ${updateInfo.updateChannel} updates download in the background and install automatically when you click Update.`
+                  : 'Updates are checked but not downloaded. Click Update to download and install.'}
               </p>
             </div>
             <div className={`w-9 h-[20px] rounded-full transition-colors relative flex-shrink-0 ${
