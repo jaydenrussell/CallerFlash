@@ -1,0 +1,26 @@
+name: Safe revert to v0.1.0-alpha.6
+on: workflow_dispatch
+jobs:
+  revert:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: |
+          git config user.name "jaydenrussell"
+          git config user.email "jaydenrussell@hotmail.com"
+          git checkout -b revert-to-alpha-6
+          git revert --no-commit v0.1.0-alpha.6..HEAD || true
+          git commit -m "revert: roll back to v0.1.0-alpha.6 state" --allow-empty
+          git push origin revert-to-alpha-6
+          gh pr create \
+            --base main \
+            --head revert-to-alpha-6 \
+            --title "Revert to v0.1.0-alpha.6" \
+            --body "Rolls back all commits after v0.1.0-alpha.6 (the last known working version)."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
