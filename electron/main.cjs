@@ -879,28 +879,32 @@ async function scheduleStartupUpdateCheck() {
 
 let periodicCheckTimer = null;
 
-function schedulePeriodicCheck() {
+async function schedulePeriodicCheck() {
+  // Cancel any existing timer
   if (periodicCheckTimer) {
-    clearInterval(periodicCheckTimer);
+    clearTimeout(periodicCheckTimer);
     periodicCheckTimer = null;
   }
+
+  // Re-read settings every cycle so frequency changes take effect immediately
   const settings = readPersistedSettings();
   const frequency = settings.updateCheckFrequency || 'daily';
   if (frequency === 'off') return;
+
+  // Run the check
+  try {
+    await runScheduledCheck();
+  } catch (err) {
+    console.error('[updater] periodic check failed:', err.message);
+  }
+
+  // Schedule the next check based on current frequency
   const ms = frequencyMs(frequency);
-  console.log('[updater] scheduling periodic check every ' + (ms / 86_400_000) + ' day(s)');
-  periodicCheckTimer = setInterval(async () => {
-    try {
-      await runScheduledCheck();
-    } catch (err) {
-      console.error('[updater] periodic check failed:', err.message);
-    }
+  console.log('[updater] next periodic check in ' + (ms / 86_400_000) + ' day(s)');
+  periodicCheckTimer = setTimeout(() => {
+    schedulePeriodicCheck();
   }, ms);
 }
-
-ipcMain.on('updater:settings-changed', () => {
-  schedulePeriodicCheck();
-});
 
 // ── App lifecycle ──────────────────────────────────────────────────────
 app.whenReady().then(() => {
