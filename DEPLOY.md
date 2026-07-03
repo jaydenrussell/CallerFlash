@@ -72,7 +72,6 @@ Go to **Settings → Secrets and variables → Actions** and add:
 ```bash
 # Bash
 base64 -w0 < certificate.pfx | pbcopy   # macOS
-base64 -w0 < certificate.pfx | xclip    # Linux
 ```
 
 ---
