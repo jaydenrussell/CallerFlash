@@ -487,6 +487,12 @@ function buildToastUrl(data) {
   if (c.textColor) params.set('textColor', c.textColor);
   if (c.borderRadius != null) params.set('borderRadius', String(c.borderRadius));
   if (c.opacity != null) params.set('opacity', String(c.opacity));
+  if (c.fontFamily) params.set('fontFamily', c.fontFamily);
+  if (c.fontSize != null) params.set('fontSize', String(c.fontSize));
+  if (c.showCallerName != null) params.set('showCallerName', c.showCallerName ? '1' : '0');
+  if (c.showTimestamp != null) params.set('showTimestamp', c.showTimestamp ? '1' : '0');
+  if (c.maxWidth != null) params.set('maxWidth', String(c.maxWidth));
+  if (c.autoCopyToClipboard != null) params.set('autoCopyToClipboard', c.autoCopyToClipboard ? '1' : '0');
 
   const htmlPath = path.join(__dirname, 'toast.html');
   const hash = '#' + params.toString();
@@ -620,7 +626,19 @@ ipcMain.on('shell:open-external', (_event, url) => {
 // Used by the renderer when an update is verified + downloaded to let
 // the user know via the OS notification surface, in addition to the
 // tray menu.
-ipcMain.on('notify:show', (_event, title, body) => {
+ipcMain.on('notify:show', (_event, ...args) => {
+  // Support both legacy (title, body) and new ({title,body,urgency,...}) signatures
+  let title, body, urgency, timeoutType;
+  if (args.length === 1 && typeof args[0] === 'object' && args[0] !== null) {
+    const d = args[0];
+    title = d.title;
+    body = d.body;
+    urgency = d.urgency;
+    timeoutType = d.timeoutType;
+  } else {
+    [title, body] = args;
+  }
+
   console.log('[notify] received:', title, body?.substring(0, 50));
   if (!app.isReady()) return;
 
@@ -630,11 +648,17 @@ ipcMain.on('notify:show', (_event, title, body) => {
   // Check if native notifications are supported
   if (Notification?.isSupported?.()) {
     try {
-      const n = new Notification({
+      const opts = {
         title: safeTitle,
         body: safeBody,
         silent: false,
-      });
+      };
+      if (typeof urgency === 'string') opts.urgency = urgency;
+      if (typeof timeoutType === 'string') opts.timeoutType = timeoutType;
+      const icon = loadWindowIcon();
+      if (icon && !icon.isEmpty()) opts.icon = icon;
+
+      const n = new Notification(opts);
       n.show();
       console.log('[notify] native notification shown');
       n.on('click', () => {
