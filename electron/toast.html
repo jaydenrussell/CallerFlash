@@ -108,6 +108,35 @@ html,body{width:100%;height:100%;overflow:hidden;background:transparent;font-fam
   if (params.borderRadius) toastEl.style.borderRadius = params.borderRadius + 'px';
   if (params.opacity) toastEl.style.opacity = (parseInt(params.opacity, 10) / 100);
 
+
+  // Apply fontFamily
+  if (params.fontFamily) document.body.style.fontFamily = params.fontFamily;
+
+  // Apply fontSize
+  if (params.fontSize) {
+    var fs = parseInt(params.fontSize, 10);
+    numberEl.style.fontSize = (fs + 4) + 'px';
+    nameEl.style.fontSize = (fs - 2) + 'px';
+    timeEl.style.fontSize = (fs - 4) + 'px';
+  }
+
+  // Show/hide caller name
+  if (params.showCallerName === '0') nameEl.style.display = 'none';
+
+  // Show/hide timestamp
+  if (params.showTimestamp === '0') timeEl.style.display = 'none';
+
+  // Apply maxWidth
+  if (params.maxWidth) toastEl.style.maxWidth = params.maxWidth + 'px';
+
+  // Auto-copy indicator
+  if (params.autoCopyToClipboard === '1') {
+    var hint = document.createElement('div');
+    hint.textContent = 'Number auto-copied to clipboard';
+    hint.style.cssText = 'font-size:10px;color:rgba(255,255,255,0.4);margin-top:2px;';
+    document.querySelector('.info').appendChild(hint);
+  }
+
   // Show the toast
   toastEl.classList.add('visible');
 
