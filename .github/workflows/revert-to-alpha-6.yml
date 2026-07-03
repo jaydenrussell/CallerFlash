@@ -14,12 +14,12 @@ jobs:
       - run: |
           git config user.name "jaydenrussell"
           git config user.email "jaydenrussell@hotmail.com"
-          git checkout -b revert-to-alpha-6
+          git checkout -B revert-to-alpha-6
           git rm -r --quiet .
           git checkout v0.1.0-alpha.6 -- .
           git add -A
-          git commit -m "revert: roll back to v0.1.0-alpha.6 state" --allow-empty
-          git push origin revert-to-alpha-6
+          git commit -m "revert: roll back to v0.1.0-alpha.6 state"
+          git push --force origin revert-to-alpha-6
           gh pr create \
             --base main \
             --head revert-to-alpha-6 \
