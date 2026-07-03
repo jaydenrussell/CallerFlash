@@ -127,7 +127,7 @@ jobs:
           fi
           echo "All required signing secrets are present."
 
-  # ── Build (Windows + Linux, signed on Windows) ─────────────────
+  # ── Build (Windows, code-signed) ─────────────────
   build:
     name: Build ${{ matrix.os }} (${{ needs.route.outputs.channel }})
     needs: [route, verify-secrets]
@@ -137,8 +137,6 @@ jobs:
         include:
           - os: windows-latest
             artifact_suffix: windows
-          - os: ubuntu-latest
-            artifact_suffix: linux
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -226,8 +224,6 @@ jobs:
           name: callerflash-build-${{ needs.route.outputs.version }}-${{ matrix.artifact_suffix }}
           path: |
             release/*.exe
-            release/*.AppImage
-            release/*.deb
             release/*.blockmap
             release/latest.yml
           retention-days: 1
@@ -235,9 +231,6 @@ jobs:
 
   # ── SHA-256 + Ed25519 signing ─────────────────────────────────────
   # Only the Windows build gets SHA256SUMS + detached .sig signing
-  # (used by electron-updater in production). Linux builds are
-  # installed via the system package manager and don't need an updater
-  # manifest.
   sign-checksums:
     name: Sign SHA256SUMS (Ed25519)
     needs: [route, build]
@@ -274,7 +267,7 @@ jobs:
           cd release
           # Output format: "<hex>   <basename>" — standard sha256sum format.
           # Two-space separator between hash and filename.
-          sha256sum *.exe > SHA256SUMS
+          powershell -Command "Get-ChildItem *.exe | ForEach-Object { $h = (Get-FileHash $_.Name -Algorithm SHA256).Hash.ToLower(); '$h   $($_.Name)' } | Set-Content SHA256SUMS"
           echo "--- SHA256SUMS ---"
           cat SHA256SUMS
           echo "------------------"
@@ -369,18 +362,6 @@ jobs:
           name: callerflash-signed-${{ needs.route.outputs.version }}
           path: release
 
-      # Merge the Linux build artifacts into the same release/ directory.
-      # merge-multiple flattens the artifact contents so .deb files land
-      # directly alongside the Windows .exe, .sig, SHA256SUMS, etc.
-      # Both the signed artifact and the Linux build artifact contain a
-      # latest.yml (generated from the same Windows build artifacts),
-      # so the overwrite is harmless — they're identical.
-      - uses: actions/download-artifact@v6
-        with:
-          name: callerflash-build-${{ needs.route.outputs.version }}-linux
-          path: release
-          merge-multiple: true
-
       - name: Determine release assets
         id: assets
         shell: bash
@@ -394,7 +375,6 @@ jobs:
 
           # Windows assets (signed build + updater manifest). The .sig,
           # SHA256SUMS, and per-channel yml only exist on Windows because
-          # Linux installs use the system package manager.
           ASSETS_PARTS=(
             "release/*.exe"
             "release/*.blockmap"
@@ -406,12 +386,6 @@ jobs:
             beta)    ASSETS_PARTS+=( "release/beta.yml"    ) ;;
             alpha)    ASSETS_PARTS+=( "release/alpha.yml"    ) ;;
           esac
-
-          # Linux assets — .deb merged into release/ via merge-multiple.
-          # AppImage was dropped because the cached appimage-12.0.1.7z
-          # tarball fails extraction intermittently in CI runners.
-          ASSETS_PARTS+=(
-            "release/*.deb"
           )
 
           # Join with newlines so the YAML GITHUB_OUTPUT heredoc stays
