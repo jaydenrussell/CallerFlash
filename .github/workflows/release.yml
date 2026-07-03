@@ -373,7 +373,7 @@ jobs:
           VER="${{ needs.route.outputs.version }}"
 
           # Windows assets (signed build + updater manifest). The .sig,
-          # SHA256SUMS, and per-channel yml only exist on Windows because
+          # SHA256SUMS, and per-channel yml only exist on Windows
           ASSETS_PARTS=(
             "release/*.exe"
             "release/*.blockmap"
@@ -385,7 +385,6 @@ jobs:
             beta)    ASSETS_PARTS+=( "release/beta.yml"    ) ;;
             alpha)    ASSETS_PARTS+=( "release/alpha.yml"    ) ;;
           esac
-          )
 
           # Join with newlines so the YAML GITHUB_OUTPUT heredoc stays
           # at the block's indent.
