@@ -10,7 +10,6 @@ Place your app icons here:
 From a 1024×1024 source PNG:
 
 ```bash
-# macOS/Linux — using ImageMagick
 convert icon-source.png -resize 256x256 icon.png
 
 # ICO with multiple resolutions
