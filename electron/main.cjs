@@ -430,15 +430,15 @@ ipcMain.on('window:hide-to-tray', () => hideWindow());
 ipcMain.on('window:show', () => showWindow());
 // ── Toast window (separate frameless BrowserWindow) ─────────────
 // A dedicated always-on-top, transparent, frameless window that
-// renders incoming-call alerts. Lives independently of the main
-// window so toasts still appear when the main app is hidden to the
-// tray.
+// renders incoming-call alerts via the React ToastWindow component.
+// Lives independently of the main window so toasts still appear when
+// the main app is hidden to the tray.
 //
-// Design: data is passed via URL hash to a standalone HTML file.
-// This avoids IPC entirely — no nodeIntegration, no contextBridge,
-// no race conditions with renderer readiness. The HTML file reads
-// its own URL hash and renders immediately.
+// Design: loads the same single-file Vite build as the main window
+// but with ?toast=1 query param so main.tsx routes to <ToastWindow />.
+// Call data is sent via IPC (toast:show:event) after the window loads.
 let toastWindow = null;
+let pendingToastData = null;
 
 const TOAST_DEFAULT = { x: null, y: null, width: 380, height: 150 };
 
@@ -471,41 +471,23 @@ function saveToastState() {
   }
 }
 
-/**
- * Build the toast URL with data encoded in the hash fragment.
- * The toast.html file reads window.location.hash to get its data.
- */
-function buildToastUrl(data) {
-  const c = data.config || {};
-  const params = new URLSearchParams();
-  if (data.callerNumber) params.set('callerNumber', data.callerNumber);
-  if (data.callerName) params.set('callerName', data.callerName);
-  if (data.timestamp) params.set('timestamp', data.timestamp);
-  if (c.duration) params.set('duration', String(c.duration));
-  if (c.backgroundColor) params.set('bgColor', c.backgroundColor);
-  if (c.accentColor) params.set('accentColor', c.accentColor);
-  if (c.textColor) params.set('textColor', c.textColor);
-  if (c.borderRadius != null) params.set('borderRadius', String(c.borderRadius));
-  if (c.opacity != null) params.set('opacity', String(c.opacity));
-  if (c.fontFamily) params.set('fontFamily', c.fontFamily);
-  if (c.fontSize != null) params.set('fontSize', String(c.fontSize));
-  if (c.showCallerName != null) params.set('showCallerName', c.showCallerName ? '1' : '0');
-  if (c.showTimestamp != null) params.set('showTimestamp', c.showTimestamp ? '1' : '0');
-  if (c.maxWidth != null) params.set('maxWidth', String(c.maxWidth));
-  if (c.autoCopyToClipboard != null) params.set('autoCopyToClipboard', c.autoCopyToClipboard ? '1' : '0');
-
-  const htmlPath = path.join(__dirname, 'toast.html');
-  const hash = '#' + params.toString();
-  // Use file:// URL with hash — the HTML file reads the hash on load
-  return 'file:///' + htmlPath.replace(/\\/g, '/') + hash;
-}
-
 function createToastWindow(data) {
-  // Always create a fresh window for each toast so the URL (with new data) loads cleanly.
-  // Destroy any existing toast window first.
+  pendingToastData = data;
+
+  // If the window already exists (e.g., hidden after last toast dismissed),
+  // send the new call data directly instead of recreating.
   if (toastWindow && !toastWindow.isDestroyed()) {
-    try { toastWindow.destroy(); } catch { /* noop */ }
-    toastWindow = null;
+    try {
+      toastWindow.webContents.send('toast:show:event', data);
+      toastWindow.show();
+      toastWindow.moveTop();
+      log('[toast] reusing existing window, sent toast:show:event');
+      return toastWindow;
+    } catch {
+      // Failed to send — destroy and recreate
+      try { toastWindow.destroy(); } catch { /* noop */ }
+      toastWindow = null;
+    }
   }
 
   const state = { ...TOAST_DEFAULT, ...(loadToastState() || {}) };
@@ -524,11 +506,11 @@ function createToastWindow(data) {
     skipTaskbar: true,
     focusable: false,
     hasShadow: false,
-    // No preload, no nodeIntegration — pure static HTML
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
+      preload: path.join(__dirname, 'preload.cjs'),
     },
   };
 
@@ -546,9 +528,10 @@ function createToastWindow(data) {
 
   toastWindow = new BrowserWindow(opts);
 
-  // Load the standalone HTML file with data in URL hash
-  const url = buildToastUrl(data || {});
-  toastWindow.loadURL(url);
+  // Load the React app toast view (routes to ToastWindow.tsx via ?toast=1)
+  toastWindow.loadFile(path.join(__dirname, '../dist/index.html'), {
+    query: { toast: '1' },
+  });
 
   toastWindow.setMenuBarVisibility(false);
 
@@ -559,22 +542,26 @@ function createToastWindow(data) {
   // Make visible on ALL workspaces/virtual desktops including full-screen apps
   toastWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
-  // Show the window once the content is loaded
+  // Once the page is loaded, send the call data and show the window
   toastWindow.webContents.on('did-finish-load', () => {
-    console.log('[toast] did-finish-load fired');
-    // Bring the window to front — critical on Windows where alwaysOnTop
-    // alone may not be enough to make a hidden window visible.
+    log('[toast] did-finish-load fired, sending toast:show:event');
+    if (pendingToastData) {
+      try {
+        toastWindow.webContents.send('toast:show:event', pendingToastData);
+        pendingToastData = null;
+      } catch { /* ignore */ }
+    }
     if (toastWindow && !toastWindow.isDestroyed()) {
       toastWindow.show();
       toastWindow.moveTop();
-      console.log('[toast] window shown at', toastWindow.getPosition());
+      log('[toast] window shown at', toastWindow.getPosition());
     }
   });
 
   // Safety: show after a short timeout even if did-finish-load races
   setTimeout(() => {
     if (toastWindow && !toastWindow.isDestroyed() && !toastWindow.isVisible()) {
-      console.log('[toast] safety timeout: forcing show');
+      log('[toast] safety timeout: forcing show');
       toastWindow.show();
       toastWindow.moveTop();
     }
@@ -582,7 +569,7 @@ function createToastWindow(data) {
 
   // Debug: log if load fails
   toastWindow.webContents.on('did-fail-load', (_e, errorCode, errorDescription) => {
-    console.log('[toast] LOAD FAILED:', errorCode, errorDescription);
+    log('[toast] LOAD FAILED:', errorCode, errorDescription);
   });
 
   // Persist position + size on every move / resize
@@ -593,8 +580,15 @@ function createToastWindow(data) {
 }
 
 ipcMain.on('toast:show', (_event, data) => {
-  console.log('[toast] toast:show received, data:', JSON.stringify(data || {}).substring(0, 100));
+  log('[toast] toast:show received, data:', JSON.stringify(data || {}).substring(0, 100));
   createToastWindow(data);
+});
+
+/** Handler for the toast window to claim pending data sent before it was ready. */
+ipcMain.handle('toast:get-initial', () => {
+  const data = pendingToastData;
+  pendingToastData = null;
+  return data;
 });
 
 ipcMain.on('toast:hide', () => {
@@ -614,7 +608,6 @@ ipcMain.handle('toast:get-position', () => {
   if (!toastWindow || toastWindow.isDestroyed()) return null;
   return toastWindow.getPosition();
 });
-
 // ── IPC: shell link opening (mirror of preload bridge) ─────────────────
 ipcMain.on('shell:open-external', (_event, url) => {
   if (typeof url === 'string' && url.startsWith('https:')) {
