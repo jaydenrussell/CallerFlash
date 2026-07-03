@@ -313,8 +313,11 @@ export function AutoUpdate() {
   const hasCheckedRef = useState({ current: false })[0];
   useEffect(() => {
     if (phase !== 'idle') return;
+    // Respect frequency setting — even on first mount, if frequency is
+    // 'off' we skip the auto-check (manual check only via the button).
+    if (!shouldAutoCheck(updateInfo.lastChecked, updateInfo.updateCheckFrequency)) return;
     if (hasCheckedRef.current) {
-      // Subsequent channel/frequency changes: respect the interval.
+      // Subsequent channel/frequency changes: respect the interval again.
       if (!shouldAutoCheck(updateInfo.lastChecked, updateInfo.updateCheckFrequency)) return;
     }
     hasCheckedRef.current = true;
