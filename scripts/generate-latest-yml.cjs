@@ -10,7 +10,6 @@
  * Supported installer extensions:
  *   - Windows: .exe / .msi
  *   - macOS:   .dmg / .zip
- *   - Linux:   .deb / .AppImage
  *
  * Usage:
  *   node scripts/generate-latest-yml.cjs <release-dir> <version> [output-name] [channel]
@@ -80,7 +79,7 @@ if (!mainExe) {
   // failing the build — Linux releases without electron-updater
   // support (e.g. .deb-only) don't need a manifest.
   console.error(
-    `[generate-latest-yml] No installer (.exe/.msi/.dmg/.zip/.deb/.AppImage) found in ${releaseDir}; skipping manifest.`
+    `[generate-latest-yml] No installer (.exe/.msi) found in ${releaseDir}; skipping manifest.`
   );
   process.exit(0);
 }
