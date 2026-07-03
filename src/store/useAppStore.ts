@@ -116,6 +116,11 @@ class SecureStorage {
     this.isElectron = typeof window !== 'undefined' && !!window.callerflash?.platform?.isElectron;
   }
 
+  /** Pre-populate cache so first save doesn't clobber unrelated fields. */
+  initCache(data: PersistedUiSettings): void {
+    this.cache = data;
+  }
+
   async load(): Promise<PersistedUiSettings> {
     if (this.cache) return this.cache;
 
@@ -157,11 +162,12 @@ class SecureStorage {
     if (this.isElectron) {
       try {
         await window.callerflash?.storage?.save?.(toSave);
-        return;
       } catch {
         // Fallback to localStorage
       }
     }
+    // Always save to localStorage as write-through cache so
+    // loadSettingsSync() on next startup sees the latest data.
     this.saveToLocalStorage(toSave);
   }
 
@@ -212,14 +218,35 @@ function loadSettingsSync(): PersistedUiSettings {
 }
 
 const persistedUi: PersistedUiSettings = loadSettingsSync();
+// Pre-populate SecureStorage cache so first save preserves all fields.
+secureStorage.initCache({ ...persistedUi });
 
-// Phase 2: After store is created, try to load from file storage and migrate
+// Phase 2: After store is created, try to load from file storage and hydrate store
 async function initStorageMigration() {
   try {
     if (typeof window !== 'undefined' && window.callerflash?.storage?.load) {
       const fileData = await window.callerflash.storage.load();
       if (fileData && Object.keys(fileData).length > 0 && fileData.version >= 2) {
-        return; // File storage is authoritative
+        // File storage is authoritative — update cache and hydrate store
+        secureStorage.initCache({ ...fileData });
+        const mergedToast = { ...defaultToastConfig, ...fileData.toastConfig };
+        const mergedPrefs = { ...defaultAppPreferences, ...fileData.appPreferences };
+        const mergedSip = { ...defaultSipConfig, ...fileData.sipConfig };
+        const mergedUpdate = { ...defaultUpdateInfo };
+        if (fileData.updateChannel) mergedUpdate.updateChannel = fileData.updateChannel;
+        if (fileData.autoUpdate !== undefined) mergedUpdate.autoUpdate = fileData.autoUpdate;
+        if (fileData.autoDownload !== undefined) mergedUpdate.autoDownload = fileData.autoDownload;
+        if (fileData.updateCheckFrequency) mergedUpdate.updateCheckFrequency = fileData.updateCheckFrequency;
+        if (fileData.lastCheckedAt) mergedUpdate.lastChecked = new Date(fileData.lastCheckedAt);
+        if (fileData.releasePageUrl) mergedUpdate.releasePageUrl = fileData.releasePageUrl;
+        useAppStore.setState({
+          toastConfig: mergedToast,
+          appPreferences: mergedPrefs,
+          sipConfig: mergedSip,
+          toastDragPosition: fileData.toastDragPosition ?? null,
+          updateInfo: mergedUpdate,
+        });
+        return;
       }
     }
     // Migrate localStorage to file
