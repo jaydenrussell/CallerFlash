@@ -1,4 +1,4 @@
-# electron-builder config for CallerFlash
+﻿# electron-builder config for CallerFlash
 
 appId: com.callerflash.app
 productName: CallerFlash
@@ -31,33 +31,6 @@ win:
       arch:
         - x64
   artifactName: "CallerFlash-Setup-${version}.${ext}"
-
-linux:
-  # .deb only — AppImage extraction fails intermittently in CI runners
-  # (the cached appimage-12.0.1.7z tarball sometimes can't be lstat'd),
-  # and snap requires `snapcraft` which isn't installed on the standard
-  # ubuntu-latest image. .deb works cleanly on Ubuntu / Debian / Mint.
-  target:
-    - target: deb
-      arch:
-        - x64
-  category: Network
-  maintainer: jaydenrussell <jaydenrussell@hotmail.com>
-  vendor: CallerFlash
-  synopsis: SIP-compliant Windows client with toast notifications
-  description: |
-    CallerFlash is a SIP-compliant desktop client with toast
-    notifications, clipboard auto-copy, and a system-tray background
-    listener. Works with any RFC-compliant SIP provider.
-  desktop:
-    entry:
-      Name: CallerFlash
-      Comment: SIP client with toast notifications
-      Categories: Network;Telephony;Communication
-      Keywords: SIP;VoIP;telephony;
-      StartupWMClass: callerflash
-      desktopName: callerflash
-  icon: build/icon.png
 
 nsis:
   oneClick: false
