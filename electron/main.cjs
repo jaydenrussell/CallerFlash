@@ -23,7 +23,6 @@ const http = require('http');
 const { spawn } = require('child_process');
 const sipClient = require('./sipClient.cjs');
 const updater = require('./updater.cjs');
-const { autoUpdater } = require('electron-updater');
 
 // Initialize secure file-based storage (registers IPC handlers)
 require('./secureStorage.cjs');
@@ -143,11 +142,6 @@ function createWindow() {
 
   // Load the single-file output from Vite
   mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
-
-  // Register updater IPC now that we have a real window to report progress through.
-  initAutoUpdaterIPC(mainWindow);
-  
-  autoUpdater.autoDownload = false;
 
   // Open external links in the default browser instead of inside the app.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -561,20 +555,20 @@ function createToastWindow(data) {
 
   // Show the window once the content is loaded
   toastWindow.webContents.on('did-finish-load', () => {
-    console.log('[toast] did-finish-load fired');
+    log('[toast] did-finish-load fired');
     // Bring the window to front — critical on Windows where alwaysOnTop
     // alone may not be enough to make a hidden window visible.
     if (toastWindow && !toastWindow.isDestroyed()) {
       toastWindow.show();
       toastWindow.moveTop();
-      console.log('[toast] window shown at', toastWindow.getPosition());
+      log('[toast] window shown at', toastWindow.getPosition());
     }
   });
 
   // Safety: show after a short timeout even if did-finish-load races
   setTimeout(() => {
     if (toastWindow && !toastWindow.isDestroyed() && !toastWindow.isVisible()) {
-      console.log('[toast] safety timeout: forcing show');
+      log('[toast] safety timeout: forcing show');
       toastWindow.show();
       toastWindow.moveTop();
     }
@@ -582,32 +576,18 @@ function createToastWindow(data) {
 
   // Debug: log if load fails
   toastWindow.webContents.on('did-fail-load', (_e, errorCode, errorDescription) => {
-    console.log('[toast] LOAD FAILED:', errorCode, errorDescription);
+    log('[toast] LOAD FAILED:', errorCode, errorDescription);
   });
 
   // Persist position + size on every move / resize
   toastWindow.on('move', saveToastState);
   toastWindow.on('resize', saveToastState);
 
-  // Auto-hide after the configured duration so each toast behaves like a
-  // real notification instead of persisting forever.
-  const durationSec = (data && data.config && data.config.duration) || 8;
-  const durationMs = Math.max(2000, durationSec * 1000);
-  setTimeout(() => {
-    try {
-      if (toastWindow && !toastWindow.isDestroyed()) {
-        toastWindow.hide();
-        toastWindow.destroy();
-        toastWindow = null;
-      }
-    } catch {}
-  }, durationMs);
-
   return toastWindow;
 }
 
 ipcMain.on('toast:show', (_event, data) => {
-  console.log('[toast] toast:show received, data:', JSON.stringify(data || {}).substring(0, 100));
+  log('[toast] toast:show received, data:', JSON.stringify(data || {}).substring(0, 100));
   createToastWindow(data);
 });
 

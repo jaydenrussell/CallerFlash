@@ -15,11 +15,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "electron:build": "npm run build && npx electron-builder --win --x64 --publish never",
-    "electron:publish": "npm run build && npx electron-builder --win --x64 --publish always"
+    "electron:publish": "npm run electron:build && npx electron-builder --win --x64 --publish always"
   },
   "dependencies": {
-    "electron-log": "^5.0.1",
-    "electron-updater": "^6.3.9",
     "sip": "^0.0.6"
   },
   "devDependencies": {
@@ -57,6 +55,17 @@
       "buildResources/**"
     ],
     "artifactName": "CallerFlash-${version}.${ext}",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "app.ico"
+    },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
@@ -70,11 +79,7 @@
       "installerHeaderIcon": "cflogo.ico",
       "runAfterFinish": true
     },
-    "publish": {
-      "provider": "github",
-      "owner": "jaydenrussell",
-      "repo": "CallerFlash"
-    },
+    "publish": null,
     "extraResources": [
       {
         "from": "buildResources/cflogo.ico",
@@ -88,6 +93,32 @@
         "from": "buildResources/app.ico",
         "to": "app.ico"
       }
-    ]
+    ],
+    "linux": {
+      "target": [
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Network",
+      "maintainer": "jaydenrussell <jaydenrussell@hotmail.com>",
+      "vendor": "CallerFlash",
+      "synopsis": "SIP-compliant Windows / Linux client with toast notifications",
+      "description": "CallerFlash is a SIP-compliant desktop client with toast notifications, clipboard auto-copy, and a system-tray background listener. Works with any RFC-compliant SIP provider.",
+      "desktop": {
+        "entry": {
+          "Name": "CallerFlash",
+          "Comment": "SIP client with toast notifications",
+          "Categories": "Network;Telephony;Communication",
+          "Keywords": "SIP;VoIP;telephony;",
+          "StartupWMClass": "callerflash",
+          "desktopName": "callerflash"
+        }
+      },
+      "icon": "buildResources/icon.png"
+    }
   }
 }

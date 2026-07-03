@@ -14,13 +14,18 @@ A SIP-compliant Windows desktop client with toast notifications. Optimized for V
 - **Auto clipboard copy** — caller number automatically copied for instant paste into Acuity Scheduler
 - **Draggable toasts** — reposition any notification; position persists for future calls
 - **Start with Windows** — optionally launch minimized, calls still detected in background
-- **Auto-update** — three channels (stable, beta, alpha); signed releases with SHA-256 + Ed25519 verification
+- **Auto-update** — three channels (stable, beta, nightly); signed releases with SHA-256 + Ed25519 verification
 - **Full diagnostics** — SIP, toast, and system logs with export
 - **Security hardened** — CSP, credential redaction, SIP input sanitization, clipboard injection protection
 
 ## Releases
 
-| Channel | Description | How to get it ||---------|-------------|---------------|| **Stable** | Production-ready, tested for 7+ days | `git tag v1.4.2 && git push origin v1.4.2` || **Beta** | Latest features, 1+ day soak | `git tag v1.5.0-beta.1 && git push origin v1.5.0-beta.1` || **Alpha** | Automated builds from latest `main` | Push to `alpha` branch triggers auto-build |
+| Channel | Description | How to get it |
+|---------|-------------|---------------|
+| **Stable** | Production-ready, tested for 7+ days | `git tag v1.4.2 && git push origin v1.4.2` |
+| **Beta** | Latest features, 1+ day soak | `git tag v1.5.0-beta.1 && git push origin v1.5.0-beta.1` |
+| **Nightly** | Automated builds from latest `main` | Push to `nightly` branch triggers auto-build |
+
 All builds are **Windows 64-bit only** (NSIS installer `.exe`).
 
 ## Quick Start (for users)
