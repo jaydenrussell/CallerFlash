@@ -15,7 +15,7 @@ permissions:
 jobs:
   sync:
     name: Push main → alpha
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
         with:
