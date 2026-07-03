@@ -53,14 +53,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Set packaged version from tag
+        shell: bash
+        run: node scripts/set-version.cjs
+
       - name: Build frontend
         run: npm run build
-
-      - name: Compute app version
-        shell: pwsh
-        run: |
-          $version = $env:APP_VERSION -replace '^v',''
-          echo "VERSION=$version" >> $env:GITHUB_ENV
 
       - name: Package Windows artifacts
         env:
@@ -71,7 +69,7 @@ jobs:
           CSC_KEY_PASSWORD: ''
           WIN_CSC_LINK: ''
           WIN_CSC_KEY_PASSWORD: ''
-        run: npx electron-builder --win --x64 -c.version="${{ env.VERSION }}" --publish never
+        run: npx electron-builder --win --x64 --publish never
 
       - uses: actions/upload-artifact@v5
         with:
