@@ -71,6 +71,8 @@ declare global {
     setPosition: (x: number, y: number) => void;
     /** Get the current toast window position. */
     getPosition: () => Promise<{ x: number; y: number } | null>;
+    /** Claim pending call data sent before the window was ready. */
+    getInitial: () => Promise<CallerFlashToastEventData | null>;
     /** Subscribe to incoming toast events (renderer side of the bridge). */
     onShow: (callback: (data: CallerFlashToastEventData) => void) => () => void;
   }
