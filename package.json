@@ -19,7 +19,8 @@
   },
   "dependencies": {
     "electron-log": "^5.0.1",
-    "electron-updater": "^6.3.9"
+    "electron-updater": "^6.3.9",
+    "sip": "^0.0.6"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.1",
