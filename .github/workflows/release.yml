@@ -368,7 +368,7 @@ jobs:
         run: |
           # Pull assets from BOTH matrix builds. Each artifact name has
           # the platform suffix baked in. The signed Windows build
-         # carries the updater manifest + signatures (Windows-only)
+          # carries the updater manifest + signatures (Windows-only)
           CHANNEL="${{ needs.route.outputs.channel }}"
           VER="${{ needs.route.outputs.version }}"
 
