@@ -246,6 +246,17 @@ async function initStorageMigration() {
           toastDragPosition: fileData.toastDragPosition ?? null,
           updateInfo: mergedUpdate,
         });
+        // Decrypt SIP password from file storage (module-level decrypt used
+        // persistedUi from localStorage which may not have the encrypted blob).
+        if (fileData.sipPasswordEncrypted && window.callerflash?.safeStorage?.decrypt) {
+          window.callerflash.safeStorage.decrypt(fileData.sipPasswordEncrypted).then((decrypted) => {
+            if (decrypted) {
+              useAppStore.setState((s) => ({
+                sipConfig: { ...s.sipConfig, password: decrypted }
+              }));
+            }
+          });
+        }
         return;
       }
     }
