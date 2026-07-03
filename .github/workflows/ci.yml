@@ -14,7 +14,7 @@ permissions:
 jobs:
   lint-build:
     name: Lint & Build Check
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
 
