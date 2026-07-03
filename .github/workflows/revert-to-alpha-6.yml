@@ -10,11 +10,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.PAT_TOKEN }}
       - run: |
           git config user.name "jaydenrussell"
           git config user.email "jaydenrussell@hotmail.com"
           git checkout -b revert-to-alpha-6
-          git revert --no-commit v0.1.0-alpha.6..HEAD || true
+          git rm -r --quiet .
+          git checkout v0.1.0-alpha.6 -- .
+          git add -A
           git commit -m "revert: roll back to v0.1.0-alpha.6 state" --allow-empty
           git push origin revert-to-alpha-6
           gh pr create \
@@ -23,4 +26,4 @@ jobs:
             --title "Revert to v0.1.0-alpha.6" \
             --body "Rolls back all commits after v0.1.0-alpha.6 (the last known working version)."
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
