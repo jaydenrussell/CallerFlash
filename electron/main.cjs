@@ -788,12 +788,28 @@ const UI_STORAGE_KEY = 'callerflash-ui-settings';
 
 function readPersistedSettings() {
   try {
-    const p = path.join(app.getPath('userData'), 'callerflash-ui-settings.json');
-    // Primary location: userData (survives in-app updates).
-    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8'));
-  } catch { /* ignore */ }
-  // Fallback: localStorage is mirrored to a file by the renderer, but
-  // if we can't read it we just let the renderer handle the check.
+    // Read from secureStorage's settings.json (HMAC-envelope format)
+    const p = path.join(app.getPath('userData'), 'settings.json');
+    if (fs.existsSync(p)) {
+      const raw = fs.readFileSync(p, 'utf8');
+      const parsed = JSON.parse(raw);
+      // Envelope format: { _version, _hmac, _data, _savedAt }
+      if (parsed && parsed._data && typeof parsed._data === 'object') {
+        return parsed._data;
+      }
+      // Legacy flat format
+      return parsed;
+    }
+    // Fallback: try the old filename (migration)
+    const oldP = path.join(app.getPath('userData'), 'callerflash-ui-settings.json');
+    if (fs.existsSync(oldP)) {
+      const raw = fs.readFileSync(oldP, 'utf8');
+      const parsed = JSON.parse(raw);
+      // Migrate: write to new path
+      try { fs.writeFileSync(p, JSON.stringify({ _version: 2, _data: parsed, _savedAt: new Date().toISOString() })); } catch {}
+      return parsed;
+    }
+  } catch { }
   return {};
 }
 
@@ -805,57 +821,86 @@ function shouldAutoCheck(lastCheckedAt, frequency) {
   return ageDays >= intervalDays;
 }
 
+function frequencyMs(frequency) {
+  const days = { daily: 1, weekly: 7, monthly: 30 }[frequency] ?? 1;
+  return days * 86_400_000;
+}
+
+async function runScheduledCheck() {
+  const settings = readPersistedSettings();
+  const lastChecked = settings.lastCheckedAt ? new Date(settings.lastCheckedAt) : null;
+  const frequency = settings.updateCheckFrequency || 'daily';
+  if (!shouldAutoCheck(lastChecked, frequency)) return;
+
+  const channel = settings.updateChannel || 'stable';
+  const autoDownloadEnabled = settings.autoDownload !== false;
+
+  console.log('[updater] scheduled check: channel=' + channel + ' autoDownload=' + autoDownloadEnabled);
+  const result = await updater.checkForUpdates(channel);
+
+  if (result?.version && result.downloadUrl) {
+    console.log('[updater] scheduled: update found:', result.version);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('updater:status', {
+        status: 'update-available',
+        version: result.version,
+        friendlyName: updater.friendlyVersion(result.version),
+        downloadUrl: result.downloadUrl,
+      });
+    }
+
+    if (autoDownloadEnabled) {
+      console.log('[updater] scheduled: auto-downloading update...');
+      await updater.downloadUpdate(channel, result.version, result.downloadUrl);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('updater:status', {
+          status: 'ready',
+          version: result.version,
+        });
+      }
+    }
+  } else {
+    console.log('[updater] scheduled: up to date');
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('updater:status', { status: 'up-to-date' });
+    }
+  }
+}
+
 async function scheduleStartupUpdateCheck() {
-  // Defer until the renderer has mounted and the IPC bridge is live.
   setTimeout(async () => {
     try {
-      const settings = readPersistedSettings();
-      const lastChecked = settings.lastCheckedAt ? new Date(settings.lastCheckedAt) : null;
-      const frequency = settings.updateCheckFrequency || 'daily';
-      if (!shouldAutoCheck(lastChecked, frequency)) return;
-
-      const channel = settings.updateChannel || 'stable';
-      const autoDownloadEnabled = settings.autoDownload !== false; // default true
-
-      // Do the check + auto-download in the main process (no UI)
-      console.log('[updater] startup check: channel=' + channel + ' autoDownload=' + autoDownloadEnabled);
-      const result = await updater.checkForUpdates(channel);
-
-      if (result?.version && result.downloadUrl) {
-        console.log('[updater] startup: update found:', result.version);
-        // Notify renderer about available update
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('updater:status', {
-            status: 'update-available',
-            version: result.version,
-            friendlyName: result.friendlyName,
-            downloadUrl: result.downloadUrl,
-          });
-        }
-
-        // Auto-download in background if enabled
-        if (autoDownloadEnabled) {
-          console.log('[updater] startup: auto-downloading update...');
-          await updater.downloadUpdate(channel, result.version, result.downloadUrl);
-          // Notify renderer that download is complete
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('updater:status', {
-              status: 'ready',
-              version: result.version,
-            });
-          }
-        }
-      } else {
-        console.log('[updater] startup: up to date');
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('updater:status', { status: 'up-to-date' });
-        }
-      }
+      await runScheduledCheck();
     } catch (err) {
       console.error('[updater] startup check failed:', err.message);
     }
-  }, 3000); // 3s delay lets the renderer fully hydrate SIP + store
+  }, 3000);
 }
+
+let periodicCheckTimer = null;
+
+function schedulePeriodicCheck() {
+  if (periodicCheckTimer) {
+    clearInterval(periodicCheckTimer);
+    periodicCheckTimer = null;
+  }
+  const settings = readPersistedSettings();
+  const frequency = settings.updateCheckFrequency || 'daily';
+  if (frequency === 'off') return;
+  const ms = frequencyMs(frequency);
+  console.log('[updater] scheduling periodic check every ' + (ms / 86_400_000) + ' day(s)');
+  periodicCheckTimer = setInterval(async () => {
+    try {
+      await runScheduledCheck();
+    } catch (err) {
+      console.error('[updater] periodic check failed:', err.message);
+    }
+  }, ms);
+}
+
+ipcMain.on('updater:settings-changed', () => {
+  schedulePeriodicCheck();
+});
 
 // ── App lifecycle ──────────────────────────────────────────────────────
 app.whenReady().then(() => {
@@ -871,6 +916,7 @@ app.whenReady().then(() => {
   // regardless of which tab the renderer lands on — the user doesn't
   // need to open the Updates tab to stay current.
   scheduleStartupUpdateCheck();
+  schedulePeriodicCheck();
 
   // If launched with --start-minimized (from the Windows login item),
   // hide the window immediately so the user sees only the tray icon.
