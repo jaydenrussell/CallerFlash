@@ -1,4 +1,4 @@
-# Build Resources
+﻿# Build Resources
 
 Place your app icons here:
 
