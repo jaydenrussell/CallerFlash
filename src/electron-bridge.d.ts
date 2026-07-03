@@ -94,11 +94,15 @@ declare global {
   }
 
   interface CallerFlashUpdaterApi {
-    check: () => Promise<CallerFlashUpdaterStatus>;
-    download: () => Promise<CallerFlashUpdaterStatus>;
-    install: (artifact: CallerFlashUpdateArtifact) => void;
+    check: (channel: UpdateChannel) => Promise<CallerFlashUpdaterStatus>;
+    download: (channel: UpdateChannel, version: string, downloadUrl: string | null) => void;
+    install: (version: string) => void;
     setChannel: (channel: UpdateChannel) => void;
-    onStatus: (callback: (data: CallerFlashUpdaterStatus) => void) => () => void;
+    onStatus: (callback: (data: any) => void) => () => void;
+    onProgress: (callback: (data: { percent: number; received: number; total: number }) => void) => () => void;
+    onBackgroundCheck: (callback: (data: any) => void) => () => void;
+    getDownloadState: () => Promise<any>;
+    notifySettingsChanged: () => void;
   }
 
   interface CallerFlashSipApi {
