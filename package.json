@@ -93,32 +93,6 @@
         "from": "buildResources/app.ico",
         "to": "app.ico"
       }
-    ],
-    "linux": {
-      "target": [
-        {
-          "target": "deb",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "category": "Network",
-      "maintainer": "jaydenrussell <jaydenrussell@hotmail.com>",
-      "vendor": "CallerFlash",
-      "synopsis": "SIP-compliant Windows / Linux client with toast notifications",
-      "description": "CallerFlash is a SIP-compliant desktop client with toast notifications, clipboard auto-copy, and a system-tray background listener. Works with any RFC-compliant SIP provider.",
-      "desktop": {
-        "entry": {
-          "Name": "CallerFlash",
-          "Comment": "SIP client with toast notifications",
-          "Categories": "Network;Telephony;Communication",
-          "Keywords": "SIP;VoIP;telephony;",
-          "StartupWMClass": "callerflash",
-          "desktopName": "callerflash"
-        }
-      },
-      "icon": "buildResources/icon.png"
-    }
+    ]
   }
 }
