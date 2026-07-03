@@ -1,4 +1,4 @@
-name: Build, Sign & Release
+﻿name: Build, Sign & Release
 
 # Reusable engine called by the channel-specific wrapper workflows:
 #   - .github/workflows/release-nightly.yml
@@ -42,7 +42,7 @@ jobs:
   # ── Route / version resolution ─────────────────────────────────────
   route:
     name: Determine version
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     outputs:
       channel: ${{ steps.decide.outputs.channel }}
       version: ${{ steps.decide.outputs.version }}
@@ -103,7 +103,7 @@ jobs:
   verify-secrets:
     name: Verify signing secrets are configured
     needs: route
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - name: Check required signing secrets
         shell: bash
@@ -234,7 +234,7 @@ jobs:
   sign-checksums:
     name: Sign SHA256SUMS (Ed25519)
     needs: [route, build]
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
         with:
@@ -349,7 +349,7 @@ jobs:
       needs.route.result == 'success' &&
       needs.build.result == 'success' &&
       needs.sign-checksums.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     permissions:
       contents: write
     steps:
