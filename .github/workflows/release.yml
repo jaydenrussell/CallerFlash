@@ -1,6 +1,7 @@
 name: Build & Release
 
 # Reusable Windows build + GitHub Release workflow.
+# Callers supply channel, tag, artifact name, and explicit prerelease flag.
 
 on:
   workflow_call:
@@ -38,11 +39,11 @@ jobs:
     outputs:
       tag: ${{ inputs.tag_name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
 
@@ -64,7 +65,10 @@ jobs:
           CSC_KEY_PASSWORD: ''
           WIN_CSC_LINK: ''
           WIN_CSC_KEY_PASSWORD: ''
-        run: npx electron-builder --win --x64 -c.version=$($env:APP_VERSION -replace '^v','') --publish never
+        run: |
+          $version = $env:APP_VERSION -replace '^v',''
+          "{ `"version`": `"$version`" }" | Set-Content temp-builder.json
+          npx electron-builder --win --x64 --config temp-builder.json --publish never
 
       - uses: actions/upload-artifact@v5
         with:
@@ -78,16 +82,14 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-latest
-    if: always() && needs.build.result == 'success'
     permissions:
       contents: write
-
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
 
