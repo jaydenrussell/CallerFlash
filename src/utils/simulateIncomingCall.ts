@@ -232,6 +232,6 @@ export function simulateIncomingCall(source: 'dashboard' | 'toast-settings' | 'b
   addDiagnosticLog({
     level: 'info',
     category: 'TOAST',
-    message: `Toast displayed for ${caller.number} (${store.toastConfig.style} style)`,
+    message: `Toast displayed for ${caller.number} (${store.toastConfig.style === 'custom' ? 'Modern' : 'Native Windows'} style)`,
   });
 }
