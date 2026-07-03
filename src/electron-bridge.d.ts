@@ -37,7 +37,8 @@ declare global {
 
   interface CallerFlashNotifyApi {
     /** Show a native OS notification. No-op in web demo. */
-    show: (title: string, body: string) => void;
+    show(title: string, body: string): void;
+    show(data: { title: string; body: string; urgency?: 'critical' | 'normal' | 'low'; timeoutType?: 'default' | 'never' }): void;
   }
 
   interface CallerFlashToastEventData {
