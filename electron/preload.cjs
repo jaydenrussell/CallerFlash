@@ -67,6 +67,8 @@ contextBridge.exposeInMainWorld('callerflash', {
     hide: () => ipcRenderer.send('toast:hide'),
     setPosition: (x, y) => ipcRenderer.send('toast:set-position', x, y),
     getPosition: () => ipcRenderer.invoke('toast:get-position'),
+    /** Claim any call data that was sent before the window finished loading. */
+    getInitial: () => ipcRenderer.invoke('toast:get-initial'),
     onShow: (callback) => {
       const handler = (_event, data) => callback(data);
       ipcRenderer.on('toast:show:event', handler);
