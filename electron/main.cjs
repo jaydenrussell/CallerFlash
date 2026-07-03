@@ -542,15 +542,12 @@ function createToastWindow(data) {
   // Make visible on ALL workspaces/virtual desktops including full-screen apps
   toastWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
-  // Once the page is loaded, send the call data and show the window
+  // Once the page is loaded, show the window. The React ToastWindow
+  // component claims pending data via the toast:get-initial IPC handler
+  // on mount (which happens after did-finish-load), avoiding the race
+  // where toast:show:event would be sent before the renderer subscribes.
   toastWindow.webContents.on('did-finish-load', () => {
-    log('[toast] did-finish-load fired, sending toast:show:event');
-    if (pendingToastData) {
-      try {
-        toastWindow.webContents.send('toast:show:event', pendingToastData);
-        pendingToastData = null;
-      } catch { /* ignore */ }
-    }
+    log('[toast] did-finish-load fired');
     if (toastWindow && !toastWindow.isDestroyed()) {
       toastWindow.show();
       toastWindow.moveTop();
