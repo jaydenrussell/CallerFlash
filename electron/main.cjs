@@ -471,28 +471,46 @@ function saveToastState() {
   }
 }
 
+// Return the best display for the toast window:
+//   • If the main window exists and is visible, use the display it's on.
+//   • Otherwise, use the primary display.
+function getToastDisplay() {
+  const { screen } = require('electron');
+  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
+    const bounds = mainWindow.getBounds();
+    return screen.getDisplayMatching({ x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 });
+  }
+  return screen.getPrimaryDisplay();
+}
+
 function createToastWindow(data) {
   const toastLog = (msg) => sendToastDiagnostic('info', 'Toast: ' + msg);
   const toastWarn = (msg) => sendToastDiagnostic('warning', 'Toast: ' + msg);
   toastLog('createToastWindow called, exists=' + !!toastWindow + ' data=' + !!data);
 
-  // If a toast window already exists, just send the new data to it.
+  // ── Reusing an existing window ──────────────────────────────────────
   if (toastWindow && !toastWindow.isDestroyed()) {
     toastPendingData = data || {};
     toastLog('reusing existing window, sending toast:show:event');
     toastWindow.webContents.send('toast:show:event', toastPendingData);
     toastWindow.show();
     toastWindow.moveTop();
-    // Ensure the window is on-screen — saveToastState may have persisted
-    // an off-screen position from a disconnected secondary monitor.
+    // Check whether the window is inside any display's work area.
     const [wx, wy] = toastWindow.getPosition();
+    const [ww, wh] = toastWindow.getSize();
     const { screen } = require('electron');
-    const { width: sw, height: sh } = screen.getPrimaryDisplay().workArea;
-    const margin = 100;
-    const onScreen = wx >= -(380 - margin) && wx < sw - margin && wy >= -(150 - margin) && wy < sh - margin;
-    if (!onScreen) {
-      const newX = sw - 380 - 16;
-      const newY = 16;
+    const displays = screen.getAllDisplays();
+    const onAnyScreen = displays.some((d) => {
+      const wa = d.workArea;
+      // Allow up to 100px past each edge (partially off-screen is OK).
+      return wx + ww > wa.x - 100 && wx < wa.x + wa.width + 100 &&
+             wy + wh > wa.y - 100 && wy < wa.y + wa.height + 100;
+    });
+    if (!onAnyScreen) {
+      const disp = getToastDisplay();
+      const wa = disp.workArea;
+      const newX = wa.x + wa.width - ww - 16;
+      const newY = wa.y + 16;
       toastLog('repositioning off-screen window from ' + wx + ',' + wy + ' to ' + newX + ',' + newY);
       toastWindow.setPosition(newX, newY);
       saveToastState();
@@ -500,33 +518,39 @@ function createToastWindow(data) {
     return toastWindow;
   }
 
+  // ── Creating a new window ───────────────────────────────────────────
   toastPendingData = data || {};
   toastLog('stored toastPendingData keys: ' + Object.keys(toastPendingData).join(','));
 
-  const { screen } = require('electron');
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { width: screenW, height: screenH } = primaryDisplay.workArea;
+  const disp = getToastDisplay();
+  const wa = disp.workArea;
+  toastLog('display: ' + (disp.id || 'primary') + ' workArea: ' + wa.x + ',' + wa.y + ' ' + wa.width + 'x' + wa.height);
 
-  // Validate saved state — reject positions outside the visible screen area
+  // Validate saved state — reject positions outside any display's work area
   // or corrupt sizes. This prevents a toast window from being "lost" after
   // e.g. disconnecting a secondary monitor that the window was moved to.
   const savedState = loadToastState();
   let useSaved = false;
   if (savedState) {
-    const margin = 200;
-    const validX = Number.isFinite(savedState.x) && savedState.x >= -(savedState.width - margin) && savedState.x < screenW - margin;
-    const validY = Number.isFinite(savedState.y) && savedState.y >= -(savedState.height - margin) && savedState.y < screenH - margin;
+    const { screen } = require('electron');
+    const onAnyScreen = screen.getAllDisplays().some((d) => {
+      const a = d.workArea;
+      const margin = 200;
+      const validX = Number.isFinite(savedState.x) && savedState.x >= a.x - margin && savedState.x < a.x + a.width - margin;
+      const validY = Number.isFinite(savedState.y) && savedState.y >= a.y - margin && savedState.y < a.y + a.height - margin;
+      return validX && validY;
+    });
     const validW = Number.isFinite(savedState.width) && savedState.width >= 200;
     const validH = Number.isFinite(savedState.height) && savedState.height >= 100;
-    if (validX && validY && validW && validH) {
+    if (onAnyScreen && validW && validH) {
       useSaved = true;
     } else {
-      toastLog('saved position rejected (off-screen): ' + savedState.x + ',' + savedState.y + ' ' + savedState.width + 'x' + savedState.height + ' on screen ' + screenW + 'x' + screenH);
+      toastLog('saved position rejected (off-screen): ' + savedState.x + ',' + savedState.y + ' ' + savedState.width + 'x' + savedState.height);
     }
   }
 
   const state = useSaved ? { ...TOAST_DEFAULT, ...savedState } : { ...TOAST_DEFAULT };
-  toastLog('screen: ' + screenW + 'x' + screenH + ' toast: ' + state.width + 'x' + state.height);
+  toastLog('toast size: ' + state.width + 'x' + state.height);
 
   const opts = {
     width: state.width,
@@ -551,15 +575,15 @@ function createToastWindow(data) {
     },
   };
 
-  // Position at top-right corner of the primary display (or saved position).
+  // Position at top-right of the target display's work area (or saved position).
   if (useSaved && Number.isFinite(state.x) && Number.isFinite(state.y)) {
     opts.x = state.x;
     opts.y = state.y;
     toastLog('using saved position: ' + state.x + ',' + state.y);
   } else {
-    opts.x = screenW - opts.width - 16;
-    opts.y = 16;
-    toastLog('calculated position: (' + screenW + '-' + opts.width + '-16, 16) = (' + opts.x + ', ' + opts.y + ')');
+    opts.x = wa.x + wa.width - opts.width - 16;
+    opts.y = wa.y + 16;
+    toastLog('calculated position: workArea.x+' + wa.width + '-' + opts.width + '-16, workArea.y+16 = (' + opts.x + ', ' + opts.y + ')');
   }
 
   toastWindow = new BrowserWindow(opts);
@@ -587,7 +611,10 @@ function createToastWindow(data) {
     const pos = toastWindow.getPosition();
     const size = toastWindow.getSize();
     const vis = toastWindow.isVisible();
-    sendToastDiagnostic('info', 'Toast: window state', 'visible=' + vis + ' pos=' + pos.join(',') + ' size=' + size.join(','));
+    const { screen } = require('electron');
+    const currentDisplay = screen.getDisplayMatching({ x: pos[0] + size[0] / 2, y: pos[1] + size[1] / 2 });
+    const wa = currentDisplay.workArea;
+    sendToastDiagnostic('info', 'Toast: window state', 'visible=' + vis + ' pos=' + pos.join(',') + ' size=' + size.join(',') + ' display=' + wa.x + ',' + wa.y + ' ' + wa.width + 'x' + wa.height);
   };
   setTimeout(logWindowState, 50);
 
