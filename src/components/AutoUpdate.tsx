@@ -131,9 +131,18 @@ function matchesChannel(
   release: GithubRelease,
   channel: 'stable' | 'beta' | 'alpha'
 ): boolean {
-  if (channel === 'stable') return !release.prerelease;
   const tag = release.tag_name;
+  if (channel === 'stable') return !/-beta|alpha/i.test(tag);
   if (channel === 'beta') return /-beta(\.|$)/.test(tag);
+  if (channel === 'alpha') return /-alpha(\.|$)/i.test(tag);
+  return false;
+}
+
+/** Check if a raw version string belongs to the given channel. */
+function versionMatchesChannel(version: string, channel: 'stable' | 'beta' | 'alpha'): boolean {
+  const tag = version.replace(/^v/, '');
+  if (channel === 'stable') return !/-beta|alpha/i.test(tag);
+  if (channel === 'beta') return /-beta(\.|$)/i.test(tag);
   if (channel === 'alpha') return /-alpha(\.|$)/i.test(tag);
   return false;
 }
@@ -199,7 +208,14 @@ export function AutoUpdate() {
   const [downloadedBlobUrl, setDownloadedBlobUrl] = useState<string | null>(null);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const pendingInstallRef = useRef(false);
+  const channelRef = useRef(updateInfo.updateChannel);
+  const checkIdRef = useRef(0);
 
+  // Sync channel ref so the onStatus listener (registered once on mount)
+  // always reads the current channel.
+  useEffect(() => {
+    channelRef.current = updateInfo.updateChannel;
+  }, [updateInfo.updateChannel]);
 
   // The displayed list — strictly filtered by the active channel,
   // sorted by version descending (highest first).
@@ -258,6 +274,11 @@ export function AutoUpdate() {
         setPhase('downloading');
         setUpdateInfo({ isDownloading: true });
       } else if (status.status === 'ready') {
+        if (status.version && !versionMatchesChannel(status.version, channelRef.current)) {
+          setPhase('idle');
+          setUpdateInfo({ isDownloading: false, isInstalling: false });
+          return;
+        }
         setPhase('idle');
         setUpdateInfo({ isDownloading: false, isInstalling: false, updateAvailable: true });
         if (pendingInstallRef.current) {
@@ -269,7 +290,7 @@ export function AutoUpdate() {
           }
         }
       } else if (status.status === 'update-available') {
-        // Main process found an update during startup check
+        if (status.version && !versionMatchesChannel(status.version, channelRef.current)) return;
         setUpdateInfo({
           latestVersion: status.version,
           updateAvailable: true,
@@ -308,12 +329,14 @@ export function AutoUpdate() {
     });
   }, []);
 
-  // Query download state on mount — if main process already downloaded
-  // an update in the background, we need to know about it.
+  // Query download state — if main process already downloaded an update
+  // in the background, we need to know about it. Re-check when channel
+  // changes so stale downloads from a different channel don't leak through.
   useEffect(() => {
     if (!window.callerflash?.updater?.getDownloadState) return;
     window.callerflash.updater.getDownloadState().then((state: any) => {
       if (state?.status === 'ready' && state?.version) {
+        if (!versionMatchesChannel(state.version, updateInfo.updateChannel)) return;
         setUpdateInfo({
           latestVersion: state.version,
           updateAvailable: true,
@@ -324,7 +347,7 @@ export function AutoUpdate() {
         setUpdateInfo({ isDownloading: true });
       }
     }).catch(() => {});
-  }, []);
+  }, [updateInfo.updateChannel]);
 
   // Auto-check on tab mount — ALWAYS run on first load regardless of
   // last-checked time, so the user sees updates immediately when they
@@ -350,6 +373,7 @@ export function AutoUpdate() {
    * The user gets an "Update" button to download, then "Install" when ready.
    */
   const handleCheckAndDownload = async () => {
+    const id = ++checkIdRef.current;
     setPhase('checking');
     setVerification(null);
     setVerifiedArtifact(null);
@@ -363,6 +387,7 @@ export function AutoUpdate() {
     // Use Electron main process to check
     if (window.callerflash?.updater?.check) {
       const result = await window.callerflash.updater.check(updateInfo.updateChannel);
+      if (id !== checkIdRef.current) return; // Stale response — channel changed
       if (result?.upToDate) {
         // Clear any stale update state — we are on the latest version
         setOutcome({ kind: 'no-update', message: `You're running the latest version (${formatVersion(updateInfo.currentVersion)}).` });
@@ -394,6 +419,7 @@ export function AutoUpdate() {
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
+      if (id !== checkIdRef.current) return;
       const latest = data.tag_name.replace(/^v/, '');
       if (latest && latest !== updateInfo.currentVersion) {
         setUpdateInfo({ latestVersion: latest, updateAvailable: true, releasePageUrl: data.html_url });
@@ -402,6 +428,7 @@ export function AutoUpdate() {
         setUpdateInfo({ updateAvailable: false, latestVersion: '' });
       }
     } catch {
+      if (id !== checkIdRef.current) return;
       setOutcome({ kind: 'verification-failed', message: 'Could not check for updates.' });
       setUpdateInfo({ updateAvailable: false, latestVersion: '' });
     }
