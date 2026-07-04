@@ -20,30 +20,29 @@ html,body{width:100%;overflow:hidden;background:transparent;font-family:'Segoe U
 .accent{position:absolute;top:0;left:0;width:5px;height:100%;background:#60cdff;box-shadow:0 0 12px #60cdff;pointer-events:none}
 .titlebar{
   display:flex;align-items:center;justify-content:space-between;
-  padding:12px 16px 0 20px;min-height:36px;
-  -webkit-app-region:drag;
+  padding:12px 8px 0 20px;min-height:36px;
+  cursor:grab;user-select:none;
 }
+.titlebar:active{cursor:grabbing}
 .titlebar-left{display:flex;align-items:center;gap:8px;min-width:0;flex:1}
-.title{font-size:13px;font-weight:600;color:#60cdff;text-transform:uppercase;letter-spacing:1px;white-space:nowrap}
-.time{font-size:11px;color:rgba(255,255,255,0.4);white-space:nowrap;margin-left:8px}
+.title{font-size:13px;font-weight:600;color:#60cdff;text-transform:uppercase;letter-spacing:1px;white-space:nowrap;pointer-events:none}
+.time{font-size:11px;color:rgba(255,255,255,0.4);white-space:nowrap;margin-left:8px;pointer-events:none}
 .close-btn{
-  -webkit-app-region:no-drag;
-  width:24px;height:24px;border-radius:6px;
+  width:28px;height:28px;border-radius:6px;
   display:grid;place-items:center;
   background:rgba(255,255,255,0.08);
   border:none;cursor:pointer;flex-shrink:0;
-  transition:background .15s;margin-left:8px;
+  transition:background .15s;
 }
 .close-btn:hover{background:rgba(255,68,68,0.3)}
-.close-btn svg{width:14px;height:14px;stroke:rgba(255,255,255,0.6);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.close-btn svg{width:14px;height:14px;stroke:rgba(255,255,255,0.6);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
 .close-btn:hover svg{stroke:#ff6b6b}
-.body{padding:10px 20px 18px 20px;display:flex;gap:14px;-webkit-app-region:no-drag}
+.body{padding:10px 20px 18px 20px;display:flex;gap:14px}
 .icon{
   width:48px;height:48px;border-radius:50%;
   background:rgba(96,205,255,0.2);
   display:grid;place-items:center;
-  flex-shrink:0;position:relative;margin-top:2px;
-  -webkit-app-region:no-drag
+  flex-shrink:0;position:relative;margin-top:2px
 }
 .ping{
   position:absolute;top:-2px;right:-2px;
@@ -51,7 +50,7 @@ html,body{width:100%;overflow:hidden;background:transparent;font-family:'Segoe U
   background:#6ccb5f;
   animation:pulse 1.2s ease-in-out infinite
 }
-.info{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:2px;-webkit-app-region:no-drag}
+.info{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:2px}
 .number{font-size:22px;font-weight:700;color:#fff;letter-spacing:.5px;word-break:break-all}
 .name{font-size:14px;color:rgba(255,255,255,0.7);margin-top:2px}
 .progress{position:absolute;bottom:0;left:0;width:100%;height:4px;background:rgba(96,205,255,0.1);pointer-events:none}
@@ -61,7 +60,7 @@ html,body{width:100%;overflow:hidden;background:transparent;font-family:'Segoe U
 <body>
 <div class="toast" id="toast">
   <div class="accent"></div>
-  <div class="titlebar">
+  <div class="titlebar" id="titlebar">
     <div class="titlebar-left">
       <span class="title" id="title">Incoming Call</span>
       <span class="time" id="time"></span>
@@ -85,6 +84,7 @@ html,body{width:100%;overflow:hidden;background:transparent;font-family:'Segoe U
 <script>
 (function(){
   var toastEl = document.getElementById('toast');
+  var titlebar = document.getElementById('titlebar');
   var numberEl = document.getElementById('number');
   var nameEl = document.getElementById('name');
   var timeEl = document.getElementById('time');
@@ -92,19 +92,59 @@ html,body{width:100%;overflow:hidden;background:transparent;font-family:'Segoe U
   var closeBtn = document.getElementById('closeBtn');
   var closed = false;
 
-  // Close button
+  // ── Close button ────────────────────────────────────────────────────
   closeBtn.addEventListener('click', function(e) {
     e.stopPropagation();
-    closeToast();
+    if (!closed) { closed = true; window.close(); }
   });
 
-  function closeToast() {
-    if (!closed) {
-      closed = true;
-      window.close();
-    }
-  }
+  // ── Custom window drag (titlebar only) ──────────────────────────────
+  // -webkit-app-region does not work with focusable:false, so we
+  // implement drag via mousedown/mousemove/mouseup using IPC.
+  var isDragging = false;
+  var dragStartX = 0, dragStartY = 0;
+  var winX = null, winY = null;
+  var posPromise = null;
 
+  titlebar.addEventListener('mousedown', function(e) {
+    // Don't drag if the target is the close button
+    if (e.target.closest('.close-btn')) return;
+    isDragging = true;
+    dragStartX = e.screenX;
+    dragStartY = e.screenY;
+    // Fetch current window position (async). Until it resolves,
+    // mousemove events will be skipped.
+    posPromise = null;
+    try {
+      posPromise = window.callerflash.toast.getPosition();
+      posPromise.then(function(pos) {
+        if (pos && pos.length === 2) {
+          winX = pos[0];
+          winY = pos[1];
+        }
+      }).catch(function() {});
+    } catch(e) {}
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', function(e) {
+    if (!isDragging || winX == null) return;
+    var dx = Math.round(e.screenX - dragStartX);
+    var dy = Math.round(e.screenY - dragStartY);
+    try {
+      window.callerflash.toast.setPosition(winX + dx, winY + dy);
+    } catch(e) {}
+  });
+
+  document.addEventListener('mouseup', function() {
+    if (isDragging) {
+      isDragging = false;
+      // Position is saved by the main process's 'move' event handler
+      // calling saveToastState().
+    }
+  });
+
+  // ── Apply incoming data ─────────────────────────────────────────────
   function applyData(data) {
     if (!data) return;
     var c = data.config || {};
@@ -119,7 +159,14 @@ html,body{width:100%;overflow:hidden;background:transparent;font-family:'Segoe U
     var bg = c.backgroundColor || '#1a1a2e';
     var text = c.textColor || '#ffffff';
 
-    if (bg) toastEl.style.background = bg;
+    // Background with opacity: convert hex to RGBA so the background
+    // is semi-transparent (showing desktop behind) but text stays opaque.
+    if (c.opacity != null && c.opacity < 100) {
+      var bgRgb = hexToRgb(bg);
+      toastEl.style.background = 'rgba(' + bgRgb + ',' + (Math.max(30, c.opacity) / 100) + ')';
+    } else if (bg) {
+      toastEl.style.background = bg;
+    }
     if (accent) {
       document.querySelector('.accent').style.background = accent;
       document.querySelector('.accent').style.boxShadow = '0 0 12px ' + accent;
@@ -204,7 +251,7 @@ html,body{width:100%;overflow:hidden;background:transparent;font-family:'Segoe U
     }, durationMs + 500);
   }
 
-  console.log('[toast.html] script executing, window.callerflash.toast =', typeof window.callerflash?.toast?.getInitial);
+  console.log('[toast.html] script executing');
 
   try {
     window.callerflash.toast.getInitial().then(function(data) {
