@@ -23,7 +23,6 @@ const http = require('http');
 const { spawn } = require('child_process');
 const sipClient = require('./sipClient.cjs');
 const updater = require('./updater.cjs');
-const { autoUpdater } = require('electron-updater');
 
 // Initialize secure file-based storage (registers IPC handlers)
 require('./secureStorage.cjs');
@@ -143,11 +142,6 @@ function createWindow() {
 
   // Load the single-file output from Vite
   mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
-
-  // Register updater IPC now that we have a real window to report progress through.
-  initAutoUpdaterIPC(mainWindow);
-  
-  autoUpdater.autoDownload = false;
 
   // Open external links in the default browser instead of inside the app.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -440,11 +434,11 @@ ipcMain.on('window:show', () => showWindow());
 // window so toasts still appear when the main app is hidden to the
 // tray.
 //
-// Design: data is passed via URL hash to a standalone HTML file.
-// This avoids IPC entirely — no nodeIntegration, no contextBridge,
-// no race conditions with renderer readiness. The HTML file reads
-// its own URL hash and renders immediately.
+// Design: loads the same dist/index.html with ?toast=1 query param.
+// The React entry point detects this and renders ToastWindow instead
+// of the main app. Data is delivered via IPC (getInitial / onShow).
 let toastWindow = null;
+let toastPendingData = null;
 
 const TOAST_DEFAULT = { x: null, y: null, width: 380, height: 150 };
 
@@ -477,36 +471,18 @@ function saveToastState() {
   }
 }
 
-/**
- * Build the toast URL with data encoded in the hash fragment.
- * The toast.html file reads window.location.hash to get its data.
- */
-function buildToastUrl(data) {
-  const c = data.config || {};
-  const params = new URLSearchParams();
-  if (data.callerNumber) params.set('callerNumber', data.callerNumber);
-  if (data.callerName) params.set('callerName', data.callerName);
-  if (data.timestamp) params.set('timestamp', data.timestamp);
-  if (c.duration) params.set('duration', String(c.duration));
-  if (c.backgroundColor) params.set('bgColor', c.backgroundColor);
-  if (c.accentColor) params.set('accentColor', c.accentColor);
-  if (c.textColor) params.set('textColor', c.textColor);
-  if (c.borderRadius != null) params.set('borderRadius', String(c.borderRadius));
-  if (c.opacity != null) params.set('opacity', String(c.opacity));
-
-  const htmlPath = path.join(__dirname, 'toast.html');
-  const hash = '#' + params.toString();
-  // Use file:// URL with hash — the HTML file reads the hash on load
-  return 'file:///' + htmlPath.replace(/\\/g, '/') + hash;
-}
-
 function createToastWindow(data) {
-  // Always create a fresh window for each toast so the URL (with new data) loads cleanly.
-  // Destroy any existing toast window first.
+  // If a toast window already exists, just send the new data to it.
   if (toastWindow && !toastWindow.isDestroyed()) {
-    try { toastWindow.destroy(); } catch { /* noop */ }
-    toastWindow = null;
+    toastPendingData = data || {};
+    toastWindow.webContents.send('toast:show:event', toastPendingData);
+    // Re-focus and bring to front
+    toastWindow.show();
+    toastWindow.moveTop();
+    return toastWindow;
   }
+
+  toastPendingData = data || {};
 
   const state = { ...TOAST_DEFAULT, ...(loadToastState() || {}) };
   const opts = {
@@ -524,11 +500,11 @@ function createToastWindow(data) {
     skipTaskbar: true,
     focusable: false,
     hasShadow: false,
-    // No preload, no nodeIntegration — pure static HTML
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
+      preload: path.join(__dirname, 'preload.cjs'),
     },
   };
 
@@ -546,24 +522,20 @@ function createToastWindow(data) {
 
   toastWindow = new BrowserWindow(opts);
 
-  // Load the standalone HTML file with data in URL hash
-  const url = buildToastUrl(data || {});
-  toastWindow.loadURL(url);
+  // Load the same dist/index.html with ?toast=1 query param.
+  // The React app detects this and renders ToastWindow.
+  const distPath = path.join(__dirname, '../dist/index.html');
+  toastWindow.loadFile(distPath, { query: { toast: '1' } });
 
   toastWindow.setMenuBarVisibility(false);
 
   // Use 'screen-saver' level — the highest always-on-top level in Electron.
-  // This ensures the toast stays above ALL other windows including other
-  // always-on-top windows, task manager, etc.
   toastWindow.setAlwaysOnTop(true, 'screen-saver');
-  // Make visible on ALL workspaces/virtual desktops including full-screen apps
   toastWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
   // Show the window once the content is loaded
   toastWindow.webContents.on('did-finish-load', () => {
     console.log('[toast] did-finish-load fired');
-    // Bring the window to front — critical on Windows where alwaysOnTop
-    // alone may not be enough to make a hidden window visible.
     if (toastWindow && !toastWindow.isDestroyed()) {
       toastWindow.show();
       toastWindow.moveTop();
@@ -585,23 +557,15 @@ function createToastWindow(data) {
     console.log('[toast] LOAD FAILED:', errorCode, errorDescription);
   });
 
+  // Clean up on close
+  toastWindow.on('closed', () => {
+    toastWindow = null;
+    toastPendingData = null;
+  });
+
   // Persist position + size on every move / resize
   toastWindow.on('move', saveToastState);
   toastWindow.on('resize', saveToastState);
-
-  // Auto-hide after the configured duration so each toast behaves like a
-  // real notification instead of persisting forever.
-  const durationSec = (data && data.config && data.config.duration) || 8;
-  const durationMs = Math.max(2000, durationSec * 1000);
-  setTimeout(() => {
-    try {
-      if (toastWindow && !toastWindow.isDestroyed()) {
-        toastWindow.hide();
-        toastWindow.destroy();
-        toastWindow = null;
-      }
-    } catch {}
-  }, durationMs);
 
   return toastWindow;
 }
@@ -615,6 +579,14 @@ ipcMain.on('toast:hide', () => {
   if (toastWindow && !toastWindow.isDestroyed() && toastWindow.isVisible()) {
     toastWindow.hide();
   }
+});
+
+ipcMain.handle('toast:getInitial', () => {
+  // Return the pending data for the toast window that just mounted.
+  // The renderer calls this once on mount to get its initial data.
+  const data = toastPendingData;
+  toastPendingData = null;
+  return data;
 });
 
 ipcMain.on('toast:set-position', (_event, x, y) => {
@@ -640,7 +612,19 @@ ipcMain.on('shell:open-external', (_event, url) => {
 // Used by the renderer when an update is verified + downloaded to let
 // the user know via the OS notification surface, in addition to the
 // tray menu.
-ipcMain.on('notify:show', (_event, title, body) => {
+ipcMain.on('notify:show', (_event, ...args) => {
+  // Support both legacy (title, body) and new ({title,body,urgency,...}) signatures
+  let title, body, urgency, timeoutType;
+  if (args.length === 1 && typeof args[0] === 'object' && args[0] !== null) {
+    const d = args[0];
+    title = d.title;
+    body = d.body;
+    urgency = d.urgency;
+    timeoutType = d.timeoutType;
+  } else {
+    [title, body] = args;
+  }
+
   console.log('[notify] received:', title, body?.substring(0, 50));
   if (!app.isReady()) return;
 
@@ -650,11 +634,17 @@ ipcMain.on('notify:show', (_event, title, body) => {
   // Check if native notifications are supported
   if (Notification?.isSupported?.()) {
     try {
-      const n = new Notification({
+      const opts = {
         title: safeTitle,
         body: safeBody,
         silent: false,
-      });
+      };
+      if (typeof urgency === 'string') opts.urgency = urgency;
+      if (typeof timeoutType === 'string') opts.timeoutType = timeoutType;
+      const icon = loadWindowIcon();
+      if (icon && !icon.isEmpty()) opts.icon = icon;
+
+      const n = new Notification(opts);
       n.show();
       console.log('[notify] native notification shown');
       n.on('click', () => {

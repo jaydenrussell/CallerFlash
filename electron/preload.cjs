@@ -1,4 +1,4 @@
-// CallerFlash — Preload (runs in isolated context, bridges main ↔ renderer)
+﻿// CallerFlash — Preload (runs in isolated context, bridges main ↔ renderer)
 // Only exposes the MINIMUM surface to the renderer via contextBridge.
 
 const { contextBridge, ipcRenderer } = require('electron');
@@ -67,6 +67,9 @@ contextBridge.exposeInMainWorld('callerflash', {
     hide: () => ipcRenderer.send('toast:hide'),
     setPosition: (x, y) => ipcRenderer.send('toast:set-position', x, y),
     getPosition: () => ipcRenderer.invoke('toast:get-position'),
+    // Get the initial call data for this toast window (called once on mount).
+    getInitial: () => ipcRenderer.invoke('toast:getInitial'),
+    // Subscribe to subsequent toast calls (for window reuse).
     onShow: (callback) => {
       const handler = (_event, data) => callback(data);
       ipcRenderer.on('toast:show:event', handler);
@@ -74,11 +77,13 @@ contextBridge.exposeInMainWorld('callerflash', {
     },
   },
 
-  // ── Auto-updater (electron-updater adapter) ─────────────────────────
+  // ── Auto-updater (custom) ────────────────────────────────────────
   updater: {
     check: (channel) => ipcRenderer.invoke('updater:check', channel),
-    download: (channel) => ipcRenderer.send('updater:download', { channel }),
-    install: () => ipcRenderer.send('updater:install'),
+    download: (channel, version, downloadUrl) => ipcRenderer.send('updater:download', { channel, version, downloadUrl }),
+    install: (version) => ipcRenderer.send('updater:install', { version }),
+    show: () => ipcRenderer.send('updater:show'),
+    setChannel: (channel) => ipcRenderer.send('updater:set-channel', channel),
     getDownloadState: () => ipcRenderer.invoke('updater:getDownloadState'),
     onStatus: (callback) => {
       const handler = (_event, data) => callback(data);
