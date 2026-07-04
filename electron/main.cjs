@@ -490,13 +490,18 @@ function createToastWindow(data) {
   toastLog('stored toastPendingData keys: ' + Object.keys(toastPendingData).join(','));
 
   const state = { ...TOAST_DEFAULT, ...(loadToastState() || {}) };
+  const { screen } = require('electron');
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenW, height: screenH } = primaryDisplay.workArea;
+  toastLog('screen: ' + screenW + 'x' + screenH + ' toast: ' + state.width + 'x' + state.height);
+
   const opts = {
     width: state.width,
     height: state.height,
-    show: true,
+    show: false,
     frame: false,
-    transparent: true,
-    backgroundColor: '#00000000',
+    transparent: false,
+    backgroundColor: '#1a1a2e',
     resizable: false,
     minimizable: false,
     maximizable: false,
@@ -517,12 +522,11 @@ function createToastWindow(data) {
   if (Number.isFinite(state.x) && Number.isFinite(state.y)) {
     opts.x = state.x;
     opts.y = state.y;
+    toastLog('using saved position: ' + state.x + ',' + state.y);
   } else {
-    const { screen } = require('electron');
-    const primaryDisplay = screen.getPrimaryDisplay();
-    const { width: screenW } = primaryDisplay.workArea;
     opts.x = screenW - opts.width - 16;
     opts.y = 16;
+    toastLog('calculated position: (' + screenW + '-' + opts.width + '-16, 16) = (' + opts.x + ', ' + opts.y + ')');
   }
 
   toastWindow = new BrowserWindow(opts);
@@ -536,13 +540,31 @@ function createToastWindow(data) {
   toastWindow.setAlwaysOnTop(true, 'screen-saver');
   toastWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
-  // Ensure the window is on top once loaded (it's already shown via show: true)
+  // Show after a brief delay to let the renderer paint the initial frame
+  setImmediate(() => {
+    if (toastWindow && !toastWindow.isDestroyed()) {
+      toastWindow.show();
+      toastWindow.moveTop();
+    }
+  });
+
+  // Log window state after creation
+  const logWindowState = () => {
+    if (!toastWindow || toastWindow.isDestroyed()) return;
+    const pos = toastWindow.getPosition();
+    const size = toastWindow.getSize();
+    const vis = toastWindow.isVisible();
+    sendToastDiagnostic('info', 'Toast: window state', 'visible=' + vis + ' pos=' + pos.join(',') + ' size=' + size.join(','));
+  };
+  setTimeout(logWindowState, 50);
+
+  // Ensure the window is on top once loaded
   toastWindow.webContents.on('did-finish-load', () => {
     console.log('[toast] did-finish-load fired');
     sendToastDiagnostic('success', 'Toast: window loaded (did-finish-load)');
     if (toastWindow && !toastWindow.isDestroyed()) {
       toastWindow.moveTop();
-      console.log('[toast] window at', toastWindow.getPosition());
+      logWindowState();
     }
   });
 
@@ -555,6 +577,7 @@ function createToastWindow(data) {
       }
       toastWindow.show();
       toastWindow.moveTop();
+      logWindowState();
     }
   }, 200);
 
