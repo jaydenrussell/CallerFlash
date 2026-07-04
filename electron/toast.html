@@ -14,9 +14,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:transparent;font-fam
   overflow:hidden;
   position:relative;
   animation:slideIn .35s cubic-bezier(.16,1,.3,1) forwards;
-  display:none;
 }
-.toast.visible{display:block}
 @keyframes slideIn{from{transform:translateY(-20px);opacity:0}to{transform:translateY(0);opacity:1}}
 @keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.8);opacity:0}}
 .accent{position:absolute;top:0;left:0;width:5px;height:100%;background:#60cdff;box-shadow:0 0 12px #60cdff}
@@ -137,8 +135,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:transparent;font-fam
     // Clear previous timers
     if (window._toastTimer) clearTimeout(window._toastTimer);
     if (window._toastRaf) cancelAnimationFrame(window._toastRaf);
-
-    toastEl.classList.add('visible');
 
     function updateProgress() {
       if (closed) return;

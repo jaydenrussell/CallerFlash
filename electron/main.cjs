@@ -493,7 +493,7 @@ function createToastWindow(data) {
   const opts = {
     width: state.width,
     height: state.height,
-    show: false,
+    show: true,
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
@@ -536,22 +536,23 @@ function createToastWindow(data) {
   toastWindow.setAlwaysOnTop(true, 'screen-saver');
   toastWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
-  // Show the window once the content is loaded
+  // Ensure the window is on top once loaded (it's already shown via show: true)
   toastWindow.webContents.on('did-finish-load', () => {
     console.log('[toast] did-finish-load fired');
     sendToastDiagnostic('success', 'Toast: window loaded (did-finish-load)');
     if (toastWindow && !toastWindow.isDestroyed()) {
-      toastWindow.show();
       toastWindow.moveTop();
-      console.log('[toast] window shown at', toastWindow.getPosition());
+      console.log('[toast] window at', toastWindow.getPosition());
     }
   });
 
-  // Safety: show after a short timeout even if did-finish-load races
+  // Safety: ensure visible + on top after a short timeout
   setTimeout(() => {
-    if (toastWindow && !toastWindow.isDestroyed() && !toastWindow.isVisible()) {
-      console.log('[toast] safety timeout: forcing show');
-      sendToastDiagnostic('warning', 'Toast: safety timeout forced show');
+    if (toastWindow && !toastWindow.isDestroyed()) {
+      if (!toastWindow.isVisible()) {
+        console.log('[toast] safety timeout: forcing show');
+        sendToastDiagnostic('warning', 'Toast: safety timeout forced show');
+      }
       toastWindow.show();
       toastWindow.moveTop();
     }
