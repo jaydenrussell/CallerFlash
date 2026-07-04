@@ -472,12 +472,14 @@ function saveToastState() {
 }
 
 function createToastWindow(data) {
-  console.log('[toast] createToastWindow called, has data:', !!data, 'window exists:', !!toastWindow);
+  const toastLog = (msg) => sendToastDiagnostic('info', 'Toast: ' + msg);
+  const toastWarn = (msg) => sendToastDiagnostic('warning', 'Toast: ' + msg);
+  toastLog('createToastWindow called, exists=' + !!toastWindow + ' data=' + !!data);
 
   // If a toast window already exists, just send the new data to it.
   if (toastWindow && !toastWindow.isDestroyed()) {
     toastPendingData = data || {};
-    console.log('[toast] reusing existing window, sending toast:show:event');
+    toastLog('reusing existing window, sending toast:show:event');
     toastWindow.webContents.send('toast:show:event', toastPendingData);
     toastWindow.show();
     toastWindow.moveTop();
@@ -485,7 +487,7 @@ function createToastWindow(data) {
   }
 
   toastPendingData = data || {};
-  console.log('[toast] stored toastPendingData keys:', Object.keys(toastPendingData).join(','));
+  toastLog('stored toastPendingData keys: ' + Object.keys(toastPendingData).join(','));
 
   const state = { ...TOAST_DEFAULT, ...(loadToastState() || {}) };
   const opts = {
@@ -537,6 +539,7 @@ function createToastWindow(data) {
   // Show the window once the content is loaded
   toastWindow.webContents.on('did-finish-load', () => {
     console.log('[toast] did-finish-load fired');
+    sendToastDiagnostic('success', 'Toast: window loaded (did-finish-load)');
     if (toastWindow && !toastWindow.isDestroyed()) {
       toastWindow.show();
       toastWindow.moveTop();
@@ -548,6 +551,7 @@ function createToastWindow(data) {
   setTimeout(() => {
     if (toastWindow && !toastWindow.isDestroyed() && !toastWindow.isVisible()) {
       console.log('[toast] safety timeout: forcing show');
+      sendToastDiagnostic('warning', 'Toast: safety timeout forced show');
       toastWindow.show();
       toastWindow.moveTop();
     }
@@ -556,6 +560,7 @@ function createToastWindow(data) {
   // Debug: log if load fails
   toastWindow.webContents.on('did-fail-load', (_e, errorCode, errorDescription) => {
     console.log('[toast] LOAD FAILED:', errorCode, errorDescription);
+    sendToastDiagnostic('error', 'Toast: load failed', errorCode + ' ' + errorDescription);
   });
 
   // Clean up on close
@@ -571,8 +576,15 @@ function createToastWindow(data) {
   return toastWindow;
 }
 
+function sendToastDiagnostic(level, message, details) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('toast:diagnostic', { level, message, details });
+  }
+}
+
 ipcMain.on('toast:show', (_event, data) => {
   console.log('[toast] toast:show received, data:', JSON.stringify(data || {}).substring(0, 100));
+  sendToastDiagnostic('info', 'Toast: show requested', JSON.stringify(data ? { id: data.id, callerNumber: data.callerNumber } : {}));
   createToastWindow(data);
 });
 
@@ -585,7 +597,9 @@ ipcMain.on('toast:hide', () => {
 ipcMain.handle('toast:getInitial', () => {
   const data = toastPendingData;
   toastPendingData = null;
-  console.log('[toast] getInitial returning keys:', data ? Object.keys(data).join(',') : 'null');
+  const keys = data ? Object.keys(data).join(',') : 'null';
+  console.log('[toast] getInitial returning keys:', keys);
+  sendToastDiagnostic('info', 'Toast: getInitial returned', keys);
   return data;
 });
 

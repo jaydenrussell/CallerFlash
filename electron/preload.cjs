@@ -126,6 +126,13 @@ contextBridge.exposeInMainWorld('callerflash', {
     },
   },
 
+  // ── Toast diagnostics (main process logs routed to renderer) ──
+  onToastDiagnostic: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on('toast:diagnostic', handler);
+    return () => ipcRenderer.removeListener('toast:diagnostic', handler);
+  },
+
   // ── Platform info ───────────────────────────────────────────────
   platform: {
     isElectron: true,

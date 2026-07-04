@@ -461,6 +461,19 @@ export default function App() {
     });
   }, [addDiagnosticLog]);
 
+  // Listen for toast diagnostic events from main process and log them.
+  useEffect(() => {
+    if (!window.callerflash?.onToastDiagnostic) return;
+    return window.callerflash.onToastDiagnostic((data: { level: string; message: string; details?: string }) => {
+      addDiagnosticLog({
+        level: data.level as any,
+        category: 'TOAST',
+        message: data.message,
+        details: data.details,
+      });
+    });
+  }, [addDiagnosticLog]);
+
   // Push the current SIP status to main so the tray tooltip + "SIP: …"
   // menu item stay current. Cheap — just a string IPC send.
   useEffect(() => {

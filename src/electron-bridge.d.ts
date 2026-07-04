@@ -127,6 +127,7 @@ declare global {
     updater: CallerFlashUpdaterApi;
     sip: CallerFlashSipApi;
     platform: CallerFlashPlatformInfo;
+    onToastDiagnostic: (callback: (data: { level: string; message: string; details?: string }) => void) => () => void;
   }
 
   interface Window {
