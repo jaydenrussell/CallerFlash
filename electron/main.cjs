@@ -481,7 +481,7 @@ function createToastWindow(data) {
       toastWindow.webContents.send('toast:show:event', data);
       toastWindow.show();
       toastWindow.moveTop();
-      log('[toast] reusing existing window, sent toast:show:event');
+      console.log('[toast] reusing existing window, sent toast:show:event');
       return toastWindow;
     } catch {
       // Failed to send — destroy and recreate
@@ -547,18 +547,18 @@ function createToastWindow(data) {
   // on mount (which happens after did-finish-load), avoiding the race
   // where toast:show:event would be sent before the renderer subscribes.
   toastWindow.webContents.on('did-finish-load', () => {
-    log('[toast] did-finish-load fired');
+    console.log('[toast] did-finish-load fired');
     if (toastWindow && !toastWindow.isDestroyed()) {
       toastWindow.show();
       toastWindow.moveTop();
-      log('[toast] window shown at', toastWindow.getPosition());
+      console.log('[toast] window shown at', toastWindow.getPosition());
     }
   });
 
   // Safety: show after a short timeout even if did-finish-load races
   setTimeout(() => {
     if (toastWindow && !toastWindow.isDestroyed() && !toastWindow.isVisible()) {
-      log('[toast] safety timeout: forcing show');
+      console.log('[toast] safety timeout: forcing show');
       toastWindow.show();
       toastWindow.moveTop();
     }
@@ -566,7 +566,7 @@ function createToastWindow(data) {
 
   // Debug: log if load fails
   toastWindow.webContents.on('did-fail-load', (_e, errorCode, errorDescription) => {
-    log('[toast] LOAD FAILED:', errorCode, errorDescription);
+    console.log('[toast] LOAD FAILED:', errorCode, errorDescription);
   });
 
   // Persist position + size on every move / resize
@@ -577,7 +577,7 @@ function createToastWindow(data) {
 }
 
 ipcMain.on('toast:show', (_event, data) => {
-  log('[toast] toast:show received, data:', JSON.stringify(data || {}).substring(0, 100));
+  console.log('[toast] toast:show received, data:', JSON.stringify(data || {}).substring(0, 100));
   createToastWindow(data);
 });
 
