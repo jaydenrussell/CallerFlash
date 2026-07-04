@@ -189,7 +189,7 @@ function friendlyVersion(version) {
 async function checkForUpdates(channel) {
   if (!app.isPackaged) {
     log('dev mode: skipping update check');
-    return { upToDate: true, version: app.getVersion() };
+    return { upToDate: true };
   }
 
   const currentVersion = app.getVersion();
@@ -199,14 +199,14 @@ async function checkForUpdates(channel) {
     const release = await findLatestRelease(channel);
     if (!release) {
       log('no release found for channel:', channel);
-      return { upToDate: true, version: currentVersion };
+      return { upToDate: true };
     }
 
     log(`found release: ${release.version} (${release.publishedAt})`);
 
     if (!isUpdateAvailable(currentVersion, release.version)) {
       log('up to date');
-      return { upToDate: true, version: currentVersion };
+      return { upToDate: true };
     }
 
     return {
