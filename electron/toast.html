@@ -4,26 +4,28 @@
 <meta charset="UTF-8">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{width:100%;height:100%;overflow:hidden;background:transparent;font-family:'Segoe UI',system-ui,sans-serif}
+html,body{width:100%;overflow:hidden;background:transparent;font-family:'Segoe UI',system-ui,sans-serif}
 .toast{
-  width:100%;height:100%;
+  width:100%;
   background:#1a1a2e;
   border-radius:16px;
   border:2px solid rgba(96,205,255,0.4);
   box-shadow:0 12px 40px rgba(0,0,0,0.8),0 0 60px rgba(96,205,255,0.15);
   overflow:hidden;
   position:relative;
+  cursor:pointer;
   animation:slideIn .35s cubic-bezier(.16,1,.3,1) forwards;
 }
-@keyframes slideIn{from{transform:translateY(-20px);opacity:0}to{transform:translateY(0);opacity:1}}
+@keyframes slideIn{from{transform:translateY(-20px)}to{transform:translateY(0)}}
 @keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.8);opacity:0}}
 .accent{position:absolute;top:0;left:0;width:5px;height:100%;background:#60cdff;box-shadow:0 0 12px #60cdff}
-.body{padding:14px 16px 14px 20px;display:flex;gap:12px;height:100%}
+.body{padding:18px 20px 18px 24px;display:flex;gap:14px}
 .icon{
-  width:44px;height:44px;border-radius:50%;
+  width:48px;height:48px;border-radius:50%;
   background:rgba(96,205,255,0.2);
   display:grid;place-items:center;
-  flex-shrink:0;position:relative
+  flex-shrink:0;position:relative;margin-top:2px;
+  -webkit-app-region:no-drag
 }
 .ping{
   position:absolute;top:-2px;right:-2px;
@@ -31,11 +33,12 @@ html,body{width:100%;height:100%;overflow:hidden;background:transparent;font-fam
   background:#6ccb5f;
   animation:pulse 1.2s ease-in-out infinite
 }
-.info{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center}
-.title{font-size:13px;font-weight:600;color:#60cdff;margin-bottom:4px;text-transform:uppercase;letter-spacing:1px}
-.number{font-size:22px;font-weight:700;color:#fff;letter-spacing:.5px}
-.name{font-size:14px;color:rgba(255,255,255,0.7);margin-top:3px}
-.time{font-size:11px;color:rgba(255,255,255,0.4);margin-top:4px}
+.info{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:2px}
+.top-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;-webkit-app-region:drag}
+.title{font-size:13px;font-weight:600;color:#60cdff;text-transform:uppercase;letter-spacing:1px;-webkit-app-region:no-drag}
+.time{font-size:11px;color:rgba(255,255,255,0.4);white-space:nowrap;margin-left:12px;-webkit-app-region:no-drag}
+.number{font-size:22px;font-weight:700;color:#fff;letter-spacing:.5px;word-break:break-all}
+.name{font-size:14px;color:rgba(255,255,255,0.7);margin-top:2px}
 .progress{position:absolute;bottom:0;left:0;width:100%;height:4px;background:rgba(96,205,255,0.1)}
 .progress-bar{height:100%;width:100%;background:#60cdff;transition:width 100ms linear}
 </style>
@@ -45,14 +48,16 @@ html,body{width:100%;height:100%;overflow:hidden;background:transparent;font-fam
   <div class="accent"></div>
   <div class="body">
     <div class="icon">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#60cdff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#60cdff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
       <div class="ping"></div>
     </div>
     <div class="info">
-      <div class="title" id="title">Incoming Call</div>
+      <div class="top-row">
+        <div class="title" id="title">Incoming Call</div>
+        <div class="time" id="time"></div>
+      </div>
       <div class="number" id="number">Waiting...</div>
       <div class="name" id="name"></div>
-      <div class="time" id="time"></div>
     </div>
   </div>
   <div class="progress"><div class="progress-bar" id="progress"></div></div>
@@ -65,6 +70,23 @@ html,body{width:100%;height:100%;overflow:hidden;background:transparent;font-fam
   var timeEl = document.getElementById('time');
   var progressEl = document.getElementById('progress');
   var closed = false;
+
+  // Click anywhere on the toast to close it
+  toastEl.addEventListener('click', function(e) {
+    if (e.target.closest('.top-row')) return; // allow drag on top-row
+    if (!closed) {
+      closed = true;
+      window.close();
+    }
+  });
+
+  // Close on right-click as well
+  toastEl.addEventListener('contextmenu', function() {
+    if (!closed) {
+      closed = true;
+      window.close();
+    }
+  });
 
   function applyData(data) {
     if (!data) return;
@@ -97,13 +119,19 @@ html,body{width:100%;height:100%;overflow:hidden;background:transparent;font-fam
       timeEl.style.color = 'rgba(' + hexToRgb(text) + ',0.4)';
     }
     if (c.borderRadius != null) toastEl.style.borderRadius = c.borderRadius + 'px';
-    if (c.opacity != null) toastEl.style.opacity = (c.opacity / 100);
+    if (c.opacity != null) {
+      // Apply opacity after slideIn animation completes (350ms)
+      setTimeout(function() {
+        toastEl.style.opacity = (c.opacity / 100);
+      }, 400);
+    }
     if (c.fontFamily) document.body.style.fontFamily = c.fontFamily;
     if (c.fontSize) {
       var fs = parseInt(c.fontSize, 10);
       numberEl.style.fontSize = (fs + 4) + 'px';
       nameEl.style.fontSize = (fs - 2) + 'px';
       timeEl.style.fontSize = (fs - 4) + 'px';
+      document.querySelector('.title').style.fontSize = Math.max(11, fs - 2) + 'px';
     }
     if (c.showCallerName === false) nameEl.style.display = 'none';
     else nameEl.style.display = '';
@@ -118,7 +146,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:transparent;font-fam
         hint = document.createElement('div');
         hint.className = 'auto-copy-hint';
         hint.textContent = 'Number auto-copied to clipboard';
-        hint.style.cssText = 'font-size:10px;color:rgba(255,255,255,0.4);margin-top:2px;';
+        hint.style.cssText = 'font-size:10px;color:rgba(255,255,255,0.4);margin-top:3px;';
         document.querySelector('.info').appendChild(hint);
       }
     } else {
@@ -126,13 +154,23 @@ html,body{width:100%;height:100%;overflow:hidden;background:transparent;font-fam
       if (existing) existing.remove();
     }
 
+    // Resize window to fit content
+    requestAnimationFrame(function() {
+      try {
+        if (window.callerflash && window.callerflash.toast && window.callerflash.toast.resizeContent) {
+          window.callerflash.toast.resizeContent();
+        }
+      } catch(e) {
+        console.log('[toast.html] resize error:', e);
+      }
+    });
+
     // Restart progress + auto-close
     var duration = parseInt(c.duration, 10) || 10;
     var durationMs = duration * 1000;
     var start = Date.now();
     closed = false;
 
-    // Clear previous timers
     if (window._toastTimer) clearTimeout(window._toastTimer);
     if (window._toastRaf) cancelAnimationFrame(window._toastRaf);
 
@@ -158,7 +196,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:transparent;font-fam
 
   console.log('[toast.html] script executing, window.callerflash.toast =', typeof window.callerflash?.toast?.getInitial);
 
-  // Get initial data from main process via preload bridge
   try {
     window.callerflash.toast.getInitial().then(function(data) {
       if (data) {
@@ -174,7 +211,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:transparent;font-fam
     console.log('[toast.html] getInitial threw:', e);
   }
 
-  // Subscribe to subsequent calls (window reuse)
   try {
     window.callerflash.toast.onShow(function(data) {
       if (data) {

@@ -20,5 +20,15 @@ contextBridge.exposeInMainWorld('callerflash', {
       ipcRenderer.on('toast:show:event', handler);
       return () => ipcRenderer.removeListener('toast:show:event', handler);
     },
+    resizeContent: () => {
+      try {
+        const w = document.body.scrollWidth;
+        const h = document.body.scrollHeight;
+        log('resizeContent sending:', w + 'x' + h);
+        ipcRenderer.send('toast:resize-content', w, h);
+      } catch(e) {
+        log('resizeContent error:', e);
+      }
+    },
   },
 });

@@ -75,6 +75,8 @@ declare global {
     getInitial: () => Promise<CallerFlashToastEventData | null>;
     /** Subscribe to incoming toast events (renderer side of the bridge). */
     onShow: (callback: (data: CallerFlashToastEventData) => void) => () => void;
+    /** Auto-resize the toast window to fit rendered content. */
+    resizeContent: () => void;
   }
 
   type UpdateChannel = 'stable' | 'beta' | 'alpha';

@@ -708,6 +708,18 @@ ipcMain.handle('toast:get-position', () => {
   return toastWindow.getPosition();
 });
 
+// Auto-resize the toast window to fit its content after the page renders.
+ipcMain.on('toast:resize-content', (_event, w, h) => {
+  if (!toastWindow || toastWindow.isDestroyed()) return;
+  const padding = 2; // 1px border on each side
+  const newW = Math.max(200, Math.min(800, Math.round(w))) + padding;
+  const newH = Math.max(80, Math.min(600, Math.round(h))) + padding;
+  if (newW !== toastWindow.getSize()[0] || newH !== toastWindow.getSize()[1]) {
+    toastWindow.setSize(newW, newH);
+    sendToastDiagnostic('info', 'Toast: resized to ' + newW + 'x' + newH + ' (content ' + w + 'x' + h + ')');
+  }
+});
+
 // ── IPC: shell link opening (mirror of preload bridge) ─────────────────
 ipcMain.on('shell:open-external', (_event, url) => {
   if (typeof url === 'string' && url.startsWith('https:')) {
