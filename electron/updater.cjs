@@ -92,7 +92,7 @@ async function findLatestRelease(channel) {
   filtered.sort((a, b) => {
     const va = normaliseVersion(a.tag_name);
     const vb = normaliseVersion(b.tag_name);
-    return isUpdateAvailable(vb, va) ? 1 : isUpdateAvailable(va, vb) ? -1 : 0;
+    return isUpdateAvailable(vb, va) ? -1 : isUpdateAvailable(va, vb) ? 1 : 0;
   });
 
   const latest = filtered[0];
