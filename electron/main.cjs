@@ -475,12 +475,18 @@ function saveToastState() {
 //   • If the main window exists and is visible, use the display it's on.
 //   • Otherwise, use the primary display.
 function getToastDisplay() {
-  const { screen } = require('electron');
-  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
-    const bounds = mainWindow.getBounds();
-    return screen.getDisplayMatching({ x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 });
+  try {
+    const { screen } = require('electron');
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
+      const bounds = mainWindow.getBounds();
+      if (Number.isFinite(bounds.x) && Number.isFinite(bounds.y) && Number.isFinite(bounds.width) && Number.isFinite(bounds.height)) {
+        return screen.getDisplayMatching({ x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 });
+      }
+    }
+  } catch (e) {
+    console.error('[toast] getToastDisplay fallback:', e.message);
   }
-  return screen.getPrimaryDisplay();
+  return require('electron').screen.getPrimaryDisplay();
 }
 
 function createToastWindow(data) {
@@ -611,10 +617,14 @@ function createToastWindow(data) {
     const pos = toastWindow.getPosition();
     const size = toastWindow.getSize();
     const vis = toastWindow.isVisible();
-    const { screen } = require('electron');
-    const currentDisplay = screen.getDisplayMatching({ x: pos[0] + size[0] / 2, y: pos[1] + size[1] / 2 });
-    const wa = currentDisplay.workArea;
-    sendToastDiagnostic('info', 'Toast: window state', 'visible=' + vis + ' pos=' + pos.join(',') + ' size=' + size.join(',') + ' display=' + wa.x + ',' + wa.y + ' ' + wa.width + 'x' + wa.height);
+    try {
+      const { screen } = require('electron');
+      const currentDisplay = screen.getDisplayMatching({ x: pos[0] + size[0] / 2, y: pos[1] + size[1] / 2 });
+      const wa = currentDisplay.workArea;
+      sendToastDiagnostic('info', 'Toast: window state', 'visible=' + vis + ' pos=' + pos.join(',') + ' size=' + size.join(',') + ' display=' + wa.x + ',' + wa.y + ' ' + wa.width + 'x' + wa.height);
+    } catch {
+      sendToastDiagnostic('info', 'Toast: window state', 'visible=' + vis + ' pos=' + pos.join(',') + ' size=' + size.join(','));
+    }
   };
   setTimeout(logWindowState, 50);
 
