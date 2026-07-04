@@ -68,15 +68,15 @@ function nextBeta(tags, baseVer) {
 function nextAlpha(tags) {
   const parsed = tags.map(parseTag).filter(Boolean);
   const newStyle = parsed.filter((t) => t.pre === 'alpha');
-  let maxMinor = 0;
+  let maxPatch = 0;
   for (const t of newStyle) {
     const parts = t.base.split('.').map(Number);
-    if (parts.length >= 2 && parts[1] > maxMinor) {
-      maxMinor = parts[1];
+    if (parts.length >= 3 && parts[2] > maxPatch) {
+      maxPatch = parts[2];
     }
   }
   if (newStyle.length > 0) {
-    return `0.1.${maxMinor + 1}-alpha`;
+    return `0.1.${maxPatch + 1}-alpha`;
   }
   return '0.1.1-alpha';
 }
