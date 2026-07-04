@@ -3,7 +3,7 @@ import {
   Download, RefreshCw,
   Shield, GitBranch,
   GitCommit, ChevronDown,
-  Check, X as XIcon, ShieldCheck, AlertCircle
+  Check, X as XIcon, ShieldCheck, AlertTriangle
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import {
@@ -603,10 +603,10 @@ export function AutoUpdate() {
       )}
 
       {outcome?.kind === 'verification-failed' && phase === 'idle' && (
-        <div className="flex items-start gap-3 px-3 py-2.5 rounded-xl bg-win-success/10 border border-win-success/30">
-          <Check className="w-4 h-4 text-win-success flex-shrink-0 mt-0.5" />
+        <div className="flex items-start gap-3 px-3 py-2.5 rounded-xl bg-win-warning/10 border border-win-warning/30">
+          <AlertTriangle className="w-4 h-4 text-win-warning flex-shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-win-success">No updates available</p>
+            <p className="text-sm font-semibold text-win-warning">Update failed</p>
             <p className="text-xs text-win-text-secondary leading-snug mt-0.5">{outcome.message}</p>
           </div>
           <button
@@ -645,7 +645,7 @@ export function AutoUpdate() {
             ) : (
               <button onClick={handleUpdate} disabled={isBusy} className="flex items-center gap-2 px-4 py-2 bg-win-accent hover:bg-win-accent-hover text-black rounded-lg text-sm font-semibold transition-colors disabled:opacity-50">
                 <Download className="w-4 h-4" />
-                {phase === 'downloading' ? 'Downloading…' : 'Update & Install'}
+                {phase === 'downloading' ? 'Downloading…' : 'Update'}
               </button>
             )}
           </div>

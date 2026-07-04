@@ -168,26 +168,15 @@ async function runInstaller() {
     nsisArgs.push('/D=' + installDir);
   }
 
-  // Build PowerShell script that elevates the installer and returns its exit code.
-  // Using -EncodedCommand avoids all argument quoting issues.
-  const esc = (s) => s.replace(/'/g, "''");
-  const psScript = [
-    `$p = Start-Process -FilePath '${esc(installerPath)}'`,
-    `-ArgumentList '${nsisArgs.map(a => esc(a)).join("', '")}'`,
-    `-Verb RunAs -Wait -PassThru;`,
-    `exit $p.ExitCode`,
-  ].join(' ');
-  const encoded = Buffer.from(psScript, 'utf16le').toString('base64');
-
-  console.log('[updater-helper] Elevating installer:', installerPath, nsisArgs.join(' '));
+  console.log('[updater-helper] Running installer:', installerPath, nsisArgs.join(' '));
   sendProgress(10, 'Starting installer...');
 
   return new Promise((resolve, reject) => {
-    const proc = spawn('powershell.exe', [
-      '-NoProfile',
-      '-NonInteractive',
-      '-EncodedCommand', encoded,
-    ], { stdio: 'ignore', windowsHide: true });
+    const proc = spawn(installerPath, nsisArgs, {
+      detached: false,
+      stdio: 'ignore',
+      windowsHide: false,
+    });
 
     proc.on('error', reject);
 
