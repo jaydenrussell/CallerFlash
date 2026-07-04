@@ -9,9 +9,32 @@ const { spawn } = require('child_process');
 let mainWindowRef = null;
 let updaterCanClose = false;
 
-const downloadState = {
-  version: null, path: null, status: 'idle', error: null,
-};
+const downloadStatePath = () => path.join(app.getPath('temp'), 'callerflash-updates', 'download-state.json');
+
+function loadDownloadState() {
+  try {
+    const p = downloadStatePath();
+    if (fs.existsSync(p)) {
+      const data = JSON.parse(fs.readFileSync(p, 'utf8'));
+      if (data && typeof data === 'object' && typeof data.version === 'string' && typeof data.status === 'string') {
+        if (data.status === 'downloading') data.status = 'idle';
+        return data;
+      }
+    }
+  } catch { /* corrupt or missing */ }
+  return { version: null, path: null, status: 'idle', error: null };
+}
+
+let downloadState = loadDownloadState();
+
+function saveDownloadState() {
+  try {
+    const p = downloadStatePath();
+    const dir = path.dirname(p);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(p, JSON.stringify(downloadState), 'utf8');
+  } catch { /* don't crash */ }
+}
 
 const log = (...a) => console.log('[updater]', ...a);
 const logErr = (...a) => console.error('[updater]', ...a);
@@ -44,12 +67,10 @@ function fetchJson(url) {
 }
 
 // ── Find latest release for channel ───────────────────────────────────
-// Returns { version, downloadUrl, publishedAt } or null
 async function findLatestRelease(channel) {
   const releases = await fetchJson('https://api.github.com/repos/jaydenrussell/CallerFlash/releases');
   if (!Array.isArray(releases) || !releases.length) return null;
 
-  // Filter by channel
   let filtered;
   if (channel === 'stable') {
     filtered = releases.filter(r => !r.prerelease && !r.draft && !/beta|alpha/i.test(r.tag_name));
@@ -60,7 +81,6 @@ async function findLatestRelease(channel) {
   }
   if (!filtered.length) return null;
 
-  // Sort by published date descending (newest first)
   filtered.sort((a, b) => new Date(b.published_at || 0) - new Date(a.published_at || 0));
 
   const latest = filtered[0];
@@ -68,7 +88,7 @@ async function findLatestRelease(channel) {
   if (!exe) return null;
 
   return {
-    version: latest.tag_name,           // e.g. "v1.4.3-alpha.1"
+    version: latest.tag_name,
     downloadUrl: exe.browser_download_url,
     publishedAt: latest.published_at,
   };
@@ -79,26 +99,30 @@ function normaliseVersion(v) {
   if (!v) return v;
   return String(v)
     .replace(/^v/, '')
-    // Legacy: strip "0.0.0-nightly." prefix from old CI builds
     .replace(/^0\.0\.0-nightly[.\-]/i, 'nightly-')
-    // Legacy: normalise "nightly.YYYYMMDD.N" dots to dashes
     .replace(/^nightly\.(\d{8})(?:\.(\d+))?$/i, (_, d, n) => `nightly-${d}${n ? `-${n}` : ''}`);
 }
 
 // ── Version comparison ────────────────────────────────────────────────
-// Returns true if remoteVersion is newer than currentVersion
-// Uses standard semver comparison with prerelease support.
-// alpha: 1.4.3-alpha.1 < 1.4.3-alpha.2 (higher alpha = newer)
-// beta: 1.5.0-beta.1 < 1.5.0-beta.2 (higher beta = newer)
-// stable: 1.4.2 < 1.5.0 (standard semver)
 function isUpdateAvailable(currentVersion, remoteVersion) {
   const normRemote = normaliseVersion(remoteVersion);
   const normLocal = normaliseVersion(currentVersion);
 
-  // Exact match = same version = not an update
   if (normRemote === normLocal) return false;
 
-  // Parse semver with optional prerelease
+  const nightlyRe = /^nightly[.\-](\d{8})(?:[.\-](\d+))?$/i;
+  const nightlyR = normRemote.match(nightlyRe);
+  const nightlyL = normLocal.match(nightlyRe);
+  if (nightlyR && nightlyL) {
+    const dateDiff = parseInt(nightlyR[1]) - parseInt(nightlyL[1]);
+    if (dateDiff !== 0) return dateDiff > 0;
+    const incR = parseInt(nightlyR[2] || '0');
+    const incL = parseInt(nightlyL[2] || '0');
+    return incR > incL;
+  }
+  if (nightlyR && !nightlyL) return true;
+  if (!nightlyR && nightlyL) return false;
+
   const parseSemver = (v) => {
     const m = v.match(/^(\d+)\.(\d+)\.(\d+)(?:[-.](\w+)[.](\d+))?$/);
     if (!m) return null;
@@ -109,56 +133,37 @@ function isUpdateAvailable(currentVersion, remoteVersion) {
   const l = parseSemver(normLocal);
 
   if (r && l) {
-    // Compare major.minor.patch
     if (r.major !== l.major) return r.major > l.major;
     if (r.minor !== l.minor) return r.minor > l.minor;
     if (r.patch !== l.patch) return r.patch > l.patch;
-
-    // Same base version: compare prerelease
-    // No prerelease > prerelease (stable > alpha/beta)
-    if (!r.pre && l.pre) return true;   // remote stable, local pre
-    if (r.pre && !l.pre) return false;   // remote pre, local stable
-
-    // Both have prerelease: compare type then number
+    if (!r.pre && l.pre) return true;
+    if (r.pre && !l.pre) return false;
     if (r.pre && l.pre) {
-      if (r.pre !== l.pre) return false; // different pre types don't compare
+      if (r.pre !== l.pre) return false;
       return r.preN > l.preN;
     }
-
-    return false; // equal
+    return false;
   }
 
-  // Fallback: strings differ but can't parse — offer update
-  return true;
+  return normRemote > normLocal;
 }
 
 // ── Friendly version display ──────────────────────────────────────────
-// Returns a human-readable version name for UI display.
-//   0.1.0-alpha.1       → "Alpha 0.1.0 (#1)"
-//   1.5.0-beta.28       → "Beta 1.5.0 (#28)"
-//   1.4.2               → "1.4.2"
 function friendlyVersion(version) {
   const v = normaliseVersion(version);
   if (!v) return version;
 
-  // Alpha: 0.1.0-alpha.N → "0.1.0-alpha.N"
   const alphaMatch = v.match(/^(\d+\.\d+\.\d+)-alpha\.(\d+)$/);
-  if (alphaMatch) {
-    return `Alpha ${alphaMatch[1]} (#${alphaMatch[2]})`;
-  }
+  if (alphaMatch) return `Alpha ${alphaMatch[1]} (#${alphaMatch[2]})`;
 
-  // Beta
   const betaMatch = v.match(/^(.+?)-beta\.(\d+)$/);
-  if (betaMatch) {
-    return `Beta ${betaMatch[1]} (#${betaMatch[2]})`;
-  }
+  if (betaMatch) return `Beta ${betaMatch[1]} (#${betaMatch[2]})`;
 
   return v;
 }
 
 // ── Check for updates ─────────────────────────────────────────────────
 async function checkForUpdates(channel) {
-  // In dev mode, skip entirely — package.json version is meaningless
   if (!app.isPackaged) {
     log('dev mode: skipping update check');
     return { upToDate: true, version: app.getVersion() };
@@ -194,7 +199,7 @@ async function checkForUpdates(channel) {
 
 // ── Download update ───────────────────────────────────────────────────
 async function downloadUpdate(channel, version, downloadUrl) {
-  if (activeDownload) return { status: 'busy' };
+  if (downloadState.status === 'downloading') return { status: 'busy' };
 
   const destPath = exePathFor(version);
   if (fs.existsSync(destPath)) {
@@ -202,17 +207,23 @@ async function downloadUpdate(channel, version, downloadUrl) {
     downloadState.version = version;
     downloadState.path = destPath;
     downloadState.status = 'ready';
+    downloadState.error = null;
+    saveDownloadState();
     return { status: 'ready', path: destPath };
   }
 
   if (!downloadUrl) {
     downloadState.status = 'error';
     downloadState.error = 'No download URL';
+    saveDownloadState();
     return { status: 'error', error: 'No URL' };
   }
 
   log('downloading:', downloadUrl);
   downloadState.status = 'downloading';
+  downloadState.version = version;
+  downloadState.error = null;
+  saveDownloadState();
   sendStatus({ status: 'downloading', version });
 
   try {
@@ -239,7 +250,6 @@ async function downloadUpdate(channel, version, downloadUrl) {
       req.setTimeout(120000, () => { req.destroy(new Error('Download timeout')); });
     });
 
-    // Clean old downloads
     try {
       for (const f of fs.readdirSync(downloadsDir())) {
         if (f.endsWith('.exe') && !f.includes(version)) fs.unlinkSync(path.join(downloadsDir(), f));
@@ -250,12 +260,14 @@ async function downloadUpdate(channel, version, downloadUrl) {
     downloadState.path = destPath;
     downloadState.status = 'ready';
     downloadState.error = null;
+    saveDownloadState();
     log('download complete:', destPath);
     sendStatus({ status: 'ready', version });
     return { status: 'ready', path: destPath };
   } catch (err) {
     downloadState.status = 'error';
     downloadState.error = err.message;
+    saveDownloadState();
     logErr('download failed:', err.message);
     try { fs.unlinkSync(destPath); } catch {}
     sendStatus({ status: 'error', message: err.message });
@@ -273,10 +285,6 @@ function installUpdate(version) {
 
   sendStatus({ status: 'installing', version });
 
-  // Spawn updater helper — separate Electron process that:
-  // 1. Waits for this app to exit
-  // 2. Runs NSIS installer silently
-  // 3. Relaunches the app
   const helperPath = path.join(__dirname, 'updater-helper.cjs');
   const appPath = process.execPath;
   const installDir = path.dirname(appPath);
@@ -297,7 +305,6 @@ function installUpdate(version) {
     return { status: 'error' };
   }
 
-  // Quit after a delay — helper takes over
   setTimeout(() => {
     updaterCanClose = true;
     app.quit();
@@ -338,6 +345,14 @@ function initUpdaterIPC(mainWindow) {
   });
 
   ipcMain.handle('updater:getDownloadState', () => {
+    if (downloadState.version && downloadState.status === 'idle') {
+      const p = exePathFor(downloadState.version);
+      if (fs.existsSync(p)) {
+        downloadState.status = 'ready';
+        downloadState.path = p;
+        saveDownloadState();
+      }
+    }
     return { ...downloadState };
   });
 }
