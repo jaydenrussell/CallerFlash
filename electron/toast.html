@@ -61,109 +61,117 @@ html,body{width:100%;height:100%;overflow:hidden;background:transparent;font-fam
 </div>
 <script>
 (function(){
-  // Parse data from URL hash
-  // Format: toast.html#callerNumber=555&callerName=John&duration=10&style=custom&bgColor=...
-  var hash = window.location.hash.substring(1);
-  var params = {};
-  if (hash) {
-    var pairs = hash.split('&');
-    for (var i = 0; i < pairs.length; i++) {
-      var kv = pairs[i].split('=');
-      if (kv.length === 2) {
-        params[decodeURIComponent(kv[0])] = decodeURIComponent(kv[1].replace(/\+/g, ' '));
-      }
-    }
-  }
-
-  // Apply data to the UI
   var toastEl = document.getElementById('toast');
   var numberEl = document.getElementById('number');
   var nameEl = document.getElementById('name');
   var timeEl = document.getElementById('time');
   var progressEl = document.getElementById('progress');
-
-  if (params.callerNumber) numberEl.textContent = params.callerNumber;
-  if (params.callerName) nameEl.textContent = params.callerName;
-  if (params.timestamp) {
-    try { timeEl.textContent = new Date(params.timestamp).toLocaleTimeString(); } catch(e) {}
-  }
-
-  // Apply custom styling if provided
-  if (params.bgColor) toastEl.style.background = params.bgColor;
-  if (params.accentColor) {
-    document.querySelector('.accent').style.background = params.accentColor;
-    document.querySelector('.accent').style.boxShadow = '0 0 12px ' + params.accentColor;
-    document.querySelector('.icon').style.background = params.accentColor + '20';
-    var svg = document.querySelector('.icon svg');
-    if (svg) svg.setAttribute('stroke', params.accentColor);
-    progressEl.style.background = params.accentColor;
-    document.querySelector('.progress').style.background = params.accentColor + '10';
-    document.getElementById('title').style.color = params.accentColor;
-  }
-  if (params.textColor) {
-    numberEl.style.color = params.textColor;
-    nameEl.style.color = 'rgba(' + hexToRgb(params.textColor) + ',0.7)';
-    timeEl.style.color = 'rgba(' + hexToRgb(params.textColor) + ',0.4)';
-  }
-  if (params.borderRadius) toastEl.style.borderRadius = params.borderRadius + 'px';
-  if (params.opacity) toastEl.style.opacity = (parseInt(params.opacity, 10) / 100);
-
-
-  // Apply fontFamily
-  if (params.fontFamily) document.body.style.fontFamily = params.fontFamily;
-
-  // Apply fontSize
-  if (params.fontSize) {
-    var fs = parseInt(params.fontSize, 10);
-    numberEl.style.fontSize = (fs + 4) + 'px';
-    nameEl.style.fontSize = (fs - 2) + 'px';
-    timeEl.style.fontSize = (fs - 4) + 'px';
-  }
-
-  // Show/hide caller name
-  if (params.showCallerName === '0') nameEl.style.display = 'none';
-
-  // Show/hide timestamp
-  if (params.showTimestamp === '0') timeEl.style.display = 'none';
-
-  // Apply maxWidth
-  if (params.maxWidth) toastEl.style.maxWidth = params.maxWidth + 'px';
-
-  // Auto-copy indicator
-  if (params.autoCopyToClipboard === '1') {
-    var hint = document.createElement('div');
-    hint.textContent = 'Number auto-copied to clipboard';
-    hint.style.cssText = 'font-size:10px;color:rgba(255,255,255,0.4);margin-top:2px;';
-    document.querySelector('.info').appendChild(hint);
-  }
-
-  // Show the toast
-  toastEl.classList.add('visible');
-
-  // Duration and progress bar
-  var duration = parseInt(params.duration, 10) || 10;
-  var durationMs = duration * 1000;
-  var start = Date.now();
   var closed = false;
 
-  function updateProgress() {
-    if (closed) return;
-    var elapsed = Date.now() - start;
-    var remaining = Math.max(0, durationMs - elapsed);
-    progressEl.style.width = (remaining / durationMs * 100) + '%';
-    if (remaining > 0) {
-      requestAnimationFrame(updateProgress);
-    }
-  }
-  requestAnimationFrame(updateProgress);
+  function applyData(data) {
+    if (!data) return;
+    var c = data.config || {};
 
-  // Auto-close after duration
-  setTimeout(function(){
-    if (!closed) {
-      closed = true;
-      window.close();
+    if (data.callerNumber) numberEl.textContent = data.callerNumber;
+    if (data.callerName) nameEl.textContent = data.callerName;
+    if (data.timestamp) {
+      try { timeEl.textContent = new Date(data.timestamp).toLocaleTimeString(); } catch(e) {}
     }
-  }, durationMs + 500);
+
+    var accent = c.accentColor || '#60cdff';
+    var bg = c.backgroundColor || '#1a1a2e';
+    var text = c.textColor || '#ffffff';
+
+    if (bg) toastEl.style.background = bg;
+    if (accent) {
+      document.querySelector('.accent').style.background = accent;
+      document.querySelector('.accent').style.boxShadow = '0 0 12px ' + accent;
+      document.querySelector('.icon').style.background = accent + '20';
+      var svg = document.querySelector('.icon svg');
+      if (svg) svg.setAttribute('stroke', accent);
+      progressEl.style.background = accent;
+      document.querySelector('.progress').style.background = accent + '10';
+      document.getElementById('title').style.color = accent;
+    }
+    if (text) {
+      numberEl.style.color = text;
+      nameEl.style.color = 'rgba(' + hexToRgb(text) + ',0.7)';
+      timeEl.style.color = 'rgba(' + hexToRgb(text) + ',0.4)';
+    }
+    if (c.borderRadius != null) toastEl.style.borderRadius = c.borderRadius + 'px';
+    if (c.opacity != null) toastEl.style.opacity = (c.opacity / 100);
+    if (c.fontFamily) document.body.style.fontFamily = c.fontFamily;
+    if (c.fontSize) {
+      var fs = parseInt(c.fontSize, 10);
+      numberEl.style.fontSize = (fs + 4) + 'px';
+      nameEl.style.fontSize = (fs - 2) + 'px';
+      timeEl.style.fontSize = (fs - 4) + 'px';
+    }
+    if (c.showCallerName === false) nameEl.style.display = 'none';
+    else nameEl.style.display = '';
+    if (c.showTimestamp === false) timeEl.style.display = 'none';
+    else timeEl.style.display = '';
+    if (c.maxWidth) toastEl.style.maxWidth = c.maxWidth + 'px';
+
+    // Auto-copy indicator
+    if (c.autoCopyToClipboard) {
+      var hint = document.querySelector('.auto-copy-hint');
+      if (!hint) {
+        hint = document.createElement('div');
+        hint.className = 'auto-copy-hint';
+        hint.textContent = 'Number auto-copied to clipboard';
+        hint.style.cssText = 'font-size:10px;color:rgba(255,255,255,0.4);margin-top:2px;';
+        document.querySelector('.info').appendChild(hint);
+      }
+    } else {
+      var existing = document.querySelector('.auto-copy-hint');
+      if (existing) existing.remove();
+    }
+
+    // Restart progress + auto-close
+    var duration = parseInt(c.duration, 10) || 10;
+    var durationMs = duration * 1000;
+    var start = Date.now();
+    closed = false;
+
+    // Clear previous timers
+    if (window._toastTimer) clearTimeout(window._toastTimer);
+    if (window._toastRaf) cancelAnimationFrame(window._toastRaf);
+
+    toastEl.classList.add('visible');
+
+    function updateProgress() {
+      if (closed) return;
+      var elapsed = Date.now() - start;
+      var remaining = Math.max(0, durationMs - elapsed);
+      progressEl.style.width = (remaining / durationMs * 100) + '%';
+      if (remaining > 0) {
+        window._toastRaf = requestAnimationFrame(updateProgress);
+      }
+    }
+    window._toastRaf = requestAnimationFrame(updateProgress);
+
+    window._toastTimer = setTimeout(function(){
+      if (!closed) {
+        closed = true;
+        window.close();
+      }
+    }, durationMs + 500);
+  }
+
+  // Get initial data from main process via preload bridge
+  try {
+    window.callerflash.toast.getInitial().then(function(data) {
+      if (data) applyData(data);
+    }).catch(function() {});
+  } catch(e) {}
+
+  // Subscribe to subsequent calls (window reuse)
+  try {
+    window.callerflash.toast.onShow(function(data) {
+      if (data) applyData(data);
+    });
+  } catch(e) {}
 
   function hexToRgb(hex) {
     hex = hex.replace('#', '');

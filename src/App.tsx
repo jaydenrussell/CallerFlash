@@ -9,15 +9,10 @@ import { Diagnostics } from './components/Diagnostics';
 import { AutoUpdate } from './components/AutoUpdate';
 import { About } from './components/About';
 import { ToastContainer } from './components/ToastNotification';
-import { ToastWindow } from './ToastWindow';
 import { useAppStore } from './store/useAppStore';
 import { AppWindow, Minus, PhoneIncoming, Square, Undo2, Wifi, WifiOff, X } from 'lucide-react';
 import { simulateIncomingCall } from './utils/simulateIncomingCall';
 import { formatVersion } from './utils/formatVersion';
-
-// Detect if this window is a toast window (?toast=1 in URL)
-const isToastWindow = typeof window !== 'undefined'
-  && window.location.search.includes('toast=1');
 
 // Threshold below which the sidebar collapses to icons only
 const SIDEBAR_COLLAPSE_BREAKPOINT = 720;
@@ -279,16 +274,7 @@ function MiniStat({
   );
 }
 
-export default function AppRoot() {
-  // If this is a toast window, render only the ToastWindow component.
-  // No store, no sidebar, no titlebar — just the toast notification.
-  if (isToastWindow) {
-    return <ToastWindow />;
-  }
-  return <App />;
-}
-
-function App() {
+export default function App() {
   const { isMinimized, setIsMinimized, addDiagnosticLog, appPreferences, sipConnected, sipRegistered, setActiveTab, sipConfig } = useAppStore();
   const width = useWindowWidth();
   const sidebarCollapsed = width < SIDEBAR_COLLAPSE_BREAKPOINT;

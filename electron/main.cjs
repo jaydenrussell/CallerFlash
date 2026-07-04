@@ -434,9 +434,9 @@ ipcMain.on('window:show', () => showWindow());
 // window so toasts still appear when the main app is hidden to the
 // tray.
 //
-// Design: loads the same dist/index.html with ?toast=1 query param.
-// The React entry point detects this and renders ToastWindow instead
-// of the main app. Data is delivered via IPC (getInitial / onShow).
+// Design: loads a standalone toast.html via loadFile (works inside
+// asar) with a dedicated preload script that delivers call data via
+// IPC (getInitial on mount, onShow for window reuse).
 let toastWindow = null;
 let toastPendingData = null;
 
@@ -476,7 +476,6 @@ function createToastWindow(data) {
   if (toastWindow && !toastWindow.isDestroyed()) {
     toastPendingData = data || {};
     toastWindow.webContents.send('toast:show:event', toastPendingData);
-    // Re-focus and bring to front
     toastWindow.show();
     toastWindow.moveTop();
     return toastWindow;
@@ -504,7 +503,7 @@ function createToastWindow(data) {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
-      preload: path.join(__dirname, 'preload.cjs'),
+      preload: path.join(__dirname, 'toast-preload.cjs'),
     },
   };
 
@@ -522,10 +521,8 @@ function createToastWindow(data) {
 
   toastWindow = new BrowserWindow(opts);
 
-  // Load the same dist/index.html with ?toast=1 query param.
-  // The React app detects this and renders ToastWindow.
-  const distPath = path.join(__dirname, '../dist/index.html');
-  toastWindow.loadFile(distPath, { query: { toast: '1' } });
+  // Load the standalone toast.html via loadFile (handles asar paths correctly).
+  toastWindow.loadFile(path.join(__dirname, 'toast.html'));
 
   toastWindow.setMenuBarVisibility(false);
 
@@ -582,8 +579,6 @@ ipcMain.on('toast:hide', () => {
 });
 
 ipcMain.handle('toast:getInitial', () => {
-  // Return the pending data for the toast window that just mounted.
-  // The renderer calls this once on mount to get its initial data.
   const data = toastPendingData;
   toastPendingData = null;
   return data;
