@@ -1,6 +1,6 @@
 import {
   Palette, RotateCcw, Bell,
-  Clock, PhoneIncoming, Undo2
+  Clock, PhoneIncoming
 } from 'lucide-react';
 import { useAppStore, type ToastConfig } from '../store/useAppStore';
 import { simulateIncomingCall } from '../utils/simulateIncomingCall';
@@ -10,17 +10,9 @@ const fontFamilies = [
   'Verdana', 'Georgia', 'Courier New', 'Consolas',
 ];
 
-const positionOptions = [
-  { value: 'top-left', label: 'Top Left' },
-  { value: 'top-right', label: 'Top Right' },
-  { value: 'bottom-left', label: 'Bottom Left' },
-  { value: 'bottom-right', label: 'Bottom Right' },
-];
-
 export function ToastSettings() {
   const {
     toastConfig, setToastConfig, addDiagnosticLog,
-    toastDragPosition, setToastDragPosition,
   } = useAppStore();
 
   // All changes auto-persist via the Zustand store + JSON localStorage
@@ -47,7 +39,6 @@ export function ToastSettings() {
       opacity: 95,
       style: 'custom',
     });
-    setToastDragPosition(null);
     addDiagnosticLog({
       level: 'info',
       category: 'TOAST',
@@ -252,58 +243,17 @@ export function ToastSettings() {
           </div>
         </Section>
 
-        {/* Position & Timing */}
-        <Section icon={<Clock className="w-4 h-4" />} title="Position & Timing" desc="Where and how long toasts appear">
-          <div className="space-y-3">
-            <SliderField
-              label="Duration"
-              value={toastConfig.duration}
-              min={3}
-              max={30}
-              step={1}
-              unit="sec"
-              onChange={(v) => update({ duration: v })}
-            />
-
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-medium text-win-text-secondary">Default Position</label>
-                {toastDragPosition && (
-                  <button
-                    onClick={() => {
-                      setToastDragPosition(null);
-                      addDiagnosticLog({ level: 'info', category: 'TOAST', message: 'Toast position reset to default corner' });
-                    }}
-                    className="flex items-center gap-1 text-xs text-win-warning hover:text-win-warning/80 transition-colors"
-                  >
-                    <Undo2 className="w-3 h-3" />
-                    Reset drag position
-                  </button>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                {positionOptions.map((pos) => (
-                  <button
-                    key={pos.value}
-                    onClick={() => {
-                      update({ position: pos.value as any });
-                      setToastDragPosition(null);
-                    }}
-                    className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
-                      toastConfig.position === pos.value && !toastDragPosition
-                        ? 'bg-win-accent/20 text-win-accent border border-win-accent/30'
-                        : 'bg-win-card text-win-text-secondary hover:bg-win-surface-hover border border-win-border/50'
-                    }`}
-                  >
-                    {pos.label}
-                  </button>
-                ))}
-              </div>
-              <p className="text-[11px] text-win-text-tertiary mt-2 leading-snug">
-                Drag any toast to set a custom position — saved for future calls.
-              </p>
-            </div>
-          </div>
+        {/* Duration */}
+        <Section icon={<Clock className="w-4 h-4" />} title="Duration" desc="How long toasts stay visible (drag to reposition)">
+          <SliderField
+            label="Duration"
+            value={toastConfig.duration}
+            min={3}
+            max={30}
+            step={1}
+            unit="sec"
+            onChange={(v) => update({ duration: v })}
+          />
         </Section>
       </div>
     </div>

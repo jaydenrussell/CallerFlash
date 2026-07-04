@@ -586,7 +586,6 @@ function createToastWindow(data) {
     fullscreenable: false,
     alwaysOnTop: true,
     skipTaskbar: true,
-    focusable: false,
     hasShadow: false,
     webPreferences: {
       nodeIntegration: false,

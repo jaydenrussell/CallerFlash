@@ -14,30 +14,21 @@ html,body{width:100%;overflow:hidden;background:transparent;font-family:'Segoe U
   overflow:hidden;
   position:relative;
   animation:slideIn .35s cubic-bezier(.16,1,.3,1) forwards;
+  cursor:pointer;
 }
 @keyframes slideIn{from{transform:translateY(-20px)}to{transform:translateY(0)}}
 @keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.8);opacity:0}}
 .accent{position:absolute;top:0;left:0;width:5px;height:100%;background:#60cdff;box-shadow:0 0 12px #60cdff;pointer-events:none}
 .titlebar{
-  display:flex;align-items:center;justify-content:space-between;
-  padding:12px 8px 0 20px;min-height:36px;
-  cursor:grab;user-select:none;
+  display:flex;align-items:center;
+  padding:12px 20px 0 20px;min-height:36px;
+  -webkit-app-region:drag;cursor:grab;
+  user-select:none;
 }
 .titlebar:active{cursor:grabbing}
-.titlebar-left{display:flex;align-items:center;gap:8px;min-width:0;flex:1}
 .title{font-size:13px;font-weight:600;color:#60cdff;text-transform:uppercase;letter-spacing:1px;white-space:nowrap;pointer-events:none}
-.time{font-size:11px;color:rgba(255,255,255,0.4);white-space:nowrap;margin-left:8px;pointer-events:none}
-.close-btn{
-  width:28px;height:28px;border-radius:6px;
-  display:grid;place-items:center;
-  background:rgba(255,255,255,0.08);
-  border:none;cursor:pointer;flex-shrink:0;
-  transition:background .15s;
-}
-.close-btn:hover{background:rgba(255,68,68,0.3)}
-.close-btn svg{width:14px;height:14px;stroke:rgba(255,255,255,0.6);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
-.close-btn:hover svg{stroke:#ff6b6b}
-.body{padding:10px 20px 18px 20px;display:flex;gap:14px}
+.time{font-size:11px;color:rgba(255,255,255,0.4);white-space:nowrap;margin-left:12px;pointer-events:none}
+.body{padding:10px 20px 18px 20px;display:flex;gap:14px;cursor:pointer}
 .icon{
   width:48px;height:48px;border-radius:50%;
   background:rgba(96,205,255,0.2);
@@ -61,13 +52,8 @@ html,body{width:100%;overflow:hidden;background:transparent;font-family:'Segoe U
 <div class="toast" id="toast">
   <div class="accent"></div>
   <div class="titlebar" id="titlebar">
-    <div class="titlebar-left">
-      <span class="title" id="title">Incoming Call</span>
-      <span class="time" id="time"></span>
-    </div>
-    <button class="close-btn" id="closeBtn" title="Close">
-      <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-    </button>
+    <span class="title" id="title">Incoming Call</span>
+    <span class="time" id="time"></span>
   </div>
   <div class="body">
     <div class="icon">
@@ -84,67 +70,22 @@ html,body{width:100%;overflow:hidden;background:transparent;font-family:'Segoe U
 <script>
 (function(){
   var toastEl = document.getElementById('toast');
-  var titlebar = document.getElementById('titlebar');
   var numberEl = document.getElementById('number');
   var nameEl = document.getElementById('name');
   var timeEl = document.getElementById('time');
   var progressEl = document.getElementById('progress');
-  var closeBtn = document.getElementById('closeBtn');
   var closed = false;
 
-  // ── Close button ────────────────────────────────────────────────────
-  closeBtn.addEventListener('click', function(e) {
-    e.stopPropagation();
+  // Click anywhere on the toast to close it
+  toastEl.addEventListener('click', function() {
     if (!closed) { closed = true; window.close(); }
   });
 
-  // ── Custom window drag (titlebar only) ──────────────────────────────
-  // -webkit-app-region does not work with focusable:false, so we
-  // implement drag via mousedown/mousemove/mouseup using IPC.
-  var isDragging = false;
-  var dragStartX = 0, dragStartY = 0;
-  var winX = null, winY = null;
-  var posPromise = null;
-
-  titlebar.addEventListener('mousedown', function(e) {
-    // Don't drag if the target is the close button
-    if (e.target.closest('.close-btn')) return;
-    isDragging = true;
-    dragStartX = e.screenX;
-    dragStartY = e.screenY;
-    // Fetch current window position (async). Until it resolves,
-    // mousemove events will be skipped.
-    posPromise = null;
-    try {
-      posPromise = window.callerflash.toast.getPosition();
-      posPromise.then(function(pos) {
-        if (pos && pos.length === 2) {
-          winX = pos[0];
-          winY = pos[1];
-        }
-      }).catch(function() {});
-    } catch(e) {}
-    e.preventDefault();
+  // Also close on right-click
+  toastEl.addEventListener('contextmenu', function() {
+    if (!closed) { closed = true; window.close(); }
   });
 
-  document.addEventListener('mousemove', function(e) {
-    if (!isDragging || winX == null) return;
-    var dx = Math.round(e.screenX - dragStartX);
-    var dy = Math.round(e.screenY - dragStartY);
-    try {
-      window.callerflash.toast.setPosition(winX + dx, winY + dy);
-    } catch(e) {}
-  });
-
-  document.addEventListener('mouseup', function() {
-    if (isDragging) {
-      isDragging = false;
-      // Position is saved by the main process's 'move' event handler
-      // calling saveToastState().
-    }
-  });
-
-  // ── Apply incoming data ─────────────────────────────────────────────
   function applyData(data) {
     if (!data) return;
     var c = data.config || {};
