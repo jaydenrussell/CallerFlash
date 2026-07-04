@@ -63,7 +63,10 @@ contextBridge.exposeInMainWorld('callerflash', {
   // being hidden to the tray. Only meaningful in the Electron build;
   // every method is a no-op in the web demo.
   toast: {
-    show: (data) => ipcRenderer.send('toast:show', data),
+    show: (data) => {
+      console.log('[preload] toast.show called with keys:', Object.keys(data || {}).join(','));
+      ipcRenderer.send('toast:show', data);
+    },
     hide: () => ipcRenderer.send('toast:hide'),
     setPosition: (x, y) => ipcRenderer.send('toast:set-position', x, y),
     getPosition: () => ipcRenderer.invoke('toast:get-position'),

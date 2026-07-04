@@ -154,24 +154,42 @@ html,body{width:100%;height:100%;overflow:hidden;background:transparent;font-fam
     window._toastTimer = setTimeout(function(){
       if (!closed) {
         closed = true;
+        console.log('[toast.html] auto-close timer fired');
         window.close();
       }
     }, durationMs + 500);
   }
 
+  console.log('[toast.html] script executing, window.callerflash.toast =', typeof window.callerflash?.toast?.getInitial);
+
   // Get initial data from main process via preload bridge
   try {
     window.callerflash.toast.getInitial().then(function(data) {
-      if (data) applyData(data);
-    }).catch(function() {});
-  } catch(e) {}
+      if (data) {
+        console.log('[toast.html] getInitial returned data, calling applyData');
+        applyData(data);
+      } else {
+        console.log('[toast.html] getInitial returned null — no pending data');
+      }
+    }).catch(function(err) {
+      console.log('[toast.html] getInitial error:', err);
+    });
+  } catch(e) {
+    console.log('[toast.html] getInitial threw:', e);
+  }
 
   // Subscribe to subsequent calls (window reuse)
   try {
     window.callerflash.toast.onShow(function(data) {
-      if (data) applyData(data);
+      if (data) {
+        console.log('[toast.html] onShow received data, calling applyData');
+        applyData(data);
+      }
     });
-  } catch(e) {}
+    console.log('[toast.html] onShow subscriber attached');
+  } catch(e) {
+    console.log('[toast.html] onShow threw:', e);
+  }
 
   function hexToRgb(hex) {
     hex = hex.replace('#', '');

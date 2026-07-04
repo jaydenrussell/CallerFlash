@@ -472,9 +472,12 @@ function saveToastState() {
 }
 
 function createToastWindow(data) {
+  console.log('[toast] createToastWindow called, has data:', !!data, 'window exists:', !!toastWindow);
+
   // If a toast window already exists, just send the new data to it.
   if (toastWindow && !toastWindow.isDestroyed()) {
     toastPendingData = data || {};
+    console.log('[toast] reusing existing window, sending toast:show:event');
     toastWindow.webContents.send('toast:show:event', toastPendingData);
     toastWindow.show();
     toastWindow.moveTop();
@@ -482,6 +485,7 @@ function createToastWindow(data) {
   }
 
   toastPendingData = data || {};
+  console.log('[toast] stored toastPendingData keys:', Object.keys(toastPendingData).join(','));
 
   const state = { ...TOAST_DEFAULT, ...(loadToastState() || {}) };
   const opts = {
@@ -581,6 +585,7 @@ ipcMain.on('toast:hide', () => {
 ipcMain.handle('toast:getInitial', () => {
   const data = toastPendingData;
   toastPendingData = null;
+  console.log('[toast] getInitial returning keys:', data ? Object.keys(data).join(',') : 'null');
   return data;
 });
 
