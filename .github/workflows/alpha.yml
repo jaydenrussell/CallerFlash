@@ -1,4 +1,4 @@
-name: Release - Alpha
+name: Release [char]0x2014 Alpha
 
 on:
   push:
