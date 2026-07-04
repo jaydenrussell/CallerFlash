@@ -15,11 +15,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "electron:build": "npm run build && npx electron-builder --win --x64 --publish never",
-    "electron:publish": "npm run build && npx electron-builder --win --x64 --publish always"
+    "electron:publish": "npm run electron:build && npx electron-builder --win --x64 --publish always"
   },
   "dependencies": {
-    "electron-log": "^5.0.1",
-    "electron-updater": "^6.3.9"
+    "sip": "^0.0.6"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.1",
@@ -56,6 +55,17 @@
       "buildResources/**"
     ],
     "artifactName": "CallerFlash-${version}.${ext}",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "app.ico"
+    },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
@@ -69,11 +79,7 @@
       "installerHeaderIcon": "cflogo.ico",
       "runAfterFinish": true
     },
-    "publish": {
-      "provider": "github",
-      "owner": "jaydenrussell",
-      "repo": "CallerFlash"
-    },
+    "publish": null,
     "extraResources": [
       {
         "from": "buildResources/cflogo.ico",

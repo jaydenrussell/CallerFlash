@@ -116,6 +116,11 @@ class SecureStorage {
     this.isElectron = typeof window !== 'undefined' && !!window.callerflash?.platform?.isElectron;
   }
 
+  /** Pre-populate cache so first save doesn't clobber unrelated fields. */
+  initCache(data: PersistedUiSettings): void {
+    this.cache = data;
+  }
+
   async load(): Promise<PersistedUiSettings> {
     if (this.cache) return this.cache;
 
@@ -127,13 +132,11 @@ class SecureStorage {
         const result = await window.callerflash?.storage?.load?.();
         if (result && typeof result === 'object') {
           data = { ...data, ...result };
-          this.cache = data;
-          return data;
         }
       } catch {
-        // Fallback to localStorage if main process storage is unavailable
+        // Fallback to localStorage if main process fails
+        data = this.loadFromLocalStorage();
       }
-      data = this.loadFromLocalStorage();
     } else {
       // Web dev mode: use localStorage
       data = this.loadFromLocalStorage();
@@ -158,19 +161,16 @@ class SecureStorage {
 
     if (this.isElectron) {
       try {
-        const result = await window.callerflash?.storage?.save?.(toSave);
-        if (result && (result as any).success === false) {
-          throw new Error((result as any).error || 'storage save failed');
-        }
-        return;
+        await window.callerflash?.storage?.save?.(toSave);
       } catch {
-        // Fallback to localStorage when Electron persistent storage is unavailable
-        this.saveToLocalStorage(toSave);
+        // Fallback to localStorage
       }
-    } else {
-      this.saveToLocalStorage(toSave);
     }
+    // Always save to localStorage as write-through cache so
+    // loadSettingsSync() on next startup sees the latest data.
+    this.saveToLocalStorage(toSave);
   }
+
   private loadFromLocalStorage(): PersistedUiSettings {
     if (typeof window === 'undefined') return { version: STORAGE_VERSION };
     try {
@@ -218,26 +218,59 @@ function loadSettingsSync(): PersistedUiSettings {
 }
 
 const persistedUi: PersistedUiSettings = loadSettingsSync();
+// Pre-populate SecureStorage cache so first save preserves all fields.
+secureStorage.initCache({ ...persistedUi });
 
-// Phase 2: After store is created, try to load from file storage and hydrate
-async function initStorageHydration() {
+// Phase 2: After store is created, try to load from file storage and hydrate store
+async function initStorageMigration() {
   try {
     if (typeof window !== 'undefined' && window.callerflash?.storage?.load) {
       const fileData = await window.callerflash.storage.load();
-      if (fileData && typeof fileData === 'object' && Object.keys(fileData).length > 0) {
-        // File storage is authoritative — migrate cached state from file
-        // so settings survive when Electron IPC was temporarily unreachable.
-        Object.assign(persistedUi, fileData);
+      if (fileData && Object.keys(fileData).length > 0 && fileData.version >= 2) {
+        // File storage is authoritative — update cache and hydrate store
+        secureStorage.initCache({ ...fileData });
+        const mergedToast = { ...defaultToastConfig, ...fileData.toastConfig };
+        const mergedPrefs = { ...defaultAppPreferences, ...fileData.appPreferences };
+        const mergedSip = { ...defaultSipConfig, ...fileData.sipConfig };
+        const mergedUpdate = { ...defaultUpdateInfo };
+        if (fileData.updateChannel) mergedUpdate.updateChannel = fileData.updateChannel;
+        if (fileData.autoUpdate !== undefined) mergedUpdate.autoUpdate = fileData.autoUpdate;
+        if (fileData.autoDownload !== undefined) mergedUpdate.autoDownload = fileData.autoDownload;
+        if (fileData.updateCheckFrequency) mergedUpdate.updateCheckFrequency = fileData.updateCheckFrequency;
+        if (fileData.lastCheckedAt) mergedUpdate.lastChecked = new Date(fileData.lastCheckedAt);
+        if (fileData.releasePageUrl) mergedUpdate.releasePageUrl = fileData.releasePageUrl;
+        useAppStore.setState({
+          toastConfig: mergedToast,
+          appPreferences: mergedPrefs,
+          sipConfig: mergedSip,
+          toastDragPosition: fileData.toastDragPosition ?? null,
+          updateInfo: mergedUpdate,
+        });
+        // Decrypt SIP password from file storage (module-level decrypt used
+        // persistedUi from localStorage which may not have the encrypted blob).
+        if (fileData.sipPasswordEncrypted && window.callerflash?.safeStorage?.decrypt) {
+          window.callerflash.safeStorage.decrypt(fileData.sipPasswordEncrypted).then((decrypted) => {
+            if (decrypted) {
+              useAppStore.setState((s) => ({
+                sipConfig: { ...s.sipConfig, password: decrypted }
+              }));
+            }
+          });
+        }
+        return;
+      }
+    }
+    // Migrate localStorage to file
+    const localData = loadSettingsSync();
+    if (localData && Object.keys(localData).length > 1) {
+      if (window.callerflash?.storage?.save) {
+        await window.callerflash.storage.save(localData);
+        console.log('[store] Migrated localStorage to file storage');
       }
     }
   } catch {
-    // Ignore — localStorage/cached data is still valid
+    // Ignore — localStorage data is still valid
   }
-}
-
-// Kick off hydration without blocking renderer startup.
-if (typeof window !== 'undefined') {
-  initStorageHydration().catch(() => {});
 }
 
 // ── Store interface ──────────────────────────────────────────────────
@@ -477,6 +510,8 @@ export const useAppStore = create<AppState>((set) => ({
       lastCheckedAt: next.lastChecked ? next.lastChecked.toISOString() : undefined,
       releasePageUrl: next.releasePageUrl || undefined,
     });
+    // Notify main process so periodic check timer reschedules immediately
+    window.callerflash?.updater?.notifySettingsChanged?.();
     return { updateInfo: next };
   }),
 

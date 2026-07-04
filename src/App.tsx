@@ -446,8 +446,8 @@ function App() {
         details: `Source: SIP Backend Network Engine`,
       });
 
-      // Show the toast!
-      if (window.callerflash?.toast?.show) {
+      // Show notification based on user's style preference
+      if (toastConfig.style === 'custom' && window.callerflash?.toast?.show) {
         window.callerflash.toast.show({
           id: record.id,
           callerNumber: record.callerNumber,
@@ -468,11 +468,8 @@ function App() {
             maxWidth: toastConfig.maxWidth,
           },
         });
-      }
-      
-      // Native notification fallback
-      if (window.callerflash?.notify?.show) {
-        window.callerflash.notify.show('Incoming Call', `${safeNumber}${safeName ? ` - ${safeName}` : ''}`);
+      } else if (toastConfig.style === 'native' && window.callerflash?.notify?.show) {
+        window.callerflash.notify.show({ title: 'Incoming Call', body: `${safeNumber}${safeName ? ` - ${safeName}` : ''}`, urgency: 'critical', timeoutType: 'never' });
       }
     });
   }, [addDiagnosticLog]);

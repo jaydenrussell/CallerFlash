@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Phone, PhoneIncoming, PhoneMissed, PhoneOff,
-  Wifi, Bell, Clipboard, Clock,
+  Wifi, BellRing, Clock,
   Shield, EyeOff, Info
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
@@ -9,7 +9,7 @@ import { useAppStore } from '../store/useAppStore';
 export function Dashboard() {
   const {
     sipConnected, sipRegistered,
-    callHistory, addDiagnosticLog, toastConfig, clipboardText,
+    callHistory, addDiagnosticLog, toastConfig,
     appPreferences, isMinimized, setIsMinimized, sipConfig,
   } = useAppStore();
 
@@ -65,19 +65,11 @@ export function Dashboard() {
           tooltip={`${answeredCalls} answered · ${missedCalls} missed`}
         />
         <StatusCard
-          icon={<Bell className="w-4 h-4" />}
-          label="Toast"
-          value={`${toastConfig.duration}s`}
+          icon={<BellRing className="w-4 h-4" />}
+          label="Notification"
+          value={toastConfig.style === 'native' ? 'Native' : 'Branded'}
           color="#a78bfa"
-          tooltip={`Auto-copy ${toastConfig.autoCopyToClipboard ? 'ON' : 'OFF'}`}
-        />
-        <StatusCard
-          icon={<Clipboard className="w-4 h-4" />}
-          label="Clipboard"
-          value={clipboardText || '—'}
-          color="#f59e0b"
-          valueSize="text-sm"
-          tooltip="Sanitized caller number, ready to paste into Acuity Scheduler"
+          tooltip={`Style: ${toastConfig.style === 'native' ? 'Native OS notification' : 'Custom branded toast window'}`}
         />
       </div>
 

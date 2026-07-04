@@ -64,7 +64,7 @@ export function ToastSettings() {
     addDiagnosticLog({
       level: 'info',
       category: 'TOAST',
-      message: toastConfig.style === 'native' ? 'Native notification preview fired' : 'Branded toast preview fired',
+      message: toastConfig.style === 'native' ? 'Native notification preview fired' : 'Modern toast preview fired',
     });
   };
 
@@ -83,7 +83,7 @@ export function ToastSettings() {
             className="flex items-center gap-2 px-3 py-1.5 bg-win-accent/15 hover:bg-win-accent/25 text-win-accent rounded-lg text-sm font-medium transition-colors border border-win-accent/20"
           >
             <PhoneIncoming className="w-3.5 h-3.5" />
-            {toastConfig.style === 'native' ? 'Test Native' : 'Test Toast'}
+            {toastConfig.style === 'native' ? 'Test Native Windows' : 'Test Modern'}
           </button>
           <button
             onClick={handleReset}
@@ -117,8 +117,8 @@ export function ToastSettings() {
                     <circle cx="12" cy="10" r="3" fill="currentColor" stroke="none"/>
                   </svg>
                 </div>
-                <span className="text-xs font-semibold">Branded</span>
-                <span className="text-[10px] text-center leading-tight opacity-70">Custom window with progress bar and caller details</span>
+                <span className="text-xs font-semibold">Modern</span>
+                <span className="text-[10px] text-center leading-tight opacity-70">Always-on-top window with progress bar and caller details</span>
               </button>
               <button
                 type="button"
@@ -135,14 +135,14 @@ export function ToastSettings() {
                     <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
                   </svg>
                 </div>
-                <span className="text-xs font-semibold">Native</span>
-                <span className="text-[10px] text-center leading-tight opacity-70">OS-level notification, works reliably in background</span>
+                <span className="text-xs font-semibold">Native Windows</span>
+                <span className="text-[10px] text-center leading-tight opacity-70">OS notification that works reliably when app is backgrounded</span>
               </button>
             </div>
             <p className="text-[11px] text-win-text-tertiary leading-snug mt-1">
               {toastConfig.style === 'custom'
-                ? 'Branded always-on-top window with progress bar, caller name, timestamp, and auto-copy to clipboard.'
-                : 'Uses your operating system\'s notification system. Reliable when app is minimized or backgrounded.'}
+                ? 'Dedicated always-on-top window with progress bar, caller details, and auto-copy.'
+                : 'Standard OS notification in the notification center. Reliable when app is minimized.'}
             </p>
           </div>
         </Section>

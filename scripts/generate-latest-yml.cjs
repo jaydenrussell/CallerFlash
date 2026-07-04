@@ -10,7 +10,6 @@
  * Supported installer extensions:
  *   - Windows: .exe / .msi
  *   - macOS:   .dmg / .zip
- *   - Linux:   .deb / .AppImage
  *
  * Usage:
  *   node scripts/generate-latest-yml.cjs <release-dir> <version> [output-name] [channel]
@@ -53,7 +52,7 @@ function sha512Base64(filePath) {
 // Recognize installers for every supported platform. The manifest's
 // `path` is the file electron-updater will fetch, so it has to be one
 // of these.
-const INSTALLER_RE = /\.(exe|msi|dmg|zip|deb|AppImage|appimage)$/i;
+const INSTALLER_RE = /\.(exe|msi|dmg|zip)$/i;
 
 const files = [];
 let mainExe = null;
@@ -77,10 +76,9 @@ for (const name of fs.readdirSync(releaseDir).sort()) {
 
 if (!mainExe) {
   // No installer in the directory at all. Skip silently rather than
-  // failing the build — Linux releases without electron-updater
-  // support (e.g. .deb-only) don't need a manifest.
+  // Windows-only app - always has an .exe, but guard against missing installer
   console.error(
-    `[generate-latest-yml] No installer (.exe/.msi/.dmg/.zip/.deb/.AppImage) found in ${releaseDir}; skipping manifest.`
+    `[generate-latest-yml] No installer (.exe/.msi) found in ${releaseDir}; skipping manifest.`
   );
   process.exit(0);
 }

@@ -256,7 +256,7 @@ export async function parseGithubRelease(release: {
   if (!versionMatch) return null;
   const version = versionMatch[1];
 
-  const binary = release.assets.find((a) => /\.(exe|msi|AppImage|dmg|zip)$/i.test(a.name));
+  const binary = release.assets.find((a) => /\.(exe|msi|zip)$/i.test(a.name));
   const shaAsset = release.assets.find((a) => /^SHA256SUMS(\.txt)?$/i.test(a.name));
   const sigAsset = release.assets.find((a) => a.name.endsWith('.sig'));
 

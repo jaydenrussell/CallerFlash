@@ -1,114 +1,428 @@
-name: Build & Release
+﻿name: Build, Sign & Release
 
-# Reusable Windows build + GitHub Release workflow.
-# Callers supply channel, tag, artifact name, and explicit prerelease flag.
+# Reusable engine called by the channel-specific wrapper workflows:
+#   - .github/workflows/release-nightly.yml
+#   - .github/workflows/promote-beta.yml
+#   - .github/workflows/promote-stable.yml
+#
+# Produces a fully-signed release satisfying all three security layers
+# documented in SECURITY.md:
+#
+#   1. Authenticode code signing (WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD)
+#   2. SHA-256 checksum file (SHA256SUMS)
+#   3. Ed25519 detached signature (*.exe.sig) against a pinned public key
+#      in src/security/updateVerifier.ts
+#
+# Also produces channel-specific manifests for electron-updater:
+#   - latest.yml   (stable)
+#   - beta.yml     (beta)
+#   - alpha.yml   (alpha)
+#
+# All assets are attached to the GitHub Release so the in-app auto-updater
+# (see src/components/AutoUpdate.tsx + src/security/updateVerifier.ts)
+# can fetch and verify them end-to-end.
 
 on:
   workflow_call:
     inputs:
       channel:
+        description: 'Release channel: "stable" | "beta" | "alpha"'
         required: true
         type: string
-      tag_name:
-        required: true
-        type: string
-      artifact_name:
+      version_override:
+        description: 'Optional explicit version (e.g. "1.5.0" or "1.5.0-beta.3"). Skips auto-increment.'
         required: false
         type: string
-        default: windows-artifact
-      prerelease:
-        required: false
-        type: boolean
-        default: false
-  workflow_dispatch:
+        default: ''
+
+permissions:
+  contents: write
 
 jobs:
+  # ── Route / version resolution ─────────────────────────────────────
+  route:
+    name: Determine version
+    runs-on: windows-latest
+    outputs:
+      channel: ${{ steps.decide.outputs.channel }}
+      version: ${{ steps.decide.outputs.version }}
+      prerelease: ${{ steps.decide.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Compute next version
+        id: decide
+        shell: bash
+        run: |
+          CHANNEL="${{ inputs.channel }}"
+          OVERRIDE="${{ inputs.version_override }}"
+
+          VERSION=$(node scripts/next-version.cjs "$CHANNEL" "$OVERRIDE")
+          if [[ -z "$VERSION" ]]; then
+            echo "::error::next-version.cjs returned empty version"
+            exit 1
+          fi
+
+          if [[ "$CHANNEL" == "stable" ]]; then
+            PRERELEASE="false"
+          else
+            PRERELEASE="true"
+          fi
+
+          echo "channel=${CHANNEL}"     >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}"     >> "$GITHUB_OUTPUT"
+          echo "prerelease=${PRERELEASE}" >> "$GITHUB_OUTPUT"
+
+          # Compute the formatted release name.
+          #   stable:  CallerFlash v1.5.0
+          #   beta:    CallerFlash v1.5.0-28.beta
+          #   alpha:   CallerFlash 0.1.0-alpha.N (testing)
+          case "$CHANNEL" in
+            alpha)
+              echo "release_name=CallerFlash ${VERSION} (Alpha)" >> "$GITHUB_OUTPUT"
+              ;;
+            beta)
+              BETA_BASE="${VERSION%%-*}"
+              BETA_NUM="${VERSION##*-}"
+              echo "release_name=CallerFlash v${BETA_BASE}-${BETA_NUM}.beta" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "release_name=CallerFlash v${VERSION}" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+          echo "→ Channel: ${CHANNEL}  |  Version: ${VERSION}  |  Pre-release: ${PRERELEASE}"
+
+  # ── Secret gate (fail fast) ───────────────────────────────────────
+  verify-secrets:
+    name: Verify signing secrets are configured
+    needs: route
+    runs-on: windows-latest
+    steps:
+      - name: Check required signing secrets
+        shell: bash
+        run: |
+          MISSING=0
+          if [[ -z "${{ secrets.WIN_CSC_LINK }}" ]]; then
+            echo "::error::Secret WIN_CSC_LINK is not set (base64 of your .pfx code-signing cert)."
+            MISSING=1
+          fi
+          if [[ -z "${{ secrets.WIN_CSC_KEY_PASSWORD }}" ]]; then
+            echo "::error::Secret WIN_CSC_KEY_PASSWORD is not set (password for the .pfx)."
+            MISSING=1
+          fi
+          if [[ -z "${{ secrets.RELEASE_SIGNING_PRIVATE_KEY }}" ]]; then
+            echo "::error::Secret RELEASE_SIGNING_PRIVATE_KEY is not set. Run scripts/generate-signing-keys.sh and add the base64 private key."
+            MISSING=1
+          fi
+          if [[ "$MISSING" -ne 0 ]]; then
+            echo "::error::One or more required signing secrets are missing — refusing to release unsigned binaries (see SECURITY.md)."
+            exit 1
+          fi
+          echo "All required signing secrets are present."
+
+  # ── Build (Windows, code-signed) ─────────────────
   build:
+    name: Build ${{ matrix.os }} (${{ needs.route.outputs.channel }})
+    needs: [route, verify-secrets]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_suffix: windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          package-manager-cache: false
+
+      - name: Bump version
+        shell: bash
+        run: |
+          VERSION="${{ needs.route.outputs.version }}"
+          CHANNEL="${{ needs.route.outputs.channel }}"
+
+          if [[ "$CHANNEL" == "alpha" ]]; then
+            # Alpha: valid semver prerelease (0.1.0-alpha.N). No special handling needed.
+            ARTIFACT="CallerFlash-${VERSION}.\${ext}"
+            node -e "
+              const fs = require('fs');
+              const pkg = JSON.parse(fs.readFileSync('package.json','utf8'));
+              pkg.version = '${VERSION}';
+              pkg.build.artifactName = '${ARTIFACT}';
+              fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+            "
+          elif [[ "$CHANNEL" == "beta" ]]; then
+            # Beta: version 1.5.0-beta.28 is valid semver.
+            # artifactName: CallerFlash-1.5.0-beta.28.exe
+            ARTIFACT="CallerFlash-${VERSION}.\${ext}"
+            node -e "
+              const fs = require('fs');
+              const pkg = JSON.parse(fs.readFileSync('package.json','utf8'));
+              pkg.version = '${VERSION}';
+              pkg.build.artifactName = '${ARTIFACT}';
+              fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+            "
+          else
+            # Stable: valid semver, standard naming.
+            ARTIFACT="CallerFlash-${VERSION}.\${ext}"
+            node -e "
+              const fs = require('fs');
+              const pkg = JSON.parse(fs.readFileSync('package.json','utf8'));
+              pkg.version = '${VERSION}';
+              pkg.build.artifactName = '${ARTIFACT}';
+              fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+            "
+          fi
+          echo "BUILD_VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "RELEASE_CHANNEL=${CHANNEL}" >> $GITHUB_ENV
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          # Workaround: optional platform-native Rollup packages are not
+          # installed correctly on Windows CI runners. See npm/cli#4828.
+          rm -rf node_modules package-lock.json
+          npm install
+
+      - name: Build UI (Vite)
+        run: npm run build
+
+      - name: Package Electron App
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          npx electron-builder --publish never
+
+      - name: Generate update manifest (latest.yml)
+        shell: bash
+        run: |
+          # Generate latest.yml deterministically from the actual build
+          # artifacts. electron-builder's auto-generated metadata is
+          # unreliable across versions and is suppressed when publish:null.
+          VERSION="${{ needs.route.outputs.version }}"
+          node scripts/generate-latest-yml.cjs release "$VERSION" latest.yml latest
+          ls -la release/
+
+      - name: Stage build artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: callerflash-build-${{ needs.route.outputs.version }}-${{ matrix.artifact_suffix }}
+          path: |
+            release/*.exe
+            release/*.blockmap
+            release/latest.yml
+          retention-days: 1
+          if-no-files-found: error
+
+  # ── SHA-256 + Ed25519 signing ─────────────────────────────────────
+  # Only the Windows build gets SHA256SUMS + detached .sig signing
+  sign-checksums:
+    name: Sign SHA256SUMS (Ed25519)
+    needs: [route, build]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v6
+        with:
+          name: callerflash-build-${{ needs.route.outputs.version }}-windows
+          path: release
+
+      - name: Verify required inputs
+        shell: bash
+        run: |
+          if [[ -z "${{ secrets.RELEASE_SIGNING_PRIVATE_KEY }}" ]]; then
+            echo "::error::RELEASE_SIGNING_PRIVATE_KEY secret is missing"
+            exit 1
+          fi
+          if ! ls release/*.exe >/dev/null 2>&1; then
+            echo "::error::No .exe files downloaded from build artifact"
+            exit 1
+          fi
+          if [[ ! -f release/latest.yml ]]; then
+            echo "::error::latest.yml not found in build artifact"
+            exit 1
+          fi
+
+      - name: Generate SHA256SUMS
+        shell: bash
+        run: |
+          cd release
+          # Output format: "<hex>   <basename>" — standard sha256sum format.
+          # Two-space separator between hash and filename.
+          powershell -Command "Get-ChildItem *.exe | ForEach-Object { $h = (Get-FileHash $_.Name -Algorithm SHA256).Hash.ToLower(); '$h   $($_.Name)' } | Set-Content SHA256SUMS"
+          echo "--- SHA256SUMS ---"
+          cat SHA256SUMS
+          echo "------------------"
+
+      - name: Sign SHA256SUMS with Ed25519
+        shell: bash
+        env:
+          RELEASE_SIGNING_PRIVATE_KEY: ${{ secrets.RELEASE_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          # Decode the base64 private key into a temp file with strict perms.
+          KEYDIR="$(mktemp -d)"
+          trap 'rm -rf "$KEYDIR"' EXIT
+          printf '%s' "$RELEASE_SIGNING_PRIVATE_KEY" | base64 -d > "$KEYDIR/release-signing.key"
+          chmod 600 "$KEYDIR/release-signing.key"
+
+          cd release
+          for exe in *.exe; do
+            sig="${exe}.sig"
+            openssl pkeyutl -sign -rawin \
+              -in SHA256SUMS \
+              -inkey "$KEYDIR/release-signing.key" \
+              -out "$sig"
+            echo "Signed: $sig"
+          done
+
+      - name: Generate channel-specific update manifest
+        shell: bash
+        run: |
+          # Earlier steps in this job (`Generate SHA256SUMS`,
+          # `Sign SHA256SUMS with Ed25519`) end with `cd release`, and
+          # GitHub Actions preserves cwd across steps within a job.
+          # Snap back to the workspace root before invoking our script.
+          cd "$GITHUB_WORKSPACE"
+          echo "DEBUG: cwd=$(pwd)"
+          echo "DEBUG: GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
+          echo "DEBUG: scripts/ contents:"
+          ls -la scripts/ || echo "scripts/ not found"
+          echo "DEBUG: generate-latest-yml.cjs exists? $(test -f scripts/generate-latest-yml.cjs && echo YES || echo NO)"
+          CHANNEL="${{ needs.route.outputs.channel }}"
+          VERSION="${{ needs.route.outputs.version }}"
+          # electron-updater reads `latest.yml` for stable. For beta/alpha,
+          # generate a parallel manifest from the same build artifacts with
+          # the appropriate `channel` field.
+          case "$CHANNEL" in
+            beta)
+              node "$GITHUB_WORKSPACE/scripts/generate-latest-yml.cjs" release "$VERSION" beta.yml beta
+              ;;
+            alpha)
+              node "$GITHUB_WORKSPACE/scripts/generate-latest-yml.cjs" release "$VERSION" alpha.yml alpha
+              ;;
+            stable)
+              echo "Stable channel: latest.yml already generated in build job"
+              ;;
+          esac
+          echo "--- release/ contents ---"
+          ls -la release/
+
+      - name: Stage signed artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: callerflash-signed-${{ needs.route.outputs.version }}
+          path: |
+            release/*.exe
+            release/*.blockmap
+            release/latest.yml
+            release/beta.yml
+            release/alpha.yml
+            release/SHA256SUMS
+            release/*.sig
+          retention-days: 7
+
+  # ── Publish GitHub Release ───────────────────────────────────────
+  release:
+    name: Publish GitHub Release
+    needs: [route, build, sign-checksums]
+    if: >
+      needs.route.result == 'success' &&
+      needs.build.result == 'success' &&
+      needs.sign-checksums.result == 'success'
     runs-on: windows-latest
     permissions:
       contents: write
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      CSC_LINK: ${{ secrets.WIN_CSC_LINK || '' }}
-      CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD || '' }}
-      WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK || '' }}
-      WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD || '' }}
-      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      RELEASE_TAG: ${{ inputs.tag_name }}
-      APP_VERSION: ${{ inputs.tag_name }}
-    outputs:
-      tag: ${{ inputs.tag_name }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/download-artifact@v6
         with:
-          node-version-file: '.nvmrc'
-
-      - name: Sanitize lockfile
-        run: npm install --package-lock-only
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Set packaged version from tag
-        shell: bash
-        run: node scripts/set-version.cjs
-
-      - name: Build frontend
-        run: npm run build
-
-      - name: Package Windows artifacts
-        env:
-          own_property: true
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: ''
-          CSC_KEY_PASSWORD: ''
-          WIN_CSC_LINK: ''
-          WIN_CSC_KEY_PASSWORD: ''
-        run: npx electron-builder --win --x64 --publish never
-
-      - uses: actions/upload-artifact@v5
-        with:
-          name: ${{ inputs.artifact_name }}
-          path: |
-            release/*.exe
-            release/*.exe.blockmap
-          retention-days: 14
-          if-no-files-found: error
-
-  publish:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: '.nvmrc'
-
-      - uses: actions/download-artifact@v5
-        with:
-          name: ${{ inputs.artifact_name }}
+          name: callerflash-signed-${{ needs.route.outputs.version }}
           path: release
 
-      - uses: softprops/action-gh-release@v2
+      - name: Determine release assets
+        id: assets
+        shell: bash
+        run: |
+          # Pull assets from BOTH matrix builds. Each artifact name has
+          # the platform suffix baked in. The signed Windows build
+          # carries the updater manifest + signatures (Windows-only)
+          CHANNEL="${{ needs.route.outputs.channel }}"
+          VER="${{ needs.route.outputs.version }}"
+
+          # Windows assets (signed build + updater manifest). The .sig,
+          # SHA256SUMS, and per-channel yml only exist on Windows
+          ASSETS_PARTS=(
+            "release/*.exe"
+            "release/*.blockmap"
+            "release/SHA256SUMS"
+            "release/*.sig"
+          )
+          case "$CHANNEL" in
+            stable)  ASSETS_PARTS+=( "release/latest.yml"  ) ;;
+            beta)    ASSETS_PARTS+=( "release/beta.yml"    ) ;;
+            alpha)    ASSETS_PARTS+=( "release/alpha.yml"    ) ;;
+          esac
+
+          # Join with newlines so the YAML GITHUB_OUTPUT heredoc stays
+          # at the block's indent.
+          NL=$'\n'
+          ASSETS=$(IFS="$NL"; echo "${ASSETS_PARTS[*]}")
+
+          {
+            echo "files<<EOF"
+            echo "$ASSETS"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "→ Attachments:"
+          printf '%s\n' "$ASSETS" | sed 's/^/    /'
+
+      - name: Generate release notes
+        shell: bash
+        env:
+          VERSION: ${{ needs.route.outputs.version }}
+          CHANNEL: ${{ needs.route.outputs.channel }}
+        run: |
+          # Auto-generate a Conventional-Changelog-style notes file from
+          # the commits since the previous tag of this channel. What the
+          # user sees in the GitHub Release body is what actually changed
+          # -- no more hardcoded boilerplate.
+          node scripts/generate-release-notes.cjs "$CHANNEL" "$VERSION" release-notes.md
+          echo "--- generated release-notes.md ---"
+          cat release-notes.md
+
+      - name: Create tag + GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.tag_name }}
-          name: ${{ inputs.tag_name }}
-          files: |
-            release/*.exe
-            release/*.exe.blockmap
+          tag_name: ${{ format('v{0}', needs.route.outputs.version) }}
+          name: ${{ needs.route.outputs.release_name }}
+          body_path: release-notes.md
+          prerelease: ${{ needs.route.outputs.prerelease }}
           draft: false
-          prerelease: ${{ inputs.prerelease }}
+          make_latest: ${{ needs.route.outputs.channel == 'stable' }}
+          files: ${{ steps.assets.outputs.files }}
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OWNER: jaydenrussell
-          REPO: CallerFlash

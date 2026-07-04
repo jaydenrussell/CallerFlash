@@ -39,29 +39,35 @@ ipcMain.handle('storage:load', () => {
       const raw = fs.readFileSync(SETTINGS_FILE, 'utf8');
       const parsed = JSON.parse(raw);
 
-      // Verify integrity using the exact serialized payload we stored.
-      // `_dataStr` is present when the file was written by the fixed
-      // save path; fall back to the raw object only for legacy files.
-      const payload = parsed._dataStr ?? JSON.stringify(parsed._data ?? parsed);
-      if (parsed._hmac && verifyHmac(payload, parsed._hmac)) {
-        return parsed._data ?? parsed;
+      // Verify integrity
+      if (parsed._hmac && parsed._data) {
+        const dataStr = JSON.stringify(parsed._data);
+        if (verifyHmac(dataStr, parsed._hmac)) {
+          return parsed._data;
+        }
+        // HMAC mismatch — file was tampered with
+        console.warn('[storage] HMAC mismatch — attempting backup recovery');
+      } else {
+        // Legacy format without HMAC — accept but upgrade on next save
+        return parsed;
       }
-      // HMAC mismatch — file was tampered with
-      console.warn('[storage] HMAC mismatch — attempting backup recovery');
     }
 
     // Try backup file
     if (fs.existsSync(BACKUP_FILE)) {
       const raw = fs.readFileSync(BACKUP_FILE, 'utf8');
       const parsed = JSON.parse(raw);
-      const payload = parsed._dataStr ?? JSON.stringify(parsed._data ?? parsed);
-      if (parsed._hmac && verifyHmac(payload, parsed._hmac)) {
-        console.log('[storage] Recovered from backup file');
-        // Restore main file from backup
-        fs.copyFileSync(BACKUP_FILE, SETTINGS_FILE);
-        return parsed._data ?? parsed;
+      if (parsed._hmac && parsed._data) {
+        const dataStr = JSON.stringify(parsed._data);
+        if (verifyHmac(dataStr, parsed._hmac)) {
+          console.log('[storage] Recovered from backup file');
+          // Restore main file from backup
+          fs.copyFileSync(BACKUP_FILE, SETTINGS_FILE);
+          return parsed._data;
+        }
+      } else {
+        return parsed;
       }
-      return parsed._data ?? parsed;
     }
 
     return {};
@@ -79,10 +85,7 @@ ipcMain.handle('storage:save', (_event, data) => {
       throw new Error('Invalid data');
     }
 
-    // Serialize and compute HMAC — preserve the exact string so load can
-    // reproduce it byte-for-byte. Using the object directly on load would
-    // re-serialize with potentially different key ordering and break the
-    // integrity check.
+    // Serialize and compute HMAC
     const dataStr = JSON.stringify(data);
     const hmac = computeHmac(dataStr);
 
@@ -90,7 +93,6 @@ ipcMain.handle('storage:save', (_event, data) => {
       _version: 2,
       _hmac: hmac,
       _data: data,
-      _dataStr: dataStr,
       _savedAt: new Date().toISOString(),
     };
     const output = JSON.stringify(envelope, null, 2);

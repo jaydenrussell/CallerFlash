@@ -1,4 +1,4 @@
-# electron-builder config for CallerFlash
+﻿# electron-builder config for CallerFlash
 
 appId: com.callerflash.app
 productName: CallerFlash
@@ -25,7 +25,6 @@ asarUnpack:
   - buildResources/**
 
 win:
-  publisherName: CallerFlash
   icon: app.ico
   target:
     - target: nsis

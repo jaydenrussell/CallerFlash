@@ -1,13 +1,9 @@
 name: Release — Stable
 
 # Triggered by manual dispatch ONLY.
-# Merges the latest beta branch into stable, computes the next stable
-# semver tag (X.Y.Z), then triggers the reusable Windows build.
+# Automatically merges the latest beta branch before building.
 #
-# After stable ships, main is synced from stable so alpha/beta stay
-# in sync with the production baseline.
-#
-# Flow: main → alpha (auto) → beta (manual) → stable (manual)
+# Build context: the merged result (beta → stable).
 
 on:
   workflow_dispatch:
@@ -18,17 +14,14 @@ permissions:
 jobs:
   sync:
     name: Merge beta → stable
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.promote.outputs.version }}
+    runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           token: ${{ secrets.PAT_TOKEN }}
 
       - name: Merge beta into stable
-        id: promote
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -36,10 +29,6 @@ jobs:
           git checkout stable || git checkout -b stable
           git reset origin/stable --hard
           git merge origin/beta --no-ff -m "chore: merge beta → stable for release" || true
-
-      - name: Compute next stable version
-        id: gen
-        run: echo "version=$(node scripts/next-version.cjs stable)" >> "$GITHUB_OUTPUT"
 
       - name: Push stable
         run: git push origin stable --force
@@ -50,26 +39,4 @@ jobs:
     uses: ./.github/workflows/release.yml
     with:
       channel: stable
-      tag_name: v${{ needs.sync.outputs.version }}
-      artifact_name: windows-stable-${{ github.sha }}
-      prerelease: false
     secrets: inherit
-
-  sync-main:
-    name: Sync stable → main
-    needs: release
-    runs-on: ubuntu-latest
-    if: always() && needs.release.result == 'success'
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.PAT_TOKEN }}
-
-      - name: Push stable → main
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git push origin stable:main --force
