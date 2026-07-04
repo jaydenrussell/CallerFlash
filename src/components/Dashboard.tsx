@@ -1,16 +1,15 @@
 import { useEffect, useState } from 'react';
 import {
   Phone, PhoneIncoming, PhoneMissed, PhoneOff,
-  Wifi, Bell, Clipboard, Clock,
-  Shield, Info
+  Wifi, Clock, Shield, Info
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 
 export function Dashboard() {
   const {
     sipConnected, sipRegistered,
-    callHistory, addDiagnosticLog, toastConfig, clipboardText,
-    appPreferences, isMinimized, setIsMinimized, sipConfig,
+    callHistory,
+    appPreferences, isMinimized, sipConfig,
   } = useAppStore();
 
   const [uptime, setUptime] = useState(0);
@@ -42,8 +41,8 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* Compact status row — 4 cards in one line, smaller padding */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+      {/* Compact status row */}
+      <div className="grid grid-cols-2 gap-2">
         <StatusCard
           icon={<Wifi className="w-4 h-4" />}
           label="SIP"
@@ -57,21 +56,6 @@ export function Dashboard() {
           value={todayCalls.toString()}
           color="#60cdff"
           tooltip={`${answeredCalls} answered · ${missedCalls} missed`}
-        />
-        <StatusCard
-          icon={<Bell className="w-4 h-4" />}
-          label="Toast"
-          value={`${toastConfig.duration}s`}
-          color="#a78bfa"
-          tooltip={`Auto-copy ${toastConfig.autoCopyToClipboard ? 'ON' : 'OFF'}`}
-        />
-        <StatusCard
-          icon={<Clipboard className="w-4 h-4" />}
-          label="Clipboard"
-          value={clipboardText || '—'}
-          color="#f59e0b"
-          valueSize="text-sm"
-          tooltip="Sanitized caller number, ready to paste into Acuity Scheduler"
         />
       </div>
 
