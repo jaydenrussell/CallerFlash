@@ -1,0 +1,20 @@
+name: Release — Alpha
+
+on:
+  push:
+    branches:
+      - alpha
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    uses: ./.github/workflows/release.yml
+    with:
+      channel: alpha
+    secrets: inherit
+
