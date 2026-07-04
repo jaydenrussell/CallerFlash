@@ -163,22 +163,31 @@ async function waitForExit(pid, timeoutMs = 30000) {
 
 // ── Run NSIS installer ─────────────────────────────────────────────────
 async function runInstaller() {
-  const targetDir = installDir || path.dirname(appPath);
   const nsisArgs = ['/S'];
-  if (targetDir && !targetDir.toLowerCase().includes('temp')) {
-    nsisArgs.push('/D=' + targetDir);
+  if (installDir && !installDir.toLowerCase().includes('temp')) {
+    nsisArgs.push('/D=' + installDir);
   }
 
-  console.log('[updater-helper] Running NSIS installer with args:', nsisArgs.join(' '));
+  // Build PowerShell script that elevates the installer and returns its exit code.
+  // Using -EncodedCommand avoids all argument quoting issues.
+  const esc = (s) => s.replace(/'/g, "''");
+  const psScript = [
+    `$p = Start-Process -FilePath '${esc(installerPath)}'`,
+    `-ArgumentList '${nsisArgs.map(a => esc(a)).join("', '")}'`,
+    `-Verb RunAs -Wait -PassThru;`,
+    `exit $p.ExitCode`,
+  ].join(' ');
+  const encoded = Buffer.from(psScript, 'utf16le').toString('base64');
+
+  console.log('[updater-helper] Elevating installer:', installerPath, nsisArgs.join(' '));
   sendProgress(10, 'Starting installer...');
 
   return new Promise((resolve, reject) => {
-    const proc = spawn(installerPath, nsisArgs, {
-      detached: false,
-      stdio: 'ignore',
-      windowsHide: false,
-      shell: 'runas',
-    });
+    const proc = spawn('powershell.exe', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-EncodedCommand', encoded,
+    ], { stdio: 'ignore', windowsHide: true });
 
     proc.on('error', reject);
 
@@ -204,7 +213,7 @@ async function runInstaller() {
     // Safety timeout — if NSIS hangs, proceed anyway
     setTimeout(() => {
       clearInterval(progressInterval);
-      resolve(0);
+      resolve();
     }, 120000);
   });
 }
