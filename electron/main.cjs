@@ -501,6 +501,20 @@ function createToastWindow(data) {
     toastWindow.webContents.send('toast:show:event', toastPendingData);
     toastWindow.show();
     toastWindow.moveTop();
+
+    // Update width and opacity from the new config
+    const reuseConfig = data && data.config;
+    if (reuseConfig) {
+      if (Number.isFinite(reuseConfig.maxWidth)) {
+        const newW = Math.max(260, Math.min(800, Math.round(reuseConfig.maxWidth)));
+        const [, curH] = toastWindow.getSize();
+        toastWindow.setSize(newW, curH);
+      }
+      if (Number.isFinite(reuseConfig.opacity)) {
+        toastWindow.setOpacity(Math.max(0.1, Math.min(1, reuseConfig.opacity / 100)));
+      }
+    }
+
     // Check whether the window is inside any display's work area.
     const [wx, wy] = toastWindow.getPosition();
     const [ww, wh] = toastWindow.getSize();
@@ -527,6 +541,11 @@ function createToastWindow(data) {
   // ── Creating a new window ───────────────────────────────────────────
   toastPendingData = data || {};
   toastLog('stored toastPendingData keys: ' + Object.keys(toastPendingData).join(','));
+
+  // Read width and opacity from the incoming config so the window
+  // matches the user's saved preferences immediately.
+  const configWidth = data && data.config && Number.isFinite(data.config.maxWidth) ? data.config.maxWidth : null;
+  const configOpacity = data && data.config && Number.isFinite(data.config.opacity) ? data.config.opacity : null;
 
   const disp = getToastDisplay();
   const wa = disp.workArea;
@@ -556,7 +575,9 @@ function createToastWindow(data) {
   }
 
   const state = useSaved ? { ...TOAST_DEFAULT, ...savedState } : { ...TOAST_DEFAULT };
-  toastLog('toast size: ' + state.width + 'x' + state.height);
+  // If config provides a width, use it (overrides saved/default).
+  if (configWidth) state.width = Math.max(260, Math.min(800, Math.round(configWidth)));
+  toastLog('toast size: ' + state.width + 'x' + state.height + (configWidth ? ' (from config)' : ' (default)'));
 
   const opts = {
     width: state.width,
@@ -602,6 +623,13 @@ function createToastWindow(data) {
   // Use 'screen-saver' level — the highest always-on-top level in Electron.
   toastWindow.setAlwaysOnTop(true, 'screen-saver');
   toastWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+  // Apply opacity from config (50-100% range).
+  if (configOpacity != null) {
+    const opacity = Math.max(0.1, Math.min(1, configOpacity / 100));
+    toastWindow.setOpacity(opacity);
+    toastLog('opacity set to ' + opacity + ' (config: ' + configOpacity + '%)');
+  }
 
   // Show after a brief delay to let the renderer paint the initial frame
   setImmediate(() => {
