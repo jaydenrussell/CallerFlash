@@ -274,11 +274,13 @@ export function AutoUpdate() {
         setUpdateInfo({ isDownloading: true });
       } else if (status.status === 'ready') {
         if (status.version && !versionMatchesChannel(status.version, channelRef.current)) {
-          setPhase('idle');
           setUpdateInfo({ isDownloading: false, isInstalling: false });
           return;
         }
-        setPhase('idle');
+        // Don't reset phase here — handleUpdate() manages the flow.
+        // The onStatus('ready') event can arrive AFTER handleUpdate has
+        // already started the install step (setting phase='installing'),
+        // which would race and reset phase to 'idle'.
         setUpdateInfo({ isDownloading: false, isInstalling: false, updateAvailable: true });
       } else if (status.status === 'update-available') {
         if (status.version && !versionMatchesChannel(status.version, channelRef.current)) return;
