@@ -483,16 +483,49 @@ function createToastWindow(data) {
     toastWindow.webContents.send('toast:show:event', toastPendingData);
     toastWindow.show();
     toastWindow.moveTop();
+    // Ensure the window is on-screen — saveToastState may have persisted
+    // an off-screen position from a disconnected secondary monitor.
+    const [wx, wy] = toastWindow.getPosition();
+    const { screen } = require('electron');
+    const { width: sw, height: sh } = screen.getPrimaryDisplay().workArea;
+    const margin = 100;
+    const onScreen = wx >= -(380 - margin) && wx < sw - margin && wy >= -(150 - margin) && wy < sh - margin;
+    if (!onScreen) {
+      const newX = sw - 380 - 16;
+      const newY = 16;
+      toastLog('repositioning off-screen window from ' + wx + ',' + wy + ' to ' + newX + ',' + newY);
+      toastWindow.setPosition(newX, newY);
+      saveToastState();
+    }
     return toastWindow;
   }
 
   toastPendingData = data || {};
   toastLog('stored toastPendingData keys: ' + Object.keys(toastPendingData).join(','));
 
-  const state = { ...TOAST_DEFAULT, ...(loadToastState() || {}) };
   const { screen } = require('electron');
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: screenW, height: screenH } = primaryDisplay.workArea;
+
+  // Validate saved state — reject positions outside the visible screen area
+  // or corrupt sizes. This prevents a toast window from being "lost" after
+  // e.g. disconnecting a secondary monitor that the window was moved to.
+  const savedState = loadToastState();
+  let useSaved = false;
+  if (savedState) {
+    const margin = 200;
+    const validX = Number.isFinite(savedState.x) && savedState.x >= -(savedState.width - margin) && savedState.x < screenW - margin;
+    const validY = Number.isFinite(savedState.y) && savedState.y >= -(savedState.height - margin) && savedState.y < screenH - margin;
+    const validW = Number.isFinite(savedState.width) && savedState.width >= 200;
+    const validH = Number.isFinite(savedState.height) && savedState.height >= 100;
+    if (validX && validY && validW && validH) {
+      useSaved = true;
+    } else {
+      toastLog('saved position rejected (off-screen): ' + savedState.x + ',' + savedState.y + ' ' + savedState.width + 'x' + savedState.height + ' on screen ' + screenW + 'x' + screenH);
+    }
+  }
+
+  const state = useSaved ? { ...TOAST_DEFAULT, ...savedState } : { ...TOAST_DEFAULT };
   toastLog('screen: ' + screenW + 'x' + screenH + ' toast: ' + state.width + 'x' + state.height);
 
   const opts = {
@@ -519,7 +552,7 @@ function createToastWindow(data) {
   };
 
   // Position at top-right corner of the primary display (or saved position).
-  if (Number.isFinite(state.x) && Number.isFinite(state.y)) {
+  if (useSaved && Number.isFinite(state.x) && Number.isFinite(state.y)) {
     opts.x = state.x;
     opts.y = state.y;
     toastLog('using saved position: ' + state.x + ',' + state.y);
