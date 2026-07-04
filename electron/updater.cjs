@@ -47,7 +47,7 @@ function downloadsDir() {
 }
 
 function exePathFor(version) {
-  return path.join(downloadsDir(), `CallerFlash-${version}.exe`);
+  return path.join(downloadsDir(), `CallerFlash-${String(version).replace(/^v/, '')}.exe`);
 }
 
 // ── Fetch GitHub releases ────────────────────────────────────────────
@@ -213,6 +213,7 @@ async function checkForUpdates(channel) {
       version: release.version,
       downloadUrl: release.downloadUrl,
       publishedAt: release.publishedAt,
+      friendlyName: friendlyVersion(release.version),
     };
   } catch (err) {
     logErr('check failed:', err.message);

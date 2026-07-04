@@ -80,6 +80,7 @@ function createProgressWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
+      preload: path.join(__dirname, 'helper-preload.cjs'),
     },
   });
 
@@ -108,11 +109,10 @@ function createProgressWindow() {
   <div class="status" id="status">Waiting for application to close...</div>
 </div>
 <script>
-  const { ipcRenderer } = require('electron');
   const fill = document.getElementById('fill');
   const pct = document.getElementById('pct');
   const status = document.getElementById('status');
-  ipcRenderer.on('helper:progress', (_e, data) => {
+  window.helper.onProgress((data) => {
     if (data.percent != null) {
       fill.style.width = data.percent + '%';
       pct.textContent = Math.round(data.percent) + '%';
@@ -177,6 +177,7 @@ async function runInstaller() {
       detached: false,
       stdio: 'ignore',
       windowsHide: false,
+      shell: 'runas',
     });
 
     proc.on('error', reject);
@@ -192,8 +193,12 @@ async function runInstaller() {
     proc.on('exit', (code) => {
       clearInterval(progressInterval);
       console.log('[updater-helper] Installer exited with code:', code);
-      sendProgress(100, 'Installation complete');
-      resolve(code);
+      if (code === 0) {
+        sendProgress(100, 'Installation complete');
+        resolve();
+      } else {
+        reject(new Error(`Installer failed with code ${code}`));
+      }
     });
 
     // Safety timeout — if NSIS hangs, proceed anyway
@@ -232,10 +237,15 @@ async function main() {
     createProgressWindow();
 
     // Run installer
-    await runInstaller();
-
-    // Relaunch
-    await relaunchApp();
+    try {
+      await runInstaller();
+      // Relaunch only on success
+      await relaunchApp();
+    } catch (err) {
+      sendProgress(0, err.message);
+      console.error('[updater-helper] Install failed:', err.message);
+      await new Promise(r => setTimeout(r, 3000));
+    }
 
     console.log('[updater-helper] Done.');
     await new Promise(r => setTimeout(r, 1000));

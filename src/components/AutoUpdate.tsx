@@ -518,7 +518,7 @@ export function AutoUpdate() {
     if (window.callerflash?.updater?.getDownloadState) {
       try {
         const state = await window.callerflash.updater.getDownloadState();
-        if (state?.status === 'ready' && state?.version === updateInfo.latestVersion) {
+        if (state?.status === 'ready' && state?.version?.replace(/^v/, '') === updateInfo.latestVersion?.replace(/^v/, '')) {
           addDiagnosticLog({ level: 'info', category: 'UPDATE', message: `Installing ${formatVersion(updateInfo.latestVersion)}…` });
           window.callerflash.updater.install(updateInfo.latestVersion);
           setPhase('installing');

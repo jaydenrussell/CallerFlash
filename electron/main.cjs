@@ -809,7 +809,7 @@ async function scheduleStartupUpdateCheck() {
           mainWindow.webContents.send('updater:status', {
             status: 'update-available',
             version: result.version,
-            friendlyName: result.friendlyName,
+            friendlyName: updater.friendlyVersion(result.version),
             downloadUrl: result.downloadUrl,
           });
         }
