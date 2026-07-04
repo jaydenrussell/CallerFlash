@@ -212,8 +212,9 @@ export function Diagnostics() {
                   onClick={() => setExpandedLog(isExpanded ? null : log.id)}
                 >
                   <div className="flex items-start gap-2 px-4 py-2">
-                    <span className="text-win-text-tertiary text-[10px] mt-0.5 flex-shrink-0 w-[70px]">
-                      {log.timestamp.toLocaleTimeString(undefined, { hour12: false, fractionalSecondDigits: 3 } as any)}
+                    <span className="text-win-text-tertiary text-[10px] mt-0.5 flex-shrink-0 w-[120px] whitespace-nowrap">
+                      {log.timestamp.toLocaleString(undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
+                      <span className="opacity-50">.{log.timestamp.getMilliseconds().toString().padStart(3, '0')}</span>
                     </span>
                     <Icon className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" style={{ color: config.color }} />
                     <span
@@ -234,7 +235,7 @@ export function Diagnostics() {
                     )}
                   </div>
                   {isExpanded && log.details && (
-                    <div className="px-4 pb-3 pl-[170px]">
+                    <div className="px-4 pb-3 pl-[220px]">
                       <pre className="text-[11px] text-win-text-tertiary whitespace-pre-wrap bg-win-bg rounded-md p-3 border border-win-border/50">
                         {log.details}
                       </pre>

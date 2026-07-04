@@ -584,8 +584,17 @@ function sendToastDiagnostic(level, message, details) {
 }
 
 ipcMain.on('toast:show', (_event, data) => {
-  console.log('[toast] toast:show received, data:', JSON.stringify(data || {}).substring(0, 100));
-  sendToastDiagnostic('info', 'Toast: show requested', JSON.stringify(data ? { id: data.id, callerNumber: data.callerNumber } : {}));
+  console.log('[toast] toast:show received, data:', JSON.stringify(data || {}).substring(0, 150));
+  const diag = data ? {
+    id: data.id,
+    callerNumber: data.callerNumber,
+    config: data.config ? {
+      duration: data.config.duration,
+      style: data.config.style,
+      autoCopyToClipboard: data.config.autoCopyToClipboard,
+    } : undefined,
+  } : {};
+  sendToastDiagnostic('info', 'Toast: show requested', JSON.stringify(diag));
   createToastWindow(data);
 });
 
