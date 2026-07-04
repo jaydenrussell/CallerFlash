@@ -83,8 +83,8 @@ contextBridge.exposeInMainWorld('callerflash', {
   // ── Auto-updater (custom) ────────────────────────────────────────
   updater: {
     check: (channel) => ipcRenderer.invoke('updater:check', channel),
-    download: (channel, version, downloadUrl) => ipcRenderer.send('updater:download', { channel, version, downloadUrl }),
-    install: (version) => ipcRenderer.send('updater:install', { version }),
+    download: (channel, version, downloadUrl) => ipcRenderer.invoke('updater:download', { channel, version, downloadUrl }),
+    install: (version) => ipcRenderer.invoke('updater:install', { version }),
     show: () => ipcRenderer.send('updater:show'),
     setChannel: (channel) => ipcRenderer.send('updater:set-channel', channel),
     getDownloadState: () => ipcRenderer.invoke('updater:getDownloadState'),
@@ -97,6 +97,11 @@ contextBridge.exposeInMainWorld('callerflash', {
       const handler = (_event, data) => callback(data);
       ipcRenderer.on('updater:progress', handler);
       return () => ipcRenderer.removeListener('updater:progress', handler);
+    },
+    onDiagnostic: (callback) => {
+      const handler = (_event, data) => callback(data);
+      ipcRenderer.on('updater:diagnostic', handler);
+      return () => ipcRenderer.removeListener('updater:diagnostic', handler);
     },
     onBackgroundCheck: (callback) => {
       const handler = (_event, data) => callback(data);

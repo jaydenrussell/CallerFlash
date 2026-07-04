@@ -243,7 +243,7 @@ async function downloadUpdate(channel, version, downloadUrl) {
     return { status: 'error', error: 'No URL' };
   }
 
-  log('downloading:', downloadUrl);
+  sendUpdateDiag('info', 'Download starting', 'url=' + downloadUrl.substring(0, 80));
   downloadState.status = 'downloading';
   downloadState.version = version;
   downloadState.error = null;
@@ -260,11 +260,13 @@ async function downloadUpdate(channel, version, downloadUrl) {
           if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirectsLeft > 0) {
             redirectsLeft--;
             res.resume();
+            sendUpdateDiag('info', 'Following redirect', '→ ' + res.headers.location.substring(0, 80) + ' (' + redirectsLeft + ' redirects left)');
             return fetchUrl(res.headers.location);
           }
           if (res.statusCode !== 200) { file.close(); return reject(new Error(`HTTP ${res.statusCode}`)); }
           const total = parseInt(res.headers['content-length'] || '0', 10);
           let received = 0;
+          sendUpdateDiag('info', 'Download connected', 'HTTP 200, size=' + (total / 1048576).toFixed(2) + ' MB');
           res.on('data', (chunk) => {
             received += chunk.length;
             if (total > 0) sendProgress({ percent: Math.round((received / total) * 100), received, total });
@@ -280,24 +282,29 @@ async function downloadUpdate(channel, version, downloadUrl) {
     });
 
     try {
+      let cleaned = 0;
       for (const f of fs.readdirSync(downloadsDir())) {
-        if (f.endsWith('.exe') && !f.includes(version)) fs.unlinkSync(path.join(downloadsDir(), f));
+        if (f.endsWith('.exe') && !f.includes(version)) { fs.unlinkSync(path.join(downloadsDir(), f)); cleaned++; }
       }
+      if (cleaned > 0) sendUpdateDiag('info', 'Cleaned old EXEs', '' + cleaned + ' files removed');
     } catch {}
 
+    const stats = fs.statSync(destPath);
     downloadState.version = version;
     downloadState.path = destPath;
     downloadState.status = 'ready';
     downloadState.error = null;
     saveDownloadState();
     log('download complete:', destPath);
+    sendUpdateDiag('success', 'Download complete', (stats.size / 1048576).toFixed(2) + ' MB → ' + destPath);
     sendStatus({ status: 'ready', version });
-    return { status: 'ready', path: destPath };
+    return { status: 'ready', path: destPath, size: stats.size };
   } catch (err) {
     downloadState.status = 'error';
     downloadState.error = err.message;
     saveDownloadState();
     logErr('download failed:', err.message);
+    sendUpdateDiag('error', 'Download failed', err.message);
     try { fs.unlinkSync(destPath); } catch {}
     sendStatus({ status: 'error', message: err.message });
     return { status: 'error', error: err.message };
@@ -307,10 +314,16 @@ async function downloadUpdate(channel, version, downloadUrl) {
 // ── Install update ────────────────────────────────────────────────────
 function installUpdate(version) {
   const exePath = exePathFor(version);
+  sendUpdateDiag('info', 'Install: checking file', exePath);
+
   if (!fs.existsSync(exePath)) {
+    sendUpdateDiag('error', 'Install: file not found', exePath);
     sendStatus({ status: 'error', message: 'File not found. Download again.' });
     return { status: 'error' };
   }
+
+  const stats = fs.statSync(exePath);
+  sendUpdateDiag('info', 'Install: file OK', (stats.size / 1048576).toFixed(2) + ' MB');
 
   sendStatus({ status: 'installing', version });
 
@@ -318,6 +331,7 @@ function installUpdate(version) {
   const appPath = process.execPath;
   const installDir = path.dirname(appPath);
 
+  sendUpdateDiag('info', 'Install: spawning helper', helperPath);
   log('spawning helper:', helperPath);
   try {
     const helper = spawn(process.execPath, [
@@ -330,9 +344,12 @@ function installUpdate(version) {
     helper.unref();
   } catch (err) {
     logErr('failed to spawn helper:', err.message);
+    sendUpdateDiag('error', 'Install: failed to spawn helper', err.message);
     sendStatus({ status: 'error', message: 'Failed to start installer' });
     return { status: 'error' };
   }
+
+  sendUpdateDiag('info', 'Install: helper spawned, quitting in 1.5s');
 
   setTimeout(() => {
     updaterCanClose = true;
@@ -340,6 +357,15 @@ function installUpdate(version) {
   }, 1500);
 
   return { status: 'installing' };
+}
+
+// ── Diagnostic logging (sent to renderer's Diagnostics panel) ────────
+function sendUpdateDiag(level, message, details) {
+  const payload = { level, message, details };
+  log('[' + level + ']', message, details || '');
+  if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+    mainWindowRef.webContents.send('updater:diagnostic', payload);
+  }
 }
 
 // ── Send to renderer ──────────────────────────────────────────────────
@@ -360,17 +386,24 @@ function initUpdaterIPC(mainWindow) {
   mainWindowRef = mainWindow;
 
   ipcMain.handle('updater:check', async (_e, channel) => {
-    return await checkForUpdates(channel || 'stable') || { upToDate: true };
+    sendUpdateDiag('info', 'Update check requested', 'channel=' + channel);
+    const result = await checkForUpdates(channel || 'stable') || { upToDate: true };
+    sendUpdateDiag(result.version ? 'info' : 'success', result.version ? 'Update found: ' + result.version : 'Up to date', result.error || '');
+    return result;
   });
 
-  ipcMain.on('updater:download', async (_e, { channel, version, downloadUrl }) => {
-    log('download requested:', channel, version);
-    await downloadUpdate(channel, version, downloadUrl);
+  ipcMain.handle('updater:download', async (_e, { channel, version, downloadUrl }) => {
+    sendUpdateDiag('info', 'Download requested', 'channel=' + channel + ' version=' + version);
+    const result = await downloadUpdate(channel, version, downloadUrl);
+    sendUpdateDiag(result.status === 'ready' ? 'success' : 'error', 'Download result: ' + result.status, result.path || result.error || '');
+    return result;
   });
 
-  ipcMain.on('updater:install', (_e, { version }) => {
-    log('install requested:', version);
-    installUpdate(version);
+  ipcMain.handle('updater:install', (_e, { version }) => {
+    sendUpdateDiag('info', 'Install requested', 'version=' + version);
+    const result = installUpdate(version);
+    sendUpdateDiag(result.status === 'installing' ? 'info' : 'error', 'Install result: ' + result.status, result.error || '');
+    return result;
   });
 
   ipcMain.handle('updater:getDownloadState', () => {
@@ -382,6 +415,7 @@ function initUpdaterIPC(mainWindow) {
         saveDownloadState();
       } else {
         // File was deleted — reset to idle
+        sendUpdateDiag('warning', 'Download state was ready but file missing, resetting to idle', p);
         downloadState.status = 'idle';
         downloadState.path = null;
         downloadState.error = null;
@@ -390,6 +424,7 @@ function initUpdaterIPC(mainWindow) {
     } else if (downloadState.version && downloadState.status === 'idle') {
       const p = exePathFor(downloadState.version);
       if (fs.existsSync(p)) {
+        sendUpdateDiag('info', 'Download state was idle but file exists, upgrading to ready', p);
         downloadState.status = 'ready';
         downloadState.path = p;
         saveDownloadState();

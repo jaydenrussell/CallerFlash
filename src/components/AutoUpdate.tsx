@@ -207,7 +207,6 @@ export function AutoUpdate() {
   const [verifiedArtifact, setVerifiedArtifact] = useState<UpdateArtifact | null>(null);
   const [downloadedBlobUrl, setDownloadedBlobUrl] = useState<string | null>(null);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
-  const pendingInstallRef = useRef(false);
   const channelRef = useRef(updateInfo.updateChannel);
   const checkIdRef = useRef(0);
 
@@ -281,14 +280,6 @@ export function AutoUpdate() {
         }
         setPhase('idle');
         setUpdateInfo({ isDownloading: false, isInstalling: false, updateAvailable: true });
-        if (pendingInstallRef.current) {
-          pendingInstallRef.current = false;
-          if (window.callerflash?.updater?.install) {
-            window.callerflash.updater.install(status.version || updateInfo.latestVersion);
-            setPhase('installing');
-            setUpdateInfo({ isInstalling: true });
-          }
-        }
       } else if (status.status === 'update-available') {
         if (status.version && !versionMatchesChannel(status.version, channelRef.current)) return;
         setUpdateInfo({
@@ -328,6 +319,19 @@ export function AutoUpdate() {
       }
     });
   }, []);
+
+  // Listen for diagnostic log events from the main process updater
+  useEffect(() => {
+    if (!window.callerflash?.updater?.onDiagnostic) return;
+    return window.callerflash.updater.onDiagnostic((data: { level: string; message: string; details?: string }) => {
+      addDiagnosticLog({
+        level: data.level as any,
+        category: 'UPDATE',
+        message: data.message,
+        details: data.details,
+      });
+    });
+  }, [addDiagnosticLog]);
 
   // Query download state — if main process already downloaded an update
   // in the background, we need to know about it. Re-check when channel
@@ -501,59 +505,108 @@ export function AutoUpdate() {
   };
 
   /**
-   * Smart update: checks if the update file is already downloaded,
-   * installs immediately if so, otherwise downloads then auto-installs.
+   * Sequential update: 1) ensure URL, 2) download (await result),
+   * 3) install (await result). Every step logged to Diagnostics.
    */
   const handleUpdate = async () => {
     if (phase === 'downloading' || phase === 'installing') return;
     if (!updateInfo.latestVersion) return;
 
-    addDiagnosticLog({
-      level: 'info',
-      category: 'UPDATE',
-      message: `Update ${formatVersion(updateInfo.latestVersion)}: checking download state…`,
-    });
+    addDiagnosticLog({ level: 'info', category: 'UPDATE', message: `Update ${formatVersion(updateInfo.latestVersion)}: starting…` });
 
-    // Check if already downloaded
-    if (window.callerflash?.updater?.getDownloadState) {
-      try {
-        const state = await window.callerflash.updater.getDownloadState();
-        if (state?.status === 'ready' && state?.version?.replace(/^v/, '') === updateInfo.latestVersion?.replace(/^v/, '')) {
-          addDiagnosticLog({ level: 'info', category: 'UPDATE', message: `Installing ${formatVersion(updateInfo.latestVersion)}…` });
-          window.callerflash.updater.install(updateInfo.latestVersion);
-          setPhase('installing');
-          setUpdateInfo({ isInstalling: true });
-          return;
-        }
-      } catch { /* state check failed — proceed to download */ }
-    }
-
-    // Need to download first — auto-install when ready
-    // Ensure we have a download URL (fetch from check if needed)
+    // ── 1. Ensure download URL ──────────────────────────────────────────
     let url = downloadUrl;
     if (!url && window.callerflash?.updater?.check) {
+      addDiagnosticLog({ level: 'info', category: 'UPDATE', message: 'Fetching download URL…' });
       try {
         const result = await window.callerflash.updater.check(updateInfo.updateChannel);
         if (result?.downloadUrl) {
           url = result.downloadUrl;
           setDownloadUrl(result.downloadUrl);
+        } else if (result?.error) {
+          throw new Error(result.error);
+        } else {
+          throw new Error('No download URL returned');
         }
-      } catch { /* proceed with whatever we have */ }
+      } catch (err: any) {
+        const msg = err?.message || 'Unknown error';
+        addDiagnosticLog({ level: 'error', category: 'UPDATE', message: 'Failed to get download URL', details: msg });
+        setOutcome({ kind: 'verification-failed', message: msg });
+        return;
+      }
     }
 
     if (!url) {
-      addDiagnosticLog({ level: 'error', category: 'UPDATE', message: 'No download URL available. Try checking for updates first.' });
+      addDiagnosticLog({ level: 'error', category: 'UPDATE', message: 'No download URL available.' });
       setOutcome({ kind: 'verification-failed', message: 'No download URL available. Try checking for updates first.' });
       return;
     }
 
+    // ── 2. Download (await result) ──────────────────────────────────────
     addDiagnosticLog({ level: 'info', category: 'UPDATE', message: `Downloading ${formatVersion(updateInfo.latestVersion)}…` });
+    setPhase('downloading');
+    setUpdateInfo({ isDownloading: true, downloadProgress: 0 });
 
-    if (window.callerflash?.updater?.download) {
-      pendingInstallRef.current = true;
-      window.callerflash.updater.download(updateInfo.updateChannel, updateInfo.latestVersion, url);
-      setPhase('downloading');
-      setUpdateInfo({ isDownloading: true });
+    if (!window.callerflash?.updater?.download) {
+      addDiagnosticLog({ level: 'error', category: 'UPDATE', message: 'Download not available in this environment' });
+      setPhase('idle');
+      setUpdateInfo({ isDownloading: false });
+      return;
+    }
+
+    let dlResult: any;
+    try {
+      dlResult = await window.callerflash.updater.download(updateInfo.updateChannel, updateInfo.latestVersion, url);
+    } catch (err: any) {
+      addDiagnosticLog({ level: 'error', category: 'UPDATE', message: 'Download threw an exception', details: err?.message || String(err) });
+      setPhase('idle');
+      setUpdateInfo({ isDownloading: false, downloadProgress: 0 });
+      setOutcome({ kind: 'verification-failed', message: err?.message || 'Download error' });
+      return;
+    }
+
+    if (!dlResult || dlResult.status === 'error') {
+      const errMsg = dlResult?.error || 'Unknown download error';
+      addDiagnosticLog({ level: 'error', category: 'UPDATE', message: 'Download failed', details: errMsg });
+      setPhase('idle');
+      setUpdateInfo({ isDownloading: false, downloadProgress: 0 });
+      setOutcome({ kind: 'verification-failed', message: errMsg });
+      return;
+    }
+
+    if (dlResult.status === 'busy') {
+      addDiagnosticLog({ level: 'warning', category: 'UPDATE', message: 'Download already in progress' });
+      return;
+    }
+
+    // Download succeeded
+    addDiagnosticLog({ level: 'success', category: 'UPDATE', message: `Downloaded ${formatVersion(updateInfo.latestVersion)}` });
+    setUpdateInfo({ isDownloading: false, downloadProgress: 100 });
+
+    // ── 3. Install ──────────────────────────────────────────────────────
+    addDiagnosticLog({ level: 'info', category: 'UPDATE', message: `Installing ${formatVersion(updateInfo.latestVersion)}…` });
+    setPhase('installing');
+    setUpdateInfo({ isInstalling: true });
+
+    if (!window.callerflash?.updater?.install) {
+      addDiagnosticLog({ level: 'error', category: 'UPDATE', message: 'Install not available in this environment' });
+      setPhase('idle');
+      setUpdateInfo({ isInstalling: false });
+      return;
+    }
+
+    try {
+      const installResult = await window.callerflash.updater.install(updateInfo.latestVersion);
+      if (installResult?.status === 'error') {
+        throw new Error(installResult.error || 'Install failed');
+      }
+      // installResult.status === 'installing' → app will quit shortly
+      addDiagnosticLog({ level: 'info', category: 'UPDATE', message: 'Installer launched, app will restart…' });
+    } catch (err: any) {
+      addDiagnosticLog({ level: 'error', category: 'UPDATE', message: 'Install failed', details: err?.message || String(err) });
+      setPhase('idle');
+      setUpdateInfo({ isInstalling: false });
+      setOutcome({ kind: 'verification-failed', message: err?.message || 'Install error' });
     }
   };
 
