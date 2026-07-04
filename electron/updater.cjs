@@ -252,26 +252,31 @@ async function downloadUpdate(channel, version, downloadUrl) {
 
   try {
     await new Promise((resolve, reject) => {
-      const mod = downloadUrl.startsWith('https') ? https : http;
       const file = fs.createWriteStream(destPath);
-      const req = mod.get(downloadUrl, { headers: { 'User-Agent': 'CallerFlash' } }, (res) => {
-        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          res.resume();
-          downloadUpdate(channel, version, res.headers.location).then(resolve).catch(reject);
-          return;
-        }
-        if (res.statusCode !== 200) { file.close(); return reject(new Error(`HTTP ${res.statusCode}`)); }
-        const total = parseInt(res.headers['content-length'] || '0', 10);
-        let received = 0;
-        res.on('data', (chunk) => {
-          received += chunk.length;
-          if (total > 0) sendProgress({ percent: Math.round((received / total) * 100), received, total });
+      let redirectsLeft = 5;
+      function fetchUrl(url) {
+        const mod = url.startsWith('https') ? https : http;
+        const req = mod.get(url, { headers: { 'User-Agent': 'CallerFlash' } }, (res) => {
+          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirectsLeft > 0) {
+            redirectsLeft--;
+            res.resume();
+            return fetchUrl(res.headers.location);
+          }
+          if (res.statusCode !== 200) { file.close(); return reject(new Error(`HTTP ${res.statusCode}`)); }
+          const total = parseInt(res.headers['content-length'] || '0', 10);
+          let received = 0;
+          res.on('data', (chunk) => {
+            received += chunk.length;
+            if (total > 0) sendProgress({ percent: Math.round((received / total) * 100), received, total });
+          });
+          res.pipe(file);
+          file.on('finish', () => { file.close(); resolve(); });
+          file.on('error', reject);
         });
-        res.pipe(file);
-        file.on('finish', () => { file.close(); resolve(); });
-      });
-      req.on('error', reject);
-      req.setTimeout(120000, () => { req.destroy(new Error('Download timeout')); });
+        req.on('error', reject);
+        req.setTimeout(120000, () => { req.destroy(new Error('Download timeout')); reject(new Error('Download timeout')); });
+      }
+      fetchUrl(downloadUrl);
     });
 
     try {
