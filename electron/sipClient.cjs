@@ -105,9 +105,8 @@ function sendRegister(callbacks) {
 }
 
 function connect(config, callbacks) {
-  disconnect(); // Clean up existing
-  
-  currentConfig = config;
+  disconnect();
+  currentConfig = { ...config };
   currentCallId = uuidv4();
   cseq = 1;
 

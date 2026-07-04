@@ -34,8 +34,8 @@ const SENSITIVE_KEYS = [
  * Called on free-form log messages, not just keyed values.
  */
 const TOKEN_PATTERNS: Array<{ re: RegExp; replace: string }> = [
-  // Authorization: Bearer xxx
-  { re: /\b(authorization:\s*bearer\s+)[a-z0-9._\-]+/gi, replace: '$1***REDACTED***' },
+  // Authorization: Bearer ***REDACTED***
+  { re: /\bauthorization:\s*bearer\s+[^\s]+/gi, replace: 'authorization: Bearer ***REDACTED***' },
   // SIP Authorization header with various schemes
   { re: /\b(digest\s+(username="[^"]+"\s*,\s*)?realm="[^"]+"\s*,\s*nonce="[^"]+"\s*,\s*)(response=")[a-z0-9]+/gi, replace: '$1response="***REDACTED***' },
   // WWW-Authenticate realms + nonce + qop (keep for debugging, strip nonce)
@@ -50,10 +50,6 @@ export function redactKeyedValue(key: string, value: string): string {
   const lower = key.toLowerCase();
   if (SENSITIVE_KEYS.some((needle) => lower.includes(needle))) {
     return '***REDACTED***';
-  }
-  // Username/Authorization sub-fields might contain credentials
-  if (value.includes('Authorization:') || value.includes('authorization:')) {
-    return value.replace(/(authorization:\s*)[^\r\n]+/gi, '$1***REDACTED***');
   }
   return value;
 }

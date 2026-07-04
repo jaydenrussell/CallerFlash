@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react';
 import {
   Phone, PhoneIncoming, PhoneMissed, PhoneOff,
-  Wifi, BellRing, Clock,
-  Shield, EyeOff, Info
+  Wifi, Bell, Clipboard, Clock,
+  Shield, Info
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 
 export function Dashboard() {
   const {
     sipConnected, sipRegistered,
-    callHistory, addDiagnosticLog, toastConfig,
+    callHistory, addDiagnosticLog, toastConfig, clipboardText,
     appPreferences, isMinimized, setIsMinimized, sipConfig,
   } = useAppStore();
 
@@ -27,12 +27,6 @@ export function Dashboard() {
     const m = Math.floor((s % 3600) / 60);
     const sec = s % 60;
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
-  };
-
-  const hideToTray = () => {
-    setIsMinimized(true);
-    window.callerflash?.window?.hideToTray?.();
-    addDiagnosticLog({ level: 'info', category: 'SYSTEM', message: 'Window hidden to system tray' });
   };
 
   const missedCalls = callHistory.filter((c) => c.status === 'missed').length;
@@ -65,11 +59,19 @@ export function Dashboard() {
           tooltip={`${answeredCalls} answered · ${missedCalls} missed`}
         />
         <StatusCard
-          icon={<BellRing className="w-4 h-4" />}
-          label="Notification"
-          value={toastConfig.style === 'native' ? 'Native' : 'Branded'}
+          icon={<Bell className="w-4 h-4" />}
+          label="Toast"
+          value={`${toastConfig.duration}s`}
           color="#a78bfa"
-          tooltip={`Style: ${toastConfig.style === 'native' ? 'Native OS notification' : 'Custom branded toast window'}`}
+          tooltip={`Auto-copy ${toastConfig.autoCopyToClipboard ? 'ON' : 'OFF'}`}
+        />
+        <StatusCard
+          icon={<Clipboard className="w-4 h-4" />}
+          label="Clipboard"
+          value={clipboardText || '—'}
+          color="#f59e0b"
+          valueSize="text-sm"
+          tooltip="Sanitized caller number, ready to paste into Acuity Scheduler"
         />
       </div>
 
@@ -201,4 +203,3 @@ function DetailRow({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
-
