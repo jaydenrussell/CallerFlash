@@ -251,8 +251,9 @@ async function downloadUpdate(channel, version, downloadUrl) {
   sendStatus({ status: 'downloading', version });
 
   try {
+    let receivedBytes = 0;
+    let contentLength = 0;
     await new Promise((resolve, reject) => {
-      const file = fs.createWriteStream(destPath);
       let redirectsLeft = 5;
       function fetchUrl(url) {
         const mod = url.startsWith('https') ? https : http;
@@ -263,23 +264,38 @@ async function downloadUpdate(channel, version, downloadUrl) {
             sendUpdateDiag('info', 'Following redirect', '→ ' + res.headers.location.substring(0, 80) + ' (' + redirectsLeft + ' redirects left)');
             return fetchUrl(res.headers.location);
           }
-          if (res.statusCode !== 200) { file.close(); return reject(new Error(`HTTP ${res.statusCode}`)); }
-          const total = parseInt(res.headers['content-length'] || '0', 10);
-          let received = 0;
-          sendUpdateDiag('info', 'Download connected', 'HTTP 200, size=' + (total / 1048576).toFixed(2) + ' MB');
+          if (res.statusCode !== 200) { return reject(new Error(`HTTP ${res.statusCode}`)); }
+          contentLength = parseInt(res.headers['content-length'] || '0', 10);
+          sendUpdateDiag('info', 'Download connected', 'HTTP 200, size=' + (contentLength / 1048576).toFixed(2) + ' MB');
+          const file = fs.createWriteStream(destPath);
+          file.on('error', reject);
           res.on('data', (chunk) => {
-            received += chunk.length;
-            if (total > 0) sendProgress({ percent: Math.round((received / total) * 100), received, total });
+            receivedBytes += chunk.length;
+            if (contentLength > 0) sendProgress({ percent: Math.round((receivedBytes / contentLength) * 100), receivedBytes, total: contentLength });
+          });
+          res.on('end', () => {
+            file.end();
+          });
+          file.on('finish', () => {
+            file.close();
+            resolve();
           });
           res.pipe(file);
-          file.on('finish', () => { file.close(); resolve(); });
-          file.on('error', reject);
         });
         req.on('error', reject);
         req.setTimeout(120000, () => { req.destroy(new Error('Download timeout')); reject(new Error('Download timeout')); });
       }
       fetchUrl(downloadUrl);
     });
+
+    // Verify file was actually written
+    if (!fs.existsSync(destPath)) {
+      const dir = downloadsDir();
+      let listing = 'empty';
+      try { listing = fs.readdirSync(dir).join(', '); } catch {}
+      sendUpdateDiag('error', 'Download: file missing after promise resolved', 'checked=' + destPath + ' dir=' + listing);
+      throw new Error('File not written to disk after download completed. Dir contents: ' + listing);
+    }
 
     try {
       let cleaned = 0;
@@ -290,6 +306,12 @@ async function downloadUpdate(channel, version, downloadUrl) {
     } catch {}
 
     const stats = fs.statSync(destPath);
+    if (stats.size === 0) {
+      sendUpdateDiag('error', 'Download: file is zero bytes', destPath);
+      try { fs.unlinkSync(destPath); } catch {}
+      throw new Error('Downloaded file is 0 bytes');
+    }
+
     downloadState.version = version;
     downloadState.path = destPath;
     downloadState.status = 'ready';
