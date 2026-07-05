@@ -74,6 +74,11 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Install Tauri CLI
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-tauri@2
+
       - name: Build Tauri app (NSIS per-user)
         shell: bash
         env:
