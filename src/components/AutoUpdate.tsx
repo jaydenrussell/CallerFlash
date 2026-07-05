@@ -129,9 +129,11 @@ function formatReleaseDate(iso: string): string {
  */
 function matchesChannel(
   release: GithubRelease,
-  channel: 'stable' | 'beta' | 'alpha'
+  channel: 'stable' | 'beta' | 'alpha' | 'tauri'
 ): boolean {
   const tag = release.tag_name;
+  if (channel === 'tauri') return /-tauri/i.test(tag);
+  if (/-tauri/i.test(tag)) return false; // exclude Tauri from Electron channels
   if (channel === 'stable') return !/-beta|alpha/i.test(tag);
   if (channel === 'beta') return /-beta(\.|$)/.test(tag);
   if (channel === 'alpha') return /-alpha(\.|$)/i.test(tag);
@@ -139,8 +141,10 @@ function matchesChannel(
 }
 
 /** Check if a raw version string belongs to the given channel. */
-function versionMatchesChannel(version: string, channel: 'stable' | 'beta' | 'alpha'): boolean {
+function versionMatchesChannel(version: string, channel: 'stable' | 'beta' | 'alpha' | 'tauri'): boolean {
   const tag = version.replace(/^v/, '');
+  if (channel === 'tauri') return /-tauri/i.test(tag);
+  if (/-tauri/i.test(tag)) return false; // exclude Tauri from Electron channels
   if (channel === 'stable') return !/-beta|alpha/i.test(tag);
   if (channel === 'beta') return /-beta(\.|$)/i.test(tag);
   if (channel === 'alpha') return /-alpha(\.|$)/i.test(tag);
@@ -807,7 +811,7 @@ export function AutoUpdate() {
           <div className="p-2.5 rounded-lg bg-win-card border border-win-border/50 mb-2">
             <p className="text-[11px] font-medium text-win-text-secondary mb-1.5">Update Channel</p>
             <div className="flex gap-1.5">
-              {(['stable', 'beta', 'alpha'] as const).map((channelOpt) => (
+              {(['stable', 'beta', 'alpha', 'tauri'] as const).map((channelOpt) => (
                 <button
                   key={channelOpt}
                   onClick={() => {

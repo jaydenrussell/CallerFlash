@@ -273,7 +273,7 @@ function setup(): void {
     },
 
     platform: {
-      isElectron: true,
+      isElectron: false,
       arch: 'x64',
       version: '__APP_VERSION__',
     },

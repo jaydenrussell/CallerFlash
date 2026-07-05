@@ -43,6 +43,7 @@ export const CHANNEL_POLICY = {
   stable: { allowPrerelease: false },
   beta: { allowPrerelease: true },
   alpha: { allowPrerelease: true },
+  tauri: { allowPrerelease: true },
 } as const;
 
 export type UpdateChannel = keyof typeof CHANNEL_POLICY;

@@ -82,7 +82,7 @@ declare global {
     resizeContent: () => void;
   }
 
-  type UpdateChannel = 'stable' | 'beta' | 'alpha';
+  type UpdateChannel = 'stable' | 'beta' | 'alpha' | 'tauri';
 
   interface CallerFlashUpdaterStatus {
     status: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'installing' | 'error' | 'noop' | 'success';
