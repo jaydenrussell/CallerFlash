@@ -7,7 +7,7 @@ mod updater;
 use diagnostics::Diagnostics;
 use sip::SipClient;
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Listener, Manager};
 use updater::Updater;
 
 // Re-export command functions so generate_handler can find the generated __cmd__ macros
@@ -221,6 +221,36 @@ pub fn run() {
                 pending_data: Mutex::new(None),
             });
             tray::setup_tray(app.handle())?;
+
+            // Wire up window events from tauri-bridge.ts
+            let app_handle = app.handle().clone();
+            let _ = app.listen("window:minimize", move |_| {
+                if let Some(w) = app_handle.get_webview_window("main") {
+                    let _ = w.minimize();
+                }
+            });
+            let app_handle = app.handle().clone();
+            let _ = app.listen("window:maximize", move |_| {
+                if let Some(w) = app_handle.get_webview_window("main") {
+                    if w.is_maximized().unwrap_or(false) {
+                        let _ = w.unmaximize();
+                    } else {
+                        let _ = w.maximize();
+                    }
+                }
+            });
+            let app_handle = app.handle().clone();
+            let _ = app.listen("window:close", move |_| {
+                if let Some(w) = app_handle.get_webview_window("main") {
+                    let _ = w.hide();
+                }
+            });
+            let app_handle = app.handle().clone();
+            let _ = app.listen("window:hide-to-tray", move |_| {
+                if let Some(w) = app_handle.get_webview_window("main") {
+                    let _ = w.hide();
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

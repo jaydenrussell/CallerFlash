@@ -68,13 +68,11 @@ function TitleBar({ compact }: { compact: boolean }) {
     : 'Offline';
 
   return (
-    // Titlebar is the OS drag region. The `WebkitAppRegion: drag`
-    // makes the whole bar draggable, and `no-drag` on the buttons
-    // below keeps them clickable. Required because we use
-    // `titleBarStyle: 'hidden'` so the OS chrome is hidden.
+    // Titlebar is the window drag region (`data-tauri-drag-region`).
+    // Buttons are outside the drag region and stay clickable.
     <div
+      data-tauri-drag-region
       className="h-9 bg-win-card border-b border-win-border flex items-center justify-between select-none flex-shrink-0"
-      style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >
       <div className="flex items-center gap-2 px-3 min-w-0 flex-1">
         <div className="w-4 h-4 rounded bg-gradient-to-br from-win-accent to-blue-600 flex items-center justify-center flex-shrink-0">
@@ -96,7 +94,6 @@ function TitleBar({ compact }: { compact: boolean }) {
           <button
             onClick={() => setActiveTab('update')}
             className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 transition-colors flex-shrink-0"
-            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
             title={`Update ${formatVersion(updateInfo.latestVersion)} available — click to open`}
           >
             <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
@@ -104,12 +101,11 @@ function TitleBar({ compact }: { compact: boolean }) {
           </button>
         )}
       </div>
-      <div className="flex h-full flex-shrink-0" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+      <div className="flex h-full flex-shrink-0">
         <button
           onClick={hideToTray}
           className="px-3 sm:px-4 h-full hover:bg-win-surface-hover transition-colors flex items-center"
           title="Minimize to tray"
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
           <Minus className="w-3.5 h-3.5 text-win-text-secondary" />
         </button>
@@ -117,7 +113,6 @@ function TitleBar({ compact }: { compact: boolean }) {
           onClick={() => window.callerflash?.window?.maximize?.()}
           className="px-3 sm:px-4 h-full hover:bg-win-surface-hover transition-colors flex items-center"
           title="Maximize / Restore"
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
           <Square className="w-3 h-3 text-win-text-secondary" />
         </button>
@@ -125,7 +120,6 @@ function TitleBar({ compact }: { compact: boolean }) {
           onClick={hideToTray}
           className="px-3 sm:px-4 h-full hover:bg-red-600 transition-colors flex items-center group"
           title="Hide to system tray"
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
           <X className="w-3.5 h-3.5 text-win-text-secondary group-hover:text-white" />
         </button>
