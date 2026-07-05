@@ -95,43 +95,48 @@ jobs:
         id: bundles
         shell: bash
         run: |
+          set +e
           BASE_VER="${{ needs.tag-version.outputs.base_ver }}"
-          NSIS_DIR="src-tauri/target/release/bundle/nsis"
-          INSTALLER="$NSIS_DIR/CallerFlash_${BASE_VER}_x64-setup.exe"
+          BUNDLE_ROOT="src-tauri/target/release/bundle"
+          echo "--- Bundle root contents ---"
+          find "$BUNDLE_ROOT" -type f 2>/dev/null || echo "(bundle root not found)"
+          echo "---"
 
-          if [ ! -f "$INSTALLER" ]; then
-            # Fallback: find any .exe (avoid ls glob fail on empty dir)
-            INSTALLER=
-            for f in "$NSIS_DIR"/*.exe; do
+          INSTALLER=
+          # Try exact expected name first
+          EXACT="$BUNDLE_ROOT/nsis/CallerFlash_${BASE_VER}_x64-setup.exe"
+          [ -f "$EXACT" ] && INSTALLER="$EXACT"
+
+          # Fallback: any .exe in nsis dir
+          if [ -z "$INSTALLER" ]; then
+            for f in "$BUNDLE_ROOT/nsis/"*.exe; do
               [ -f "$f" ] && INSTALLER="$f" && break
             done
           fi
 
+          # Final fallback: any .exe anywhere under bundle
+          if [ -z "$INSTALLER" ]; then
+            INSTALLER=$(find "$BUNDLE_ROOT" -name '*.exe' -type f 2>/dev/null | head -1)
+          fi
+
           if [ -z "$INSTALLER" ] || [ ! -f "$INSTALLER" ]; then
-            echo "No installer found!" >&2
-            find "$NSIS_DIR" -maxdepth 1 -type f 2>/dev/null || echo "(directory may not exist)"
+            echo "::error::No installer found!"
+            echo "Full bundle tree:"
+            find "$BUNDLE_ROOT" -type f 2>/dev/null || echo "(no bundle dir)"
             exit 1
           fi
 
           echo "installer=$INSTALLER" >> "$GITHUB_OUTPUT"
 
-          # Find updater artifacts: .sig file and .zip/.tar.gz bundle
-          SIG="${INSTALLER}.sig"
-          if [ ! -f "$SIG" ]; then
-            SIG=
-            for f in "$(dirname "$INSTALLER")"/*.sig; do
-              [ -f "$f" ] && SIG="$f" && break
-            done
-          fi
+          # Find updater artifacts
+          SIG=
+          for f in "$(dirname "$INSTALLER")"/*.sig "$BUNDLE_ROOT"/*/*.sig; do
+            [ -f "$f" ] && SIG="$f" && break
+          done
+
           UPDATE_BUNDLE=
-          BUNDLE_DIR="src-tauri/target/release/bundle"
-          for d in "$BUNDLE_DIR"/*/; do
-            for f in "$d"*.sig; do
-              [ -f "$f" ] && [ -z "$SIG" ] && SIG="$f"
-            done
-            for f in "$d"*.zip "$d"*.tar.gz; do
-              [ -f "$f" ] && UPDATE_BUNDLE="$f" && break 2
-            done
+          for f in "$BUNDLE_ROOT"/*/*.zip "$BUNDLE_ROOT"/*/*.tar.gz; do
+            [ -f "$f" ] && UPDATE_BUNDLE="$f" && break
           done
 
           [ -n "$SIG" ] && [ -f "$SIG" ] && echo "sig=$SIG" >> "$GITHUB_OUTPUT"
