@@ -116,7 +116,9 @@
 
       function showCall(data) {
         const config = data.config || {};
-        currentDuration = config.duration || 5000;
+        // config.duration is in seconds (slider range 3-30)
+        var durationSec = (typeof config.duration === 'number' ? config.duration : 5);
+        currentDuration = durationSec * 1000;
 
         elNumber.textContent = data.callerNumber || 'Unknown';
         elName.textContent = data.callerName || '';
@@ -129,7 +131,10 @@
           elToast.style.fontFamily = config.fontFamily;
         }
         if (config.fontSize) {
-          elNumber.style.fontSize = config.fontSize + 'px';
+          var base = config.fontSize;
+          elNumber.style.fontSize = base + 'px';
+          elName.style.fontSize = Math.max(10, base - 4) + 'px';
+          elTimestamp.style.fontSize = Math.max(9, base - 6) + 'px';
         }
         if (config.backgroundColor) {
           elToast.style.background = config.backgroundColor;
@@ -149,8 +154,8 @@
         // Auto-hide timer
         if (hideTimer) clearTimeout(hideTimer);
         if (currentDuration > 0) {
-          hideTimer = setTimeout(() => {
-            window.__TAURI__.core.invoke('toast_hide').catch(() => {});
+          hideTimer = setTimeout(function () {
+            window.__TAURI__.core.invoke('toast_hide').catch(function () {});
           }, currentDuration);
         }
       }
