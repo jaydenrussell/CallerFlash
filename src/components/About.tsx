@@ -37,13 +37,13 @@ export function About() {
           <FeatureCard
             icon={<Zap className="w-3.5 h-3.5" />}
             title="Toast Notifications"
-            description="OS-level toasts in a dedicated window. Fully customizable."
+            description="Modern customizable or Windows Native — two distinct styles."
             color="#f59e0b"
           />
           <FeatureCard
             icon={<Shield className="w-3.5 h-3.5" />}
             title="Clipboard Auto-Copy"
-            description="Sanitized caller number pasted into Acuity Scheduler."
+            description="Sanitized caller number auto-copied to clipboard."
             color="#6ccb5f"
           />
           <FeatureCard

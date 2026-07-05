@@ -11,7 +11,7 @@ A SIP-compliant Windows desktop client with toast notifications. Optimized for V
 
 - **Universal SIP** — UDP, TCP, or TLS; works with VoIP.ms, Twilio, Telnyx, Bandwidth, and any RFC-compliant SIP provider
 - **Toast notifications** — fully customizable font, colors, position, duration, border radius, and opacity
-- **Auto clipboard copy** — caller number automatically copied for instant paste into Acuity Scheduler
+- **Auto clipboard copy** — caller number automatically copied to your clipboard
 - **Draggable toasts** — reposition any notification; position persists for future calls
 - **Start with Windows** — optionally launch minimized, calls still detected in background
 - **Auto-update** — three channels (stable, beta, nightly); signed releases with SHA-256 + Ed25519 verification

@@ -4,7 +4,7 @@ import { sanitizeCallerNumberForClipboard } from '../security/secretRedactor';
 const sampleCallers = [
   { number: '(514) 555-0123', name: 'John Smith' },
   { number: '(416) 555-0456', name: 'Jane Doe' },
-  { number: '(604) 555-0789', name: 'Acuity Client' },
+  { number: '(604) 555-0789', name: 'Client Services' },
   { number: '(905) 555-1234', name: 'Dr. Wilson' },
   { number: '(613) 555-5678', name: 'Mary Johnson' },
   { number: '(438) 555-9012', name: 'Bob Williams' },
