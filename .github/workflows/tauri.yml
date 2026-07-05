@@ -14,6 +14,9 @@ concurrency:
   group: tauri
   cancel-in-progress: false
 
+permissions:
+  contents: write
+
 env:
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
