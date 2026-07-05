@@ -24,8 +24,9 @@ jobs:
   tag-version:
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.version.outputs.full }}
-      tag:     ${{ steps.version.outputs.tag }}
+      version:  ${{ steps.version.outputs.full }}
+      base_ver: ${{ steps.version.outputs.base }}
+      tag:      ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -94,37 +95,47 @@ jobs:
         id: bundles
         shell: bash
         run: |
-          VERSION="${{ needs.tag-version.outputs.version }}"
+          BASE_VER="${{ needs.tag-version.outputs.base_ver }}"
           NSIS_DIR="src-tauri/target/release/bundle/nsis"
-          BUNDLE_DIR="src-tauri/target/release/bundle"
-          INSTALLER="$NSIS_DIR/CallerFlash_${VERSION}_x64-setup.exe"
+          INSTALLER="$NSIS_DIR/CallerFlash_${BASE_VER}_x64-setup.exe"
 
-          # Fallback for installer
           if [ ! -f "$INSTALLER" ]; then
-            INSTALLER=$(ls "$NSIS_DIR"/*.exe 2>/dev/null | head -1)
+            # Fallback: find any .exe (avoid ls glob fail on empty dir)
+            INSTALLER=
+            for f in "$NSIS_DIR"/*.exe; do
+              [ -f "$f" ] && INSTALLER="$f" && break
+            done
           fi
 
           if [ -z "$INSTALLER" ] || [ ! -f "$INSTALLER" ]; then
             echo "No installer found!" >&2
-            ls -la "$NSIS_DIR" 2>/dev/null || true
+            find "$NSIS_DIR" -maxdepth 1 -type f 2>/dev/null || echo "(directory may not exist)"
             exit 1
           fi
 
           echo "installer=$INSTALLER" >> "$GITHUB_OUTPUT"
 
-          # Find updater artifacts: .sig file for the installer, and any .zip/.tar.gz bundle
+          # Find updater artifacts: .sig file and .zip/.tar.gz bundle
           SIG="${INSTALLER}.sig"
           if [ ! -f "$SIG" ]; then
-            SIG=$(ls "$BUNDLE_DIR"/*/*.sig 2>/dev/null | head -1)
+            SIG=
+            for f in "$(dirname "$INSTALLER")"/*.sig; do
+              [ -f "$f" ] && SIG="$f" && break
+            done
           fi
-          UPDATE_BUNDLE=$(ls "$BUNDLE_DIR"/*/*.zip "$BUNDLE_DIR"/*/*.tar.gz 2>/dev/null | head -1)
+          UPDATE_BUNDLE=
+          BUNDLE_DIR="src-tauri/target/release/bundle"
+          for d in "$BUNDLE_DIR"/*/; do
+            for f in "$d"*.sig; do
+              [ -f "$f" ] && [ -z "$SIG" ] && SIG="$f"
+            done
+            for f in "$d"*.zip "$d"*.tar.gz; do
+              [ -f "$f" ] && UPDATE_BUNDLE="$f" && break 2
+            done
+          done
 
-          if [ -n "$SIG" ] && [ -f "$SIG" ]; then
-            echo "sig=$SIG" >> "$GITHUB_OUTPUT"
-          fi
-          if [ -n "$UPDATE_BUNDLE" ] && [ -f "$UPDATE_BUNDLE" ]; then
-            echo "update_bundle=$UPDATE_BUNDLE" >> "$GITHUB_OUTPUT"
-          fi
+          [ -n "$SIG" ] && [ -f "$SIG" ] && echo "sig=$SIG" >> "$GITHUB_OUTPUT"
+          [ -n "$UPDATE_BUNDLE" ] && [ -f "$UPDATE_BUNDLE" ] && echo "update_bundle=$UPDATE_BUNDLE" >> "$GITHUB_OUTPUT"
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
@@ -140,6 +151,7 @@ jobs:
         run: |
           TAG="${{ needs.tag-version.outputs.tag }}"
           VERSION="${{ needs.tag-version.outputs.version }}"
+          BASE_VER="${{ needs.tag-version.outputs.base_ver }}"
           INSTALLER="${{ steps.bundles.outputs.installer }}"
           SIG="${{ steps.bundles.outputs.sig }}"
           UPDATE_BUNDLE="${{ steps.bundles.outputs.update_bundle }}"
@@ -168,7 +180,7 @@ jobs:
             UPDATE_BASENAME=$(basename "$UPDATE_BUNDLE")
             cat > update.json <<EOF
             {
-              "version": "${VERSION}",
+              "version": "${BASE_VER}",
               "notes": "https://github.com/jaydenrussell/CallerFlash/releases/tag/${TAG}",
               "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
               "platforms": {
