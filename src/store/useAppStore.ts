@@ -37,6 +37,7 @@ export interface ToastConfig {
   duration: number;
   position: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left';
   soundEnabled: boolean;
+  soundName: string;
   autoCopyToClipboard: boolean;
   showCallerName: boolean;
   showTimestamp: boolean;
@@ -348,6 +349,7 @@ const defaultToastConfig: ToastConfig = {
   duration: 8,
   position: 'top-right',
   soundEnabled: true,
+  soundName: 'chime',
   autoCopyToClipboard: true,
   showCallerName: true,
   showTimestamp: true,

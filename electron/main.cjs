@@ -780,7 +780,7 @@ ipcMain.on('notify:show', (_event, ...args) => {
       const opts = {
         title: safeTitle,
         body: safeBody,
-        silent: false,
+        silent: !d.soundEnabled, // default false (sound plays) when undefined
       };
       if (typeof urgency === 'string') opts.urgency = urgency;
       if (typeof timeoutType === 'string') opts.timeoutType = timeoutType;

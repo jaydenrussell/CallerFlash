@@ -40,6 +40,8 @@ function showSeparateToast(data: {
     showCallerName: boolean;
     showTimestamp: boolean;
     maxWidth: number;
+    soundEnabled: boolean;
+    soundName: string;
     style: 'native' | 'custom';
   };
 }) {
@@ -48,7 +50,7 @@ function showSeparateToast(data: {
   // ── Native style: OS-level notification only ────────────────────
   if (c.style === 'native') {
     if (window.callerflash?.notify?.show) {
-      window.callerflash.notify.show({ title: 'Incoming Call', body: `${data.callerNumber}${data.callerName ? ` - ${data.callerName}` : ''}`, urgency: 'critical', timeoutType: 'never' });
+      window.callerflash.notify.show({ title: 'Incoming Call', body: `${data.callerNumber}${data.callerName ? ` - ${data.callerName}` : ''}`, urgency: 'critical', timeoutType: 'never', soundEnabled: c.soundEnabled });
     }
     // Auto-copy to clipboard if enabled
     if (c.autoCopyToClipboard && data.callerNumber && navigator.clipboard) {
@@ -65,7 +67,7 @@ function showSeparateToast(data: {
 
   // ── Fallback when toast bridge unavailable: native notification ──
   if (window.callerflash?.notify?.show) {
-    window.callerflash.notify.show({ title: 'Incoming Call', body: `${data.callerNumber}${data.callerName ? ` - ${data.callerName}` : ''}`, urgency: 'critical', timeoutType: 'never' });
+    window.callerflash.notify.show({ title: 'Incoming Call', body: `${data.callerNumber}${data.callerName ? ` - ${data.callerName}` : ''}`, urgency: 'critical', timeoutType: 'never', soundEnabled: c.soundEnabled });
   }
 
   // ── Web fallback: popup window ──────────────────────────────────
@@ -187,7 +189,7 @@ export function simulateIncomingCall(source: 'dashboard' | 'toast-settings' | 'b
   if (store.toastConfig.style === 'native') {
     // Native style: ONLY the OS notification — no in-app toast
     if (window.callerflash?.notify?.show) {
-      window.callerflash.notify.show({ title: 'Incoming Call', body: `${record.callerNumber}${record.callerName ? ` - ${record.callerName}` : ''}`, urgency: 'critical', timeoutType: 'never' });
+      window.callerflash.notify.show({ title: 'Incoming Call', body: `${record.callerNumber}${record.callerName ? ` - ${record.callerName}` : ''}`, urgency: 'critical', timeoutType: 'never', soundEnabled: store.toastConfig.soundEnabled });
     }
   } else {
     // Custom/Branded style: always-on-top inline HTML window ONLY
@@ -212,6 +214,8 @@ export function simulateIncomingCall(source: 'dashboard' | 'toast-settings' | 'b
           showCallerName: store.toastConfig.showCallerName,
           showTimestamp: store.toastConfig.showTimestamp,
           maxWidth: store.toastConfig.maxWidth,
+          soundEnabled: store.toastConfig.soundEnabled,
+          soundName: store.toastConfig.soundName,
           style: store.toastConfig.style,
         },
       });

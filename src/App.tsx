@@ -453,10 +453,12 @@ export default function App() {
             showCallerName: toastConfig.showCallerName,
             showTimestamp: toastConfig.showTimestamp,
             maxWidth: toastConfig.maxWidth,
+            soundEnabled: toastConfig.soundEnabled,
+            soundName: toastConfig.soundName,
           },
         });
       } else if (toastConfig.style === 'native' && window.callerflash?.notify?.show) {
-        window.callerflash.notify.show({ title: 'Incoming Call', body: `${safeNumber}${safeName ? ` - ${safeName}` : ''}`, urgency: 'critical', timeoutType: 'never' });
+        window.callerflash.notify.show({ title: 'Incoming Call', body: `${safeNumber}${safeName ? ` - ${safeName}` : ''}`, urgency: 'critical', timeoutType: 'never', soundEnabled: toastConfig.soundEnabled });
       }
     });
   }, [addDiagnosticLog]);

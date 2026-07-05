@@ -31,6 +31,7 @@ export function ToastSettings() {
       duration: 8,
       position: 'top-right',
       soundEnabled: true,
+      soundName: 'chime',
       autoCopyToClipboard: true,
       showCallerName: true,
       showTimestamp: true,
@@ -141,7 +142,7 @@ export function ToastSettings() {
         {/* Appearance & Behavior */}
         <Section icon={<Palette className="w-4 h-4" />} title="Appearance & Behavior" desc="Look, feel, and features">
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className={`grid grid-cols-2 gap-3 ${toastConfig.style === 'native' ? 'opacity-40 pointer-events-none' : ''}`}>
               <SliderField
                 label="Font Size"
                 value={toastConfig.fontSize}
@@ -149,14 +150,16 @@ export function ToastSettings() {
                 max={28}
                 step={1}
                 unit="px"
+                disabled={toastConfig.style === 'native'}
                 onChange={(v) => update({ fontSize: v })}
               />
               <InputField label="Font Family">
                 <div className="relative">
                   <select
                     value={toastConfig.fontFamily}
+                    disabled={toastConfig.style === 'native'}
                     onChange={(e) => update({ fontFamily: e.target.value })}
-                    className="w-full px-2 py-1 bg-win-card border border-win-border rounded-lg text-xs text-win-text focus:outline-none focus:border-win-accent transition-colors appearance-none pr-8"
+                    className="w-full px-2 py-1 bg-win-card border border-win-border rounded-lg text-xs text-win-text focus:outline-none focus:border-win-accent transition-colors appearance-none pr-8 disabled:opacity-40"
                     style={{ fontFamily: toastConfig.fontFamily }}
                   >
                     {fontFamilies.map((font) => (
@@ -170,25 +173,28 @@ export function ToastSettings() {
               </InputField>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
+            <div className={`grid grid-cols-3 gap-2 ${toastConfig.style === 'native' ? 'opacity-40 pointer-events-none' : ''}`}>
               <ColorField
                 label="Text"
                 value={toastConfig.textColor}
+                disabled={toastConfig.style === 'native'}
                 onChange={(v) => update({ textColor: v })}
               />
               <ColorField
                 label="Background"
                 value={toastConfig.backgroundColor}
+                disabled={toastConfig.style === 'native'}
                 onChange={(v) => update({ backgroundColor: v })}
               />
               <ColorField
                 label="Accent"
                 value={toastConfig.accentColor}
+                disabled={toastConfig.style === 'native'}
                 onChange={(v) => update({ accentColor: v })}
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className={`grid grid-cols-3 gap-3 ${toastConfig.style === 'native' ? 'opacity-40 pointer-events-none' : ''}`}>
               <SliderField
                 label="Radius"
                 value={toastConfig.borderRadius}
@@ -196,6 +202,7 @@ export function ToastSettings() {
                 max={24}
                 step={1}
                 unit="px"
+                disabled={toastConfig.style === 'native'}
                 onChange={(v) => update({ borderRadius: v })}
               />
               <SliderField
@@ -205,6 +212,7 @@ export function ToastSettings() {
                 max={100}
                 step={1}
                 unit="%"
+                disabled={toastConfig.style === 'native'}
                 onChange={(v) => update({ opacity: v })}
               />
               <SliderField
@@ -214,6 +222,7 @@ export function ToastSettings() {
                 max={600}
                 step={10}
                 unit="px"
+                disabled={toastConfig.style === 'native'}
                 onChange={(v) => update({ maxWidth: v })}
               />
             </div>
@@ -232,16 +241,45 @@ export function ToastSettings() {
               <ToggleField
                 label="Show caller name"
                 value={toastConfig.showCallerName}
+                disabled={toastConfig.style === 'native'}
                 onChange={(v) => update({ showCallerName: v })}
               />
               <ToggleField
                 label="Show timestamp"
                 value={toastConfig.showTimestamp}
+                disabled={toastConfig.style === 'native'}
                 onChange={(v) => update({ showTimestamp: v })}
               />
             </div>
+
+            {toastConfig.style === 'native' && (
+              <p className="text-[11px] text-win-text-tertiary italic">
+                Some appearance options are only available in Modern style.
+              </p>
+            )}
           </div>
         </Section>
+
+        {/* Sound */}
+        {toastConfig.style === 'custom' && (
+        <Section icon={<Bell className="w-4 h-4" />} title="Sound" desc="Choose a ringtone for incoming calls">
+          <div className="space-y-2">
+            <select
+              value={toastConfig.soundName}
+              onChange={(e) => update({ soundName: e.target.value })}
+              className="w-full px-2.5 py-2 bg-win-card border border-win-border rounded-lg text-xs text-win-text focus:outline-none focus:border-win-accent transition-colors appearance-none pr-8"
+            >
+              <option value="chime">Chime</option>
+              <option value="ring">Phone Ring</option>
+              <option value="beep">Beep</option>
+              <option value="gentle">Gentle</option>
+            </select>
+            <p className="text-[11px] text-win-text-tertiary">
+              Generated by your speakers — no audio files needed.
+            </p>
+          </div>
+        </Section>
+        )}
 
         {/* Duration */}
         <Section icon={<Clock className="w-4 h-4" />} title="Duration" desc="How long toasts stay visible (drag to reposition)">
@@ -290,17 +328,18 @@ function InputField({ label, children }: {
   );
 }
 
-function SliderField({ label, value, min, max, step, unit, onChange }: {
+function SliderField({ label, value, min, max, step, unit, disabled, onChange }: {
   label: string;
   value: number;
   min: number;
   max: number;
   step: number;
   unit: string;
+  disabled?: boolean;
   onChange: (v: number) => void;
 }) {
   return (
-    <div>
+    <div className={disabled ? 'opacity-40' : ''}>
       <div className="flex items-center justify-between mb-1.5">
         <label className="text-xs font-medium text-win-text-secondary">{label}</label>
         <span className="text-xs font-semibold text-win-accent">{value}{unit}</span>
@@ -311,27 +350,30 @@ function SliderField({ label, value, min, max, step, unit, onChange }: {
         max={max}
         step={step}
         value={value}
+        disabled={disabled}
         onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="w-full"
+        className="w-full disabled:opacity-40"
       />
     </div>
   );
 }
 
-function ColorField({ label, value, onChange }: {
+function ColorField({ label, value, disabled, onChange }: {
   label: string;
   value: string;
+  disabled?: boolean;
   onChange: (v: string) => void;
 }) {
   return (
-    <div>
+    <div className={disabled ? 'opacity-40 pointer-events-none' : ''}>
       <label className="block text-xs font-medium text-win-text-secondary mb-1.5">{label}</label>
       <div className="relative h-10 rounded-lg border border-win-border bg-win-card overflow-hidden">
         <input
           type="color"
           value={value}
+          disabled={disabled}
           onChange={(e) => onChange(e.target.value)}
-          className="absolute inset-0 w-full h-full cursor-pointer opacity-0"
+          className="absolute inset-0 w-full h-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
         />
         <div className="absolute inset-2 rounded pointer-events-none" style={{ backgroundColor: value }} />
         <div className="absolute bottom-1 left-2 right-2 text-xs font-mono text-win-text-secondary bg-black/40 px-1.5 py-0.5 rounded pointer-events-none truncate">
@@ -342,16 +384,18 @@ function ColorField({ label, value, onChange }: {
   );
 }
 
-function ToggleField({ label, value, onChange }: {
+function ToggleField({ label, value, disabled, onChange }: {
   label: string;
   value: boolean;
+  disabled?: boolean;
   onChange: (v: boolean) => void;
 }) {
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={() => onChange(!value)}
-      className="flex w-full items-center justify-between rounded-lg border border-win-border/50 bg-win-card px-3 py-2.5 transition-colors hover:border-win-border hover:bg-win-surface-hover"
+      className={`flex w-full items-center justify-between rounded-lg border border-win-border/50 px-3 py-2.5 transition-colors ${disabled ? 'opacity-40 cursor-not-allowed' : 'bg-win-card hover:border-win-border hover:bg-win-surface-hover'}`}
     >
       <span className="text-sm text-win-text">{label}</span>
       <div className={`relative h-[22px] w-10 rounded-full transition-colors flex-shrink-0 ${value ? 'bg-win-accent' : 'bg-win-border'}`}>
