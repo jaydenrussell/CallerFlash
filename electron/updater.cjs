@@ -349,12 +349,21 @@ function installUpdate(version) {
 
   sendStatus({ status: 'installing', version });
 
-  const helperPath = path.join(__dirname, 'updater-helper.cjs');
   const appPath = process.execPath;
   const installDir = path.dirname(appPath);
+  const helperPath = path.join(__dirname, 'updater-helper.cjs');
+  const helperExists = fs.existsSync(helperPath);
+  const isPacked = !!(process.resourcesPath && process.resourcesPath.includes('app.asar'));
 
-  sendUpdateDiag('info', 'Install: spawning helper', helperPath);
-  log('spawning helper:', helperPath);
+  sendUpdateDiag('info', 'Install: preparing to help', 'helper=' + helperPath + ' exists=' + helperExists + ' packed=' + isPacked + ' execPath=' + appPath);
+  log('spawning helper:', helperPath, 'exists:', helperExists);
+
+  if (!helperExists) {
+    sendUpdateDiag('error', 'Install: helper script not found on disk', 'Checked: ' + helperPath + ' (asarUnpack may be missing)');
+    sendStatus({ status: 'error', message: 'Helper not found. Reinstall the app.' });
+    return { status: 'error' };
+  }
+
   try {
     const helper = spawn(process.execPath, [
       helperPath,
@@ -364,6 +373,7 @@ function installUpdate(version) {
       '--pid', String(process.pid),
     ], { detached: true, stdio: 'ignore', windowsHide: true });
     helper.unref();
+    sendUpdateDiag('info', 'Install: helper spawned (pid=' + (helper.pid || 'unknown') + ')', 'detached=true');
   } catch (err) {
     logErr('failed to spawn helper:', err.message);
     sendUpdateDiag('error', 'Install: failed to spawn helper', err.message);
