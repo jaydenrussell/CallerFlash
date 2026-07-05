@@ -381,6 +381,24 @@ export default function App() {
     window.callerflash.tray.setSipStatus(label);
   }, [sipConnected, sipRegistered]);
 
+  // Background update check on app startup (Tauri only).
+  useEffect(() => {
+    if (!window.callerflash?.updater?.check) return;
+    addDiagnosticLog({ level: 'info', category: 'UPDATE', message: 'Checking for updates on startup…' });
+    window.callerflash.updater.check('stable').then((result) => {
+      if (result?.version) {
+        useAppStore.getState().setUpdateInfo({
+          latestVersion: result.version,
+          updateAvailable: true,
+          lastChecked: new Date(),
+        });
+        addDiagnosticLog({ level: 'info', category: 'UPDATE', message: `Update available: ${result.version}` });
+      } else if (result?.upToDate) {
+        addDiagnosticLog({ level: 'info', category: 'UPDATE', message: 'App is up to date.' });
+      }
+    }).catch(() => {});
+  }, [addDiagnosticLog]);
+
   return (
     <div className="h-screen w-screen flex flex-col bg-win-bg overflow-hidden min-w-[360px]">
       <TitleBar compact={titleCompact} />
