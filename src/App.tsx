@@ -10,9 +10,9 @@ import { AutoUpdate } from './components/AutoUpdate';
 import { About } from './components/About';
 import { ToastContainer } from './components/ToastNotification';
 import { useAppStore } from './store/useAppStore';
-import { AppWindow, Minus, PhoneIncoming, Square, Undo2, Wifi, WifiOff, X } from 'lucide-react';
-import { simulateIncomingCall } from './utils/simulateIncomingCall';
+import { Minus, Square, X } from 'lucide-react';
 import { formatVersion } from './utils/formatVersion';
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 
 // Threshold below which the sidebar collapses to icons only
 const SIDEBAR_COLLAPSE_BREAKPOINT = 720;
@@ -79,7 +79,7 @@ function TitleBar({ compact }: { compact: boolean }) {
           if ((t as HTMLElement).tagName === 'BUTTON') return;
           t = (t as HTMLElement).parentElement;
         }
-        window.callerflash?.window?.startDrag?.();
+        getCurrentWebviewWindow().startDragging().catch(function () {});
       }}
     >
       <div className="flex items-center gap-2 px-3 min-w-0 flex-1">
@@ -159,127 +159,10 @@ function MainContent() {
   );
 }
 
-function MinimizedShell() {
-  const { sipConnected, sipRegistered, setIsMinimized, addDiagnosticLog, appPreferences } = useAppStore();
 
-  const restore = () => {
-    setIsMinimized(false);
-    if (window.callerflash?.window?.show) {
-      window.callerflash.window.show();
-    }
-    addDiagnosticLog({ level: 'info', category: 'SYSTEM', message: 'Main window restored from background mode' });
-  };
-
-  const hideToTray = () => {
-    if (window.callerflash?.window?.hideToTray) {
-      window.callerflash.window.hideToTray();
-    }
-    addDiagnosticLog({ level: 'info', category: 'SYSTEM', message: 'Window hidden to system tray' });
-  };
-
-  return (
-    <div className="relative flex-1 overflow-hidden bg-[radial-gradient(circle_at_top,#12324d_0%,#202020_38%,#141414_100%)]">
-      <div className="absolute inset-0 bg-black/20" />
-      <div className="absolute inset-x-3 sm:inset-x-auto bottom-3 sm:bottom-6 sm:right-6 z-20 sm:w-[360px] rounded-2xl border border-win-border bg-win-card/95 p-4 sm:p-5 shadow-2xl backdrop-blur-xl">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-3 min-w-0">
-            <div className="mt-0.5 flex h-11 w-11 items-center justify-center rounded-2xl bg-win-accent/15 text-win-accent flex-shrink-0">
-              <AppWindow className="h-5 w-5" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-win-text">CallerFlash is in background mode</p>
-              <p className="mt-1 text-xs text-win-text-secondary">
-                Window is hidden to the system tray. Incoming calls still trigger toast alerts and clipboard auto-copy.
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={restore}
-            className="rounded-lg border border-win-border bg-win-surface px-2.5 py-1.5 text-xs font-medium text-win-text-secondary transition-colors hover:bg-win-surface-hover hover:text-win-text flex-shrink-0"
-            title="Restore window"
-          >
-            <Undo2 className="h-3.5 w-3.5" />
-          </button>
-        </div>
-
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <MiniStat
-            icon={sipConnected ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
-            label="SIP Session"
-            value={sipConnected ? (sipRegistered ? 'Registered' : 'Connecting') : 'Offline'}
-            color={sipConnected ? (sipRegistered ? '#6ccb5f' : '#fcb827') : '#ff6b6b'}
-          />
-          <MiniStat
-            icon={<AppWindow className="h-4 w-4" />}
-            label="Launch Mode"
-            value={appPreferences.startMinimized ? 'Start minimized' : 'Normal start'}
-            color="#60cdff"
-          />
-        </div>
-
-        <div className="mt-4 rounded-xl border border-win-success/20 bg-win-success/10 p-3">
-          <p className="text-xs font-semibold text-win-success">Background call detection active</p>
-          <p className="mt-1 text-xs leading-relaxed text-win-text-secondary">
-            Hiding to the system tray does not stop SIP registration, inbound INVITE handling, toast notifications, or clipboard copying.
-            Click the tray icon in the Windows notification area to bring the window back.
-          </p>
-        </div>
-
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <button
-            onClick={restore}
-            className="flex-1 min-w-[140px] rounded-xl bg-win-accent px-4 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-win-accent-hover"
-          >
-            Restore Window
-          </button>
-          <button
-            onClick={hideToTray}
-            className="flex items-center gap-2 rounded-xl border border-win-border bg-win-surface px-4 py-2.5 text-sm font-medium text-win-text-secondary transition-colors hover:bg-win-surface-hover hover:text-win-text"
-            title="Hide window to the system tray"
-          >
-            <AppWindow className="h-4 w-4" />
-            Hide to Tray
-          </button>
-          <button
-            onClick={() => simulateIncomingCall('background')}
-            disabled={!sipConnected}
-            className="flex items-center gap-2 rounded-xl border border-win-accent/20 bg-win-accent/10 px-4 py-2.5 text-sm font-medium text-win-accent transition-colors hover:bg-win-accent/20 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <PhoneIncoming className="h-4 w-4" />
-            Test Call
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MiniStat({
-  icon,
-  label,
-  value,
-  color,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  color: string;
-}) {
-  return (
-    <div className="rounded-xl border border-win-border bg-win-surface p-3">
-      <div className="mb-2 flex items-center gap-2 text-win-text-tertiary">
-        <span style={{ color }}>{icon}</span>
-        <span className="text-xs font-medium uppercase tracking-wider truncate">{label}</span>
-      </div>
-      <p className="text-sm font-semibold truncate" style={{ color }}>
-        {value}
-      </p>
-    </div>
-  );
-}
 
 export default function App() {
-  const { isMinimized, setIsMinimized, addDiagnosticLog, appPreferences, sipConnected, sipRegistered, setActiveTab, sipConfig } = useAppStore();
+  const { setIsMinimized, addDiagnosticLog, appPreferences, sipConnected, sipRegistered, setActiveTab, sipConfig } = useAppStore();
   const width = useWindowWidth();
   const sidebarCollapsed = width < SIDEBAR_COLLAPSE_BREAKPOINT;
   const titleCompact = width < 520;
@@ -369,10 +252,7 @@ export default function App() {
     }
   }, [sipConfig.password]);
 
-  // Subscribe to tray → renderer events. The main process fires these
-  // when the user clicks the tray icon (left-click toggle or "Show/Hide"
-  // menu entries). We keep the renderer's `isMinimized` flag in sync so
-  // MinimizedShell vs full-UI swaps correctly.
+  // Subscribe to tray → renderer events for isMinimized state sync.
   useEffect(() => {
     if (!window.callerflash?.window) return;
     const offRestored = window.callerflash.window.onRestoredFromTray?.(() => {
@@ -503,17 +383,11 @@ export default function App() {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-win-bg overflow-hidden min-w-[360px]">
-      {isMinimized ? (
-        <MinimizedShell />
-      ) : (
-        <>
-          <TitleBar compact={titleCompact} />
-          <div className="flex flex-1 overflow-hidden min-h-0">
-            <Sidebar collapsed={sidebarCollapsed} />
-            <MainContent />
-          </div>
-        </>
-      )}
+      <TitleBar compact={titleCompact} />
+      <div className="flex flex-1 overflow-hidden min-h-0">
+        <Sidebar collapsed={sidebarCollapsed} />
+        <MainContent />
+      </div>
       <ToastContainer />
     </div>
   );
