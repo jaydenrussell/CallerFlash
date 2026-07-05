@@ -7,7 +7,6 @@ const { spawn } = require('child_process');
 
 // ── State ─────────────────────────────────────────────────────────────
 let mainWindowRef = null;
-let updaterCanClose = false;
 
 const downloadStatePath = () => path.join(app.getPath('temp'), 'callerflash-updates', 'download-state.json');
 
@@ -334,6 +333,14 @@ async function downloadUpdate(channel, version, downloadUrl) {
 }
 
 // ── Install update ────────────────────────────────────────────────────
+// On Windows, the running .exe can't be overwritten while in use. The
+// approach used by Discord, Teams, VS Code etc.:
+//   1. Download the NSIS installer to a temp dir
+//   2. Write a tiny batch script that waits for this process to exit,
+//      runs the installer silently, and relaunches the app
+//   3. Spawn it via `cmd /c start /min` which creates an independent
+//      process tree NOT subject to Electron's Windows Job Object
+//   4. Exit immediately — the batch script handles the rest
 function installUpdate(version) {
   const exePath = exePathFor(version);
   sendUpdateDiag('info', 'Install: checking file', exePath);
@@ -347,46 +354,79 @@ function installUpdate(version) {
   const stats = fs.statSync(exePath);
   sendUpdateDiag('info', 'Install: file OK', (stats.size / 1048576).toFixed(2) + ' MB');
 
-  sendStatus({ status: 'installing', version });
-
   const appPath = process.execPath;
   const installDir = path.dirname(appPath);
-  const helperPath = path.join(__dirname, 'updater-helper.cjs');
-  const helperExists = fs.existsSync(helperPath);
-  const isPacked = !!(process.resourcesPath && process.resourcesPath.includes('app.asar'));
+  const batPath = path.join(app.getPath('temp'), 'callerflash-update.bat');
 
-  sendUpdateDiag('info', 'Install: preparing to help', 'helper=' + helperPath + ' exists=' + helperExists + ' packed=' + isPacked + ' execPath=' + appPath);
-  log('spawning helper:', helperPath, 'exists:', helperExists);
+  // The batch script receives three arguments:
+  //   %1 = installer .exe path
+  //   %2 = install directory
+  //   %3 = app executable path (for relaunch)
+  const batContent = [
+    '@echo off',
+    'setlocal',
+    '',
+    'rem CallerFlash update — spawned detached from main app',
+    'set "EXE=%~1"',
+    'set "DIR=%~2"',
+    'set "APP=%~3"',
+    '',
+    ':wait',
+    'tasklist /FI "PID eq ' + process.pid + '" /NH 2>nul | findstr "' + process.pid + '" >nul',
+    'if not errorlevel 1 (',
+    '  timeout /t 1 /nobreak >nul',
+    '  goto wait',
+    ')',
+    '',
+    'rem Extra delay so the installer can replace locked files',
+    'timeout /t 2 /nobreak >nul',
+    '',
+    '"%EXE%" /S /D="%DIR%"',
+    '',
+    'rem Launch the updated app (NSIS runAfterFinish may also do this)',
+    'if exist "%APP%" (',
+    '  start "" "%APP%"',
+    ')',
+    '',
+    'del "%~f0"',
+  ].join('\r\n');
 
-  if (!helperExists) {
-    sendUpdateDiag('error', 'Install: helper script not found on disk', 'Checked: ' + helperPath + ' (asarUnpack may be missing)');
-    sendStatus({ status: 'error', message: 'Helper not found. Reinstall the app.' });
+  try {
+    fs.writeFileSync(batPath, batContent, 'utf8');
+    sendUpdateDiag('info', 'Install: batch script written', batPath);
+  } catch (err) {
+    logErr('failed to write batch script:', err.message);
+    sendUpdateDiag('error', 'Install: failed to write batch script', err.message);
+    sendStatus({ status: 'error', message: 'Failed to prepare update' });
     return { status: 'error' };
   }
 
+  // Spawn via cmd /c start /min — the `start` command creates a completely
+  // independent process that Windows won't tie to our Job Object.
+  // Arguments: /min = minimized window, then window title, then task + args.
   try {
-    const helper = spawn(process.execPath, [
-      helperPath,
-      '--installer', exePath,
-      '--app', appPath,
-      '--dir', installDir,
-      '--pid', String(process.pid),
+    const bat = spawn('cmd.exe', [
+      '/c', 'start', '/min', 'CallerFlash Update',
+      batPath, exePath, installDir, appPath,
     ], { detached: true, stdio: 'ignore', windowsHide: true });
-    helper.unref();
-    sendUpdateDiag('info', 'Install: helper spawned (pid=' + (helper.pid || 'unknown') + ')', 'detached=true');
+    bat.unref();
+    sendUpdateDiag('info', 'Install: batch spawned', 'bat=' + batPath + ' pid=' + (bat.pid || '?'));
   } catch (err) {
-    logErr('failed to spawn helper:', err.message);
-    sendUpdateDiag('error', 'Install: failed to spawn helper', err.message);
+    logErr('failed to spawn batch:', err.message);
+    sendUpdateDiag('error', 'Install: failed to spawn batch', err.message);
     sendStatus({ status: 'error', message: 'Failed to start installer' });
     return { status: 'error' };
   }
 
-  sendUpdateDiag('info', 'Install: helper spawned, quitting in 1.5s');
+  sendStatus({ status: 'installing', version });
+  sendUpdateDiag('info', 'Install: batch script running, exiting in 1s');
 
+  // Give the renderer ~1s to show "Installing…" before the process is
+  // terminated. The batch script survives because it was launched via
+  // `start /min`, creating a new process group outside our Job Object.
   setTimeout(() => {
-    updaterCanClose = true;
-    app.quit();
-  }, 1500);
+    app.exit(0);
+  }, 1000);
 
   return { status: 'installing' };
 }

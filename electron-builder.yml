@@ -23,8 +23,6 @@ artifactName: "CallerFlash-${version}.${ext}"
 asar: true
 asarUnpack:
   - buildResources/**
-  - electron/updater-helper.cjs
-  - electron/helper-preload.cjs
 
 win:
   icon: app.ico
