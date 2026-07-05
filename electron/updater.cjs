@@ -300,7 +300,7 @@ async function downloadUpdate(channel, version, downloadUrl) {
     try {
       let cleaned = 0;
       for (const f of fs.readdirSync(downloadsDir())) {
-        if (f.endsWith('.exe') && !f.includes(version)) { fs.unlinkSync(path.join(downloadsDir(), f)); cleaned++; }
+        if (f.endsWith('.exe') && !f.includes(version.replace(/^v/, ''))) { fs.unlinkSync(path.join(downloadsDir(), f)); cleaned++; }
       }
       if (cleaned > 0) sendUpdateDiag('info', 'Cleaned old EXEs', '' + cleaned + ' files removed');
     } catch {}
