@@ -149,8 +149,10 @@ function MainContent() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 min-w-0">
-      {content[activeTab]}
+    <div className="flex-1 p-4 sm:p-6 min-w-0 overflow-hidden">
+      <div className="h-full overflow-y-auto overflow-x-hidden">
+        {content[activeTab]}
+      </div>
     </div>
   );
 }
@@ -309,6 +311,17 @@ export default function App() {
       } catch {
         // ignore
       }
+    }
+  }, []);
+
+  // Load persisted diagnostics from disk (survives app restarts)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.callerflash?.diagnostics) {
+      window.callerflash.diagnostics.load().then((entries) => {
+        if (entries && entries.length > 0) {
+          useAppStore.getState().loadPersistedDiagnostics(entries);
+        }
+      }).catch(() => {});
     }
   }, []);
 

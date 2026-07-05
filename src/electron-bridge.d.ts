@@ -137,6 +137,10 @@ declare global {
     sip: CallerFlashSipApi;
     platform: CallerFlashPlatformInfo;
     onToastDiagnostic: (callback: (data: { level: string; message: string; details?: string }) => void) => () => void;
+    diagnostics: {
+      append: (entry: { id: string; timestamp: Date | string; level: string; category: string; message: string; details?: string | null }) => void;
+      load: () => Promise<Array<{ id: string; timestamp: Date; level: string; category: string; message: string; details?: string | null }>>;
+    };
   }
 
   interface Window {

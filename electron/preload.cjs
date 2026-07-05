@@ -151,6 +151,12 @@ contextBridge.exposeInMainWorld('callerflash', {
     save: (data) => ipcRenderer.invoke('storage:save', data),
   },
 
+  // ── Diagnostics persistence ─────────────────────────────────────
+  diagnostics: {
+    append: (entry) => ipcRenderer.send('diagnostics:append', entry),
+    load: () => ipcRenderer.invoke('diagnostics:load'),
+  },
+
   // ── App lifecycle controls ──────────────────────────────────────
   app: {
     setStartWithWindows: (enabled) => ipcRenderer.send('app:set-start-with-windows', enabled),

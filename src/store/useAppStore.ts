@@ -309,6 +309,7 @@ interface AppState {
   diagnosticLogs: DiagnosticLog[];
   addDiagnosticLog: (log: Omit<DiagnosticLog, 'id' | 'timestamp'>) => void;
   clearDiagnosticLogs: () => void;
+  loadPersistedDiagnostics: (entries: DiagnosticLog[]) => void;
 
   updateInfo: UpdateInfo;
   setUpdateInfo: (info: Partial<UpdateInfo>) => void;
@@ -490,14 +491,20 @@ export const useAppStore = create<AppState>((set) => ({
         ? redactKeyedValue('details', redactMessage(log.details))
         : log.details,
     };
+    const entry = { ...sanitized, id: crypto.randomUUID(), timestamp: new Date() };
+    try {
+      window.callerflash?.diagnostics?.append(entry);
+    } catch {}
     return {
-      diagnosticLogs: [
-        { ...sanitized, id: crypto.randomUUID(), timestamp: new Date() },
-        ...s.diagnosticLogs,
-      ].slice(0, 1000),
+      diagnosticLogs: [entry, ...s.diagnosticLogs].slice(0, 1000),
     };
   }),
   clearDiagnosticLogs: () => set({ diagnosticLogs: [] }),
+  loadPersistedDiagnostics: (entries) => set((s) => ({
+    diagnosticLogs: entries.length > 0
+      ? [...entries, ...s.diagnosticLogs].slice(0, 1000)
+      : s.diagnosticLogs,
+  })),
 
   updateInfo: defaultUpdateInfo,
   setUpdateInfo: (info) => set((s) => {

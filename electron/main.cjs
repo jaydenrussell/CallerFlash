@@ -905,6 +905,26 @@ ipcMain.on('tray:set-update-available', (_event, version) => {
   refreshTrayMenu();
 });
 
+// ── IPC: diagnostics persistence ─────────────────────────────────────────
+// The renderer's addDiagnosticLog sends entries here so they survive app
+// restarts. The main process appends to a rolling file in userData.
+ipcMain.on('diagnostics:append', (_event, entry) => {
+  try {
+    require('./diagnostics.cjs').append(entry);
+  } catch (err) {
+    console.error('[diagnostics] append error:', err.message);
+  }
+});
+
+ipcMain.handle('diagnostics:load', () => {
+  try {
+    return require('./diagnostics.cjs').load(1000);
+  } catch (err) {
+    console.error('[diagnostics] load error:', err.message);
+    return [];
+  }
+});
+
 // ── Second-instance handler ────────────────────────────────────────────
 app.on('second-instance', () => showWindow());
 
