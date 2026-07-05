@@ -219,6 +219,18 @@ pub fn run() {
             });
             tray::setup_tray(app.handle())?;
 
+            // Intercept close to hide to tray instead of quitting
+            if let Some(main_window) = app.get_webview_window("main") {
+                let app_handle = app.handle().clone();
+                main_window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = app_handle.get_webview_window("main").map(|w| w.hide());
+                        let _ = app_handle.emit("window:restored-from-tray", ());
+                    }
+                });
+            }
+
             // Wire up window events from tauri-bridge.ts
             let app_handle = app.handle().clone();
             let _ = app.listen("window:minimize", move |_| {

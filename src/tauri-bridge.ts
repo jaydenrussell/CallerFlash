@@ -8,7 +8,6 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen, emit } from '@tauri-apps/api/event';
-import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { check as updaterCheck } from '@tauri-apps/plugin-updater';
 
 let invocations = 0;
@@ -34,7 +33,6 @@ function setup(): void {
       close: () => { emit('window:close').catch(() => {}); },
       hideToTray: () => { emit('window:hide-to-tray').catch(() => {}); },
       show: () => { emit('window:show').catch(() => {}); },
-      startDrag: () => { getCurrentWebviewWindow().startDragging().catch(() => {}); },
       onRestoredFromTray: (callback: () => void) => {
         const unlisten: Promise<() => void> = listen('window:restored-from-tray', () => callback()).catch(() => () => {});
         return () => { unlisten.then((fn) => fn()).catch(() => {}); };

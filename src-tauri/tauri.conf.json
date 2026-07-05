@@ -20,10 +20,15 @@
         "minHeight": 400,
         "resizable": true,
         "fullscreen": false,
-        "decorations": false,
+        "decorations": true,
         "transparent": false,
         "center": true,
-        "visible": true
+        "visible": true,
+        "effects": {
+          "effects": [
+            { "mica": {} }
+          ]
+        }
       }
     ],
     "security": {

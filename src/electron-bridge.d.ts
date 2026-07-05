@@ -11,7 +11,6 @@ declare global {
     close: () => void;
     hideToTray: () => void;
     show: () => void;
-    startDrag: () => void;
     /** Subscribe to tray→renderer "restored" event. Returns an unsubscribe fn. */
     onRestoredFromTray: (callback: () => void) => () => void;
     /** Subscribe to tray→renderer "hidden" event. Returns an unsubscribe fn. */

@@ -10,8 +10,6 @@ import { AutoUpdate } from './components/AutoUpdate';
 import { About } from './components/About';
 import { ToastContainer } from './components/ToastNotification';
 import { useAppStore } from './store/useAppStore';
-import { Minus, Square, X } from 'lucide-react';
-import { formatVersion } from './utils/formatVersion';
 
 // Threshold below which the sidebar collapses to icons only
 const SIDEBAR_COLLAPSE_BREAKPOINT = 720;
@@ -26,103 +24,6 @@ function useWindowWidth() {
   }, []);
 
   return width;
-}
-
-function TitleBar({ compact }: { compact: boolean }) {
-  const { setIsMinimized, addDiagnosticLog, sipConnected, sipRegistered, updateInfo, setActiveTab } = useAppStore();
-
-  // Both the minimize (−) and close (×) buttons hide the window to the
-  // system tray. The app keeps running in the background; the user
-  // restores it from the tray icon (left-click or "Show CallerFlash" menu).
-  const hideToTray = () => {
-    setIsMinimized(true);
-    if (window.callerflash?.window?.hideToTray) {
-      window.callerflash.window.hideToTray();
-    } else {
-      // Dev fallback (running outside Electron): just collapse to MinimizedShell.
-      addDiagnosticLog({
-        level: 'info',
-        category: 'SYSTEM',
-        message: 'Main window minimized to background mode',
-      });
-      return;
-    }
-    addDiagnosticLog({
-      level: 'info',
-      category: 'SYSTEM',
-      message: 'Window hidden to system tray; SIP monitoring continues in background',
-    });
-  };
-
-  // SIP status color: green = registered, yellow = connecting, red = offline
-  const sipColor = sipConnected && sipRegistered
-    ? '#6ccb5f'
-    : sipConnected
-    ? '#fcb827'
-    : '#ff6b6b';
-  const sipLabel = sipConnected && sipRegistered
-    ? 'Registered'
-    : sipConnected
-    ? 'Connecting'
-    : 'Offline';
-
-  return (
-    <div
-      data-tauri-drag-region
-      className="h-9 bg-win-card border-b border-win-border flex items-center justify-between select-none flex-shrink-0 cursor-default"
-    >
-      <div className="flex items-center gap-2 px-3 min-w-0 flex-1">
-        <div className="w-4 h-4 rounded bg-gradient-to-br from-win-accent to-blue-600 flex items-center justify-center flex-shrink-0">
-          <svg viewBox="0 0 24 24" className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" strokeWidth="3">
-            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
-          </svg>
-        </div>
-        <span className="text-xs text-win-text-secondary truncate">
-          {compact ? 'CallerFlash' : 'CallerFlash — SIP Client'}
-        </span>
-        {/* SIP status: traffic-light dot */}
-        <div
-          className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-          style={{ backgroundColor: sipColor }}
-          title={sipLabel}
-        />
-        {/* Update available indicator — click to go to Updates tab */}
-        {updateInfo.updateAvailable && (
-          <button
-            onClick={() => setActiveTab('update')}
-            className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 transition-colors flex-shrink-0"
-            title={`Update ${formatVersion(updateInfo.latestVersion)} available — click to open`}
-          >
-            <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-            <span className="text-[10px] font-semibold text-amber-400">Update</span>
-          </button>
-        )}
-      </div>
-      <div className="flex h-full flex-shrink-0">
-        <button
-          onClick={hideToTray}
-          className="px-3 sm:px-4 h-full hover:bg-win-surface-hover transition-colors flex items-center"
-          title="Minimize to tray"
-        >
-          <Minus className="w-3.5 h-3.5 text-win-text-secondary" />
-        </button>
-        <button
-          onClick={() => window.callerflash?.window?.maximize?.()}
-          className="px-3 sm:px-4 h-full hover:bg-win-surface-hover transition-colors flex items-center"
-          title="Maximize / Restore"
-        >
-          <Square className="w-3 h-3 text-win-text-secondary" />
-        </button>
-        <button
-          onClick={hideToTray}
-          className="px-3 sm:px-4 h-full hover:bg-red-600 transition-colors flex items-center group"
-          title="Hide to system tray"
-        >
-          <X className="w-3.5 h-3.5 text-win-text-secondary group-hover:text-white" />
-        </button>
-      </div>
-    </div>
-  );
 }
 
 function MainContent() {
@@ -154,7 +55,6 @@ export default function App() {
   const { setIsMinimized, addDiagnosticLog, appPreferences, sipConnected, sipRegistered, setActiveTab, sipConfig } = useAppStore();
   const width = useWindowWidth();
   const sidebarCollapsed = width < SIDEBAR_COLLAPSE_BREAKPOINT;
-  const titleCompact = width < 520;
 
   useEffect(() => {
     if (appPreferences.startWithWindows) {
@@ -390,7 +290,6 @@ export default function App() {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-win-bg overflow-hidden min-w-[360px]">
-      <TitleBar compact={titleCompact} />
       <div className="flex flex-1 overflow-hidden min-h-0">
         <Sidebar collapsed={sidebarCollapsed} />
         <MainContent />
