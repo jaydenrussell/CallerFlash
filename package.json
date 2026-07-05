@@ -17,7 +17,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.2.0"
+    "@tauri-apps/api": "^2.2.0",
+    "@tauri-apps/plugin-updater": "^2.10.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.1",

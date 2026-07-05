@@ -9,6 +9,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, emit } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { check as updaterCheck } from '@tauri-apps/plugin-updater';
 
 let invocations = 0;
 
@@ -21,6 +22,10 @@ function setup(): void {
   }
 
   log('setting up Tauri bridge');
+
+  let currentUpdate: Awaited<ReturnType<typeof updaterCheck>> = null;
+  let totalContentLength = 0;
+  let downloadedBytes = 0;
 
   const bridge = {
     window: {
@@ -103,44 +108,99 @@ function setup(): void {
     },
 
     updater: {
-      check: async (channel: string) => {
-        return await invoke('updater_check', { channel });
+      check: async (_channel: string) => {
+        try {
+          const update = await updaterCheck({ timeout: 30000 });
+          currentUpdate = update;
+          totalContentLength = 0;
+          downloadedBytes = 0;
+          if (!update) {
+            return { upToDate: true };
+          }
+          var platforms = update.rawJson?.platforms as Record<string, { url?: string }> | undefined;
+          var win = platforms?.['windows-x86_64'];
+          return {
+            version: update.version,
+            downloadUrl: win?.url || '',
+            publishedAt: update.date || '',
+            friendlyName: update.version,
+          };
+        } catch (e) {
+          currentUpdate = null;
+          return { error: String(e) };
+        }
       },
-      download: async (channel: string, version: string, downloadUrl: string) => {
-        return await invoke('updater_download', { channel, version, downloadUrl });
+      download: async (_channel: string, _version: string, _downloadUrl: string) => {
+        if (!currentUpdate) {
+          return { status: 'error', error: 'No update pending. Check first.' };
+        }
+        try {
+          await currentUpdate.download(function (progress) {
+            switch (progress.event) {
+              case 'Started':
+                totalContentLength = progress.data.contentLength || 0;
+                downloadedBytes = 0;
+                break;
+              case 'Progress':
+                downloadedBytes += progress.data.chunkLength;
+                if (totalContentLength > 0) {
+                  var pct = Math.round((downloadedBytes / totalContentLength) * 100);
+                  emit('updater:progress', { percent: pct }).catch(function () {});
+                  emit('updater:status', { status: 'downloading', progress: pct }).catch(function () {});
+                }
+                break;
+              case 'Finished':
+                emit('updater:progress', { percent: 100 }).catch(function () {});
+                emit('updater:status', { status: 'ready', version: currentUpdate?.version }).catch(function () {});
+                break;
+            }
+          });
+          return { status: 'ready', version: currentUpdate.version };
+        } catch (e) {
+          return { status: 'error', error: String(e) };
+        }
       },
-      install: async (version: string) => {
-        return await invoke('updater_install', { version });
+      install: async (_version: string) => {
+        if (!currentUpdate) {
+          return { status: 'error', error: 'No downloaded update. Download first.' };
+        }
+        try {
+          emit('updater:status', { status: 'installing', version: currentUpdate.version }).catch(function () {});
+          await currentUpdate.install();
+          return { status: 'success' };
+        } catch (e) {
+          return { status: 'error', error: String(e) };
+        }
       },
-      show: () => {
+      show: function () {
         // Navigate to updates tab - handled by event
       },
-      setChannel: (_channel: string) => {
+      setChannel: function (_channel: string) {
         // Handled by frontend
       },
-      getDownloadState: async () => {
-        return { status: 'idle', version: null, path: null, error: null };
+      getDownloadState: async function () {
+        return { status: currentUpdate ? 'available' : 'idle', version: currentUpdate?.version || null, path: null, error: null };
       },
-      onStatus: (callback: (data: unknown) => void) => {
-        const unlisten: Promise<() => void> = listen('updater:status', (event) => {
+      onStatus: function (callback: (data: unknown) => void) {
+        var unlisten: Promise<() => void> = listen('updater:status', function (event) {
           callback(event.payload);
-        }).catch(() => () => {});
-        return () => { unlisten.then((fn) => fn()).catch(() => {}); };
+        }).catch(function () { return function () {}; });
+        return function () { unlisten.then(function (fn) { return fn(); }).catch(function () {}); };
       },
-      onProgress: (callback: (data: unknown) => void) => {
-        const unlisten: Promise<() => void> = listen('updater:progress', (event) => {
+      onProgress: function (callback: (data: unknown) => void) {
+        var unlisten: Promise<() => void> = listen('updater:progress', function (event) {
           callback(event.payload);
-        }).catch(() => () => {});
-        return () => { unlisten.then((fn) => fn()).catch(() => {}); };
+        }).catch(function () { return function () {}; });
+        return function () { unlisten.then(function (fn) { return fn(); }).catch(function () {}); };
       },
-      onDiagnostic: (callback: (data: unknown) => void) => {
-        const unlisten: Promise<() => void> = listen('updater:diagnostic', (event) => {
+      onDiagnostic: function (callback: (data: unknown) => void) {
+        var unlisten: Promise<() => void> = listen('updater:diagnostic', function (event) {
           callback(event.payload);
-        }).catch(() => () => {});
-        return () => { unlisten.then((fn) => fn()).catch(() => {}); };
+        }).catch(function () { return function () {}; });
+        return function () { unlisten.then(function (fn) { return fn(); }).catch(function () {}); };
       },
-      onBackgroundCheck: (_callback: (data: unknown) => void) => {
-        return () => {};
+      onBackgroundCheck: function (_callback: (data: unknown) => void) {
+        return function () {};
       },
     },
 

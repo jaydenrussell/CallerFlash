@@ -2,18 +2,15 @@ mod diagnostics;
 mod sip;
 mod storage;
 mod tray;
-mod updater;
 
 use diagnostics::Diagnostics;
 use sip::SipClient;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Listener, Manager};
-use updater::Updater;
 
 // Re-export command functions so generate_handler can find the generated __cmd__ macros
 pub use storage::{storage_load, storage_save};
 pub use sip::{sip_connect, sip_disconnect};
-pub use updater::{updater_check, updater_download, updater_install};
 pub use tray::{tray_set_sip_status, tray_set_update_available};
 
 #[derive(Clone, serde::Serialize)]
@@ -214,9 +211,9 @@ pub fn run() {
         .plugin(tauri_plugin_log::Builder::default().build())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::default().build())
         .setup(|app| {
             app.manage(SipClient::new(app.handle().clone()));
-            app.manage(Updater::new(app.handle()));
             app.manage(ToastState {
                 pending_data: Mutex::new(None),
             });
@@ -264,9 +261,6 @@ pub fn run() {
             notify_show,
             sip_connect,
             sip_disconnect,
-            updater_check,
-            updater_download,
-            updater_install,
             tray_set_sip_status,
             tray_set_update_available,
             toast_show,

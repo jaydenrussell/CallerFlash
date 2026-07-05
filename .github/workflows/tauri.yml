@@ -81,7 +81,7 @@ jobs:
         shell: bash
         run: cargo install tauri-cli --version "^2"
 
-      - name: Build Tauri app (NSIS per-user)
+      - name: Build Tauri app (NSIS + updater artifacts)
         shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -90,46 +90,113 @@ jobs:
           npm run build
           cargo tauri build --bundles nsis --ci
 
-      - name: Locate installer
-        id: installer
+      - name: Locate bundles
+        id: bundles
         shell: bash
         run: |
           VERSION="${{ needs.tag-version.outputs.version }}"
-          INSTALLER="src-tauri/target/release/bundle/nsis/CallerFlash_${VERSION}_x64-setup.exe"
+          NSIS_DIR="src-tauri/target/release/bundle/nsis"
+          BUNDLE_DIR="src-tauri/target/release/bundle"
+          INSTALLER="$NSIS_DIR/CallerFlash_${VERSION}_x64-setup.exe"
+
+          # Fallback for installer
           if [ ! -f "$INSTALLER" ]; then
-            # Fallback: find any .exe in the nsis bundle dir
-            INSTALLER=$(ls src-tauri/target/release/bundle/nsis/*.exe 2>/dev/null | head -1)
+            INSTALLER=$(ls "$NSIS_DIR"/*.exe 2>/dev/null | head -1)
           fi
+
           if [ -z "$INSTALLER" ] || [ ! -f "$INSTALLER" ]; then
             echo "No installer found!" >&2
-            ls -la src-tauri/target/release/bundle/nsis/ 2>/dev/null || true
+            ls -la "$NSIS_DIR" 2>/dev/null || true
             exit 1
           fi
-          echo "path=$INSTALLER" >> "$GITHUB_OUTPUT"
+
+          echo "installer=$INSTALLER" >> "$GITHUB_OUTPUT"
+
+          # Find updater artifacts: .sig file for the installer, and any .zip/.tar.gz bundle
+          SIG="${INSTALLER}.sig"
+          if [ ! -f "$SIG" ]; then
+            SIG=$(ls "$BUNDLE_DIR"/*/*.sig 2>/dev/null | head -1)
+          fi
+          UPDATE_BUNDLE=$(ls "$BUNDLE_DIR"/*/*.zip "$BUNDLE_DIR"/*/*.tar.gz 2>/dev/null | head -1)
+
+          if [ -n "$SIG" ] && [ -f "$SIG" ]; then
+            echo "sig=$SIG" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -n "$UPDATE_BUNDLE" ] && [ -f "$UPDATE_BUNDLE" ]; then
+            echo "update_bundle=$UPDATE_BUNDLE" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
           name: CallerFlash-${{ needs.tag-version.outputs.version }}-setup
-          path: ${{ steps.installer.outputs.path }}
+          path: ${{ steps.bundles.outputs.installer }}
           if-no-files-found: error
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release + update.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           TAG="${{ needs.tag-version.outputs.tag }}"
           VERSION="${{ needs.tag-version.outputs.version }}"
-          INSTALLER="${{ steps.installer.outputs.path }}"
-          INSTALLER_NAME="CallerFlash-${VERSION}-setup.exe"
+          INSTALLER="${{ steps.bundles.outputs.installer }}"
+          SIG="${{ steps.bundles.outputs.sig }}"
+          UPDATE_BUNDLE="${{ steps.bundles.outputs.update_bundle }}"
 
-          # Create release
+          # Create release (not latest — coexists with Electron releases)
           gh release create "$TAG" \
             --title "CallerFlash $VERSION" \
             --notes "Tauri build $VERSION — automatic release." \
             --target refactor/tauri \
             --latest=false
 
-          # Upload asset
+          # Upload NSIS installer
           gh release upload "$TAG" "$INSTALLER" --clobber
+
+          # Upload updater bundle + signature if they exist
+          if [ -n "$UPDATE_BUNDLE" ] && [ -f "$UPDATE_BUNDLE" ]; then
+            gh release upload "$TAG" "$UPDATE_BUNDLE" --clobber
+          fi
+          if [ -n "$SIG" ] && [ -f "$SIG" ]; then
+            gh release upload "$TAG" "$SIG" --clobber
+          fi
+
+          # Generate update.json using whatever updater bundle we have
+          if [ -n "$UPDATE_BUNDLE" ] && [ -f "$UPDATE_BUNDLE" ] && [ -n "$SIG" ] && [ -f "$SIG" ]; then
+            SIGNATURE=$(cat "$SIG")
+            UPDATE_BASENAME=$(basename "$UPDATE_BUNDLE")
+            cat > update.json <<EOF
+            {
+              "version": "${VERSION}",
+              "notes": "https://github.com/jaydenrussell/CallerFlash/releases/tag/${TAG}",
+              "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+              "platforms": {
+                "windows-x86_64": {
+                  "signature": "${SIGNATURE}",
+                  "url": "https://github.com/jaydenrussell/CallerFlash/releases/download/${TAG}/${UPDATE_BASENAME}"
+                }
+              }
+            }
+            EOF
+
+            # Upload update.json to this release
+            gh release upload "$TAG" update.json --clobber
+
+            # Push a floating latest-tauri tag so the updater endpoint stays fixed
+            git config user.email "ci@callerflash.app"
+            git config user.name "CI"
+            git tag -f latest-tauri HEAD
+            git push origin latest-tauri --force
+
+            # Upload update.json to the floating tag too
+            gh release upload latest-tauri update.json --clobber 2>/dev/null || \
+              (gh release create latest-tauri \
+                --title "Latest Tauri Build" \
+                --notes "Floating tag pointing to the latest Tauri release." \
+                --target refactor/tauri \
+                --latest=false && \
+               gh release upload latest-tauri update.json --clobber)
+          else
+            echo "No updater artifacts found — skipping update.json generation"
+          fi
