@@ -71,8 +71,16 @@ function TitleBar({ compact }: { compact: boolean }) {
     // Titlebar is the window drag region (`data-tauri-drag-region`).
     // Buttons are outside the drag region and stay clickable.
     <div
-      data-tauri-drag-region
       className="h-9 bg-win-card border-b border-win-border flex items-center justify-between select-none flex-shrink-0"
+      onMouseDown={(e) => {
+        // Only start drag when clicking on non-interactive titlebar area (not on buttons)
+        var t = e.target;
+        while (t && t !== e.currentTarget) {
+          if ((t as HTMLElement).tagName === 'BUTTON') return;
+          t = (t as HTMLElement).parentElement;
+        }
+        window.callerflash?.window?.startDrag?.();
+      }}
     >
       <div className="flex items-center gap-2 px-3 min-w-0 flex-1">
         <div className="w-4 h-4 rounded bg-gradient-to-br from-win-accent to-blue-600 flex items-center justify-center flex-shrink-0">
