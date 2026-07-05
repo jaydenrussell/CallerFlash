@@ -344,17 +344,6 @@ function ToastItem({
                 </div>
               )}
 
-              {config.autoCopyToClipboard && (
-                <p
-                  className="mt-2"
-                  style={{
-                    color: config.textColor + '40',
-                    fontSize: `${Math.max(config.fontSize - 5, 9)}px`,
-                  }}
-                >
-                  📋 Number auto-copied to clipboard
-                </p>
-              )}
             </div>
           </div>
         </div>

@@ -334,13 +334,12 @@ async function downloadUpdate(channel, version, downloadUrl) {
 
 // ── Install update ────────────────────────────────────────────────────
 // On Windows, the running .exe can't be overwritten while in use. The
-// approach used by Discord, Teams, VS Code etc.:
+// approach:
 //   1. Download the NSIS installer to a temp dir
-//   2. Write a tiny batch script that waits for this process to exit,
-//      runs the installer silently, and relaunches the app
-//   3. Spawn it via `cmd /c start /min` which creates an independent
-//      process tree NOT subject to Electron's Windows Job Object
-//   4. Exit immediately — the batch script handles the rest
+//   2. Spawn the preloader executable (a tiny WinForms app that waits for
+//      this process to exit, runs the installer silently, and relaunches)
+//   3. Spawn it detached so it survives our exit
+//   4. Exit — the preloader handles the rest
 function installUpdate(version) {
   const exePath = exePathFor(version);
   sendUpdateDiag('info', 'Install: checking file', exePath);
@@ -356,74 +355,40 @@ function installUpdate(version) {
 
   const appPath = process.execPath;
   const installDir = path.dirname(appPath);
-  const batPath = path.join(app.getPath('temp'), 'callerflash-update.bat');
 
-  // The batch script receives three arguments:
-  //   %1 = installer .exe path
-  //   %2 = install directory
-  //   %3 = app executable path (for relaunch)
-  const batContent = [
-    '@echo off',
-    'setlocal',
-    '',
-    'rem CallerFlash update — spawned detached from main app',
-    'set "EXE=%~1"',
-    'set "DIR=%~2"',
-    'set "APP=%~3"',
-    '',
-    ':wait',
-    'tasklist /FI "PID eq ' + process.pid + '" /NH 2>nul | findstr "' + process.pid + '" >nul',
-    'if not errorlevel 1 (',
-    '  timeout /t 1 /nobreak >nul',
-    '  goto wait',
-    ')',
-    '',
-    'rem Extra delay so the installer can replace locked files',
-    'timeout /t 2 /nobreak >nul',
-    '',
-    '"%EXE%" /S /D="%DIR%"',
-    '',
-    'rem Launch the updated app (NSIS runAfterFinish may also do this)',
-    'if exist "%APP%" (',
-    '  start "" "%APP%"',
-    ')',
-    '',
-    'del "%~f0"',
-  ].join('\r\n');
-
-  try {
-    fs.writeFileSync(batPath, batContent, 'utf8');
-    sendUpdateDiag('info', 'Install: batch script written', batPath);
-  } catch (err) {
-    logErr('failed to write batch script:', err.message);
-    sendUpdateDiag('error', 'Install: failed to write batch script', err.message);
-    sendStatus({ status: 'error', message: 'Failed to prepare update' });
+  // Locate the preloader — packaged as an extraResource next to the app
+  const preloaderPath = path.join(process.resourcesPath, 'CallerFlash-Preloader.exe');
+  if (!fs.existsSync(preloaderPath)) {
+    logErr('preloader not found:', preloaderPath);
+    sendUpdateDiag('error', 'Install: preloader not found', preloaderPath);
+    sendStatus({ status: 'error', message: 'Update component not found. Reinstall the app.' });
     return { status: 'error' };
   }
 
-  // Spawn via cmd /c start /min — the `start` command creates a completely
-  // independent process that Windows won't tie to our Job Object.
-  // Arguments: /min = minimized window, then window title, then task + args.
+  sendUpdateDiag('info', 'Install: preloader found', preloaderPath);
+
+  // Spawn the preloader detached — it creates its own window and will
+  // not be killed when we exit because it's a separate process group.
   try {
-    const bat = spawn('cmd.exe', [
-      '/c', 'start', '/min', 'CallerFlash Update',
-      batPath, exePath, installDir, appPath,
-    ], { detached: true, stdio: 'ignore', windowsHide: true });
-    bat.unref();
-    sendUpdateDiag('info', 'Install: batch spawned', 'bat=' + batPath + ' pid=' + (bat.pid || '?'));
+    const preloader = spawn(preloaderPath, [
+      '--parent-pid', String(process.pid),
+      '--installer', exePath,
+      '--installdir', installDir,
+      '--app', appPath,
+    ], { detached: true, stdio: 'ignore', windowsHide: false });
+    preloader.unref();
+    sendUpdateDiag('info', 'Install: preloader spawned', 'pid=' + (preloader.pid || '?'));
   } catch (err) {
-    logErr('failed to spawn batch:', err.message);
-    sendUpdateDiag('error', 'Install: failed to spawn batch', err.message);
-    sendStatus({ status: 'error', message: 'Failed to start installer' });
+    logErr('failed to spawn preloader:', err.message);
+    sendUpdateDiag('error', 'Install: failed to spawn preloader', err.message);
+    sendStatus({ status: 'error', message: 'Failed to start update preloader' });
     return { status: 'error' };
   }
 
   sendStatus({ status: 'installing', version });
-  sendUpdateDiag('info', 'Install: batch script running, exiting in 1s');
+  sendUpdateDiag('info', 'Install: preloader running, exiting in 1s');
 
-  // Give the renderer ~1s to show "Installing…" before the process is
-  // terminated. The batch script survives because it was launched via
-  // `start /min`, creating a new process group outside our Job Object.
+  // Give the renderer ~1s to show "Installing…" before the process exits.
   setTimeout(() => {
     app.exit(0);
   }, 1000);

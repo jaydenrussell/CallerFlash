@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Power, AppWindow, Minimize2 } from 'lucide-react';
+import { Power, AppWindow, Minimize2, ClipboardCopy } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 
 export function Preferences() {
@@ -80,6 +80,31 @@ export function Preferences() {
                 message: next
                   ? 'Start minimized to tray enabled for next launch'
                   : 'Start minimized to tray disabled',
+              });
+            }}
+          />
+        </div>
+      </div>
+
+      <div className="bg-win-surface rounded-xl border border-win-border p-4">
+        <h3 className="text-sm font-semibold text-win-text mb-3 flex items-center gap-2">
+          <ClipboardCopy className="w-4 h-4 text-win-accent" />
+          Notifications
+        </h3>
+        <div className="space-y-2">
+          <ToggleRow
+            icon={<ClipboardCopy className="w-4 h-4" />}
+            label="Caller ID to clipboard"
+            description="Automatically copy the caller's phone number when a call comes in."
+            value={useAppStore.getState().toastConfig.autoCopyToClipboard}
+            onToggle={() => {
+              const store = useAppStore.getState();
+              const next = !store.toastConfig.autoCopyToClipboard;
+              store.setToastConfig({ autoCopyToClipboard: next });
+              store.addDiagnosticLog({
+                level: 'info',
+                category: 'SYSTEM',
+                message: next ? 'Auto-copy caller ID enabled' : 'Auto-copy caller ID disabled',
               });
             }}
           />

@@ -56,11 +56,11 @@ export function CallHistory() {
   };
 
   return (
-    <div className="space-y-5 animate-fade-in">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="flex flex-col h-full space-y-3 animate-fade-in">
+      <div className="flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
         <div className="min-w-0">
-          <h2 className="text-xl font-bold text-win-text">Call History</h2>
-          <p className="text-xs text-win-text-secondary mt-1">
+          <h2 className="text-lg font-bold text-win-text">Call History</h2>
+          <p className="text-xs text-win-text-secondary mt-0.5">
             {callHistory.length} total calls • Click any number to copy to clipboard
           </p>
         </div>
@@ -85,7 +85,7 @@ export function CallHistory() {
       </div>
 
       {/* Search and Filter Bar */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3 flex-shrink-0">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-win-text-tertiary" />
           <input
@@ -114,10 +114,10 @@ export function CallHistory() {
         </div>
       </div>
 
-      {/* Call List */}
-      <div className="bg-win-surface rounded-xl border border-win-border overflow-hidden">
+      {/* Call List - fills remaining height */}
+      <div className="flex-1 min-h-0 bg-win-surface rounded-xl border border-win-border overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="grid grid-cols-12 gap-4 px-4 py-3 border-b border-win-border bg-win-card">
+        <div className="grid grid-cols-12 gap-4 px-4 py-3 border-b border-win-border bg-win-card flex-shrink-0">
           <span className="col-span-1 text-xs font-semibold text-win-text-tertiary uppercase tracking-wider">Type</span>
           <span className="col-span-3 text-xs font-semibold text-win-text-tertiary uppercase tracking-wider">Number</span>
           <span className="col-span-3 text-xs font-semibold text-win-text-tertiary uppercase tracking-wider">Caller Name</span>
@@ -126,8 +126,8 @@ export function CallHistory() {
           <span className="col-span-2 text-xs font-semibold text-win-text-tertiary uppercase tracking-wider text-right">Actions</span>
         </div>
 
-        {/* Rows */}
-        <div className="max-h-[calc(100vh-340px)] overflow-y-auto">
+        {/* Rows - scrollable */}
+        <div className="flex-1 min-h-0 overflow-y-auto">
           {filteredCalls.length === 0 ? (
             <div className="text-center py-12">
               <Phone className="w-10 h-10 text-win-text-tertiary mx-auto mb-3" />

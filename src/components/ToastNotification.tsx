@@ -310,18 +310,6 @@ export function ToastNotification({ call, onDismiss, stackIndex }: ToastNotifica
                 </div>
               )}
 
-              {/* Auto-copy hint */}
-              {toastConfig.autoCopyToClipboard && (
-                <p
-                  className="mt-2"
-                  style={{
-                    color: toastConfig.textColor + '40',
-                    fontSize: `${Math.max(toastConfig.fontSize - 5, 9)}px`,
-                  }}
-                >
-                  📋 Number auto-copied to clipboard
-                </p>
-              )}
             </div>
           </div>
         </div>

@@ -277,6 +277,14 @@ export function AutoUpdate() {
           setUpdateInfo({ isDownloading: false, isInstalling: false });
           return;
         }
+        // Skip if the ready version is not newer than current
+        if (status.version && compareVersions(
+          formatVersion(status.version),
+          formatVersion(updateInfo.currentVersion)
+        ) <= 0) {
+          setUpdateInfo({ isDownloading: false, isInstalling: false });
+          return;
+        }
         // Don't reset phase here — handleUpdate() manages the flow.
         // The onStatus('ready') event can arrive AFTER handleUpdate has
         // already started the install step (setting phase='installing'),
@@ -284,6 +292,10 @@ export function AutoUpdate() {
         setUpdateInfo({ isDownloading: false, isInstalling: false, updateAvailable: true });
       } else if (status.status === 'update-available') {
         if (status.version && !versionMatchesChannel(status.version, channelRef.current)) return;
+        if (status.version && compareVersions(
+          formatVersion(status.version),
+          formatVersion(updateInfo.currentVersion)
+        ) <= 0) return;
         setUpdateInfo({
           latestVersion: status.version,
           updateAvailable: true,
@@ -343,6 +355,11 @@ export function AutoUpdate() {
     window.callerflash.updater.getDownloadState().then((state: any) => {
       if (state?.status === 'ready' && state?.version) {
         if (!versionMatchesChannel(state.version, updateInfo.updateChannel)) return;
+        const currentFormatted = formatVersion(updateInfo.currentVersion);
+        const foundFormatted = formatVersion(state.version);
+        if (compareVersions(foundFormatted, currentFormatted) <= 0) {
+          return;
+        }
         setUpdateInfo({
           latestVersion: state.version,
           updateAvailable: true,
@@ -778,11 +795,9 @@ export function AutoUpdate() {
         </div>
       )}
 
-      {/* Settings + Security side by side, release history at the bottom.
-          No internal scrollbars on Settings/Security — all content fits
-          its natural height. Only the Release History list scrolls. */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <div className="bg-win-surface rounded-xl border border-win-border p-3">
+      {/* Settings + Release History — fill remaining vertical space */}
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <div className="bg-win-surface rounded-xl border border-win-border p-3 overflow-y-auto min-h-0">
           <h3 className="text-sm font-semibold text-win-text mb-2 flex items-center gap-2">
             <Shield className="w-4 h-4 text-win-accent" />
             Settings
@@ -868,7 +883,7 @@ export function AutoUpdate() {
         </div>
 
         {/* Release History — strictly filtered to the active channel */}
-        <div className="bg-win-surface rounded-xl border border-win-border p-3 flex flex-col min-h-0 max-h-[300px]">
+        <div className="bg-win-surface rounded-xl border border-win-border p-3 flex flex-col min-h-0">
           <div className="flex items-center justify-between mb-2 flex-shrink-0">
             <h3 className="text-sm font-semibold text-win-text flex items-center gap-2">
               <GitCommit className="w-4 h-4 text-win-accent" />
@@ -890,7 +905,7 @@ export function AutoUpdate() {
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-win-border/40 overflow-y-auto pr-1">
+            <div className="flex-1 min-h-0 divide-y divide-win-border/40 overflow-y-auto pr-1">
               {channelReleases.map((release) => {
                 const isCurrent = formatVersion(release.tag_name) === formatVersion(updateInfo.currentVersion);
                 const notes = parseChangelog(release.body);

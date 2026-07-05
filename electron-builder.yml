@@ -35,7 +35,7 @@ win:
 nsis:
   oneClick: false
   perMachine: false
-  allowElevation: true
+  allowElevation: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
@@ -62,3 +62,5 @@ extraResources:
     to: cflogo.png
   - from: buildResources/app.ico
     to: app.ico
+  - from: buildResources/CallerFlash-Preloader.exe
+    to: CallerFlash-Preloader.exe

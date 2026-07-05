@@ -1,5 +1,5 @@
 # CallerFlash — Agent Session Summary
-> Generated: 2026-06-26 (America/Toronto)
+> Generated: 2026-07-05 (America/Toronto)
 > Repo: https://github.com/jaydenrussell/callerflash
 > Branch: `main`
 
@@ -7,39 +7,33 @@
 
 ## Session Overview
 
-Extended session covering CI/CD pipeline fixes, UI/UX compaction, SIP backend networking integration, persistent UI window states, and background seamless installations.
+Extended session covering updater stability fixes (race conditions, cleanup, install mechanism), toast notification sound system, persistent diagnostics logging, and auto-check bug investigation.
 
 ---
 
-## Interval 1 — Initial CI & Asset Fixes
-- **Artifact Mismatch & Glob Patterns:** Fixed `-windows` suffix mismatches and merged `.deb` assets in GitHub actions.
-- **Electron Builder Config:** Updated `package.json` to properly build specific `.deb` outputs and target the proper `buildResources` folder to avoid GitHub's aggressive CI `build/` exclusion rules.
+## Interval 1 — Updater Race Condition & Cleanup Fixes
+- **Update race condition fixed**: `onStatus('ready')` in `AutoUpdate.tsx` no longer calls `setPhase('idle')` — this reset the phase to idle after `handleUpdate()` had already started the install step, preventing the installer from running.
+- **Cleanup loop bug fixed**: The startup cleanup in `updater.cjs` was deleting the just-downloaded exe because the version string had a `v` prefix but the filename didn't. Fixed by stripping `v` prefix in the cleanup comparison filter.
+- **`exePathFor` fixed**: Already strips `v` prefix — `CallerFlash-0.1.5-alpha.exe` instead of `CallerFlash-v0.1.5-alpha.exe`.
+- **Update install rewritten**: Replaced Electron helper process with batch script. Old approach spawned `CallerFlash.exe updater-helper.cjs` as detached child which was killed by Windows Job Object on parent exit. New approach writes a `.bat` file to `%TEMP%` and spawns via `cmd /c start /min` — creates independent process tree. Batch waits for parent PID → runs NSIS silently → relaunches app → self-deletes. Deleted `updater-helper.cjs` (267 lines) and `helper-preload.cjs` (7 lines); removed their `asarUnpack` entries; removed `updaterCanClose` variable.
 
-## Interval 2 — UI/UX Compaction
-- **Dashboard:** Simplified the view, moving Connect/Disconnect entirely into SIP settings. Replaced generic icons with genuine CallerFlash logos in the sidebar.
-- **SIP Settings:** Stripped unnecessary Audio/Codec sections. Moved STUN into the server section. Added active "Registering..." / "Registered" visual spinner badges to show real-time networking state.
-- **Toast Notifications:** Redesigned into a tightly packed grid to fit inside an 800x600 window constraints.
+## Interval 2 — Sound Toggle Made Functional
+- **`soundEnabled` was dead code**: The toggle existed in the store/UI but wasn't consumed anywhere. Notifications made no sound regardless of the setting.
+- **Native notifications**: Now respect `soundEnabled` via the `silent` flag — when disabled, native toasts play no system sound.
+- **Custom toast sounds via Web Audio API**: The standalone `toast.html` now generates tones using oscillators (no audio files needed). Four presets available: Chime (sine-based), Ring (square-wave bell), Beep (short sine), Gentle (soft sine).
+- **`soundName` field**: Added to `ToastConfig` with a dropdown picker in ToastSettings. Greyed out when `style === 'native'` since native uses OS notification sound.
+- **Native-incompatible settings greyed out**: Font Size, Family, Colors, Radius, Opacity, Width, Show Caller Name, Show Timestamp — all disabled when Native Windows style is selected.
 
-## Interval 3 — Real SIP Networking Backend
-- **Replaced Mock UI with Real Engine:** Installed Node `sip` package into production dependencies. 
-- **Electron Background IPC:** Wired `electron/sipClient.cjs` to actually bind UDP/TCP sockets to port `5060`. 
-- **Digest Auth:** The backend now accurately reads the HTTP `401 Unauthorized` `www-authenticate` headers and correctly strips quotes to parse the `realm` for proper MD5 authentication hashes against providers like VoIP.ms.
-- **Keep-Alives:** The backend automatically pings `REGISTER` refreshes dynamically before expiry.
-- **Inbound Tracking:** Rejects real-world inbound `INVITE`s with a `486 Busy Here`, captures the payload, and fires it over the IPC bridge to render the actual Toast Window + trigger the clipboard copy. Includes `User-Agent: CallerFlash` headers.
-- **Log Piping:** Raw `sip` library inbound/outbound packets are streamed directly to the Diagnostics console in the UI.
+## Interval 3 — Diagnostics Persistent Logging
+- **New `electron/diagnostics.cjs`**: Appends each entry as a JSON line to `{userData}/diagnostics.log`. Rolling file with 10k line / 10MB cap. Trim checks on every append.
+- **IPC handlers**: `diagnostics:append` and `diagnostics:load` registered in main process, bridged in preload.
+- **Startup load**: `App.tsx` effect calls `diagnostics.load()` and feeds into `addDiagnosticLog` on mount.
+- **Layout/font overhaul**: Diagnostics panel uses full-height `flex-1` layout (replaces fragile `calc(100vh-400px)`). Timestamp bumped `text-[10px]` → `text-xs`, message `text-[13px]` → `text-xs`. Internal scroll wrapper in `MainContent` allows tab components to use `h-full`.
 
-## Interval 4 — Persistent Storage & Security
-- **Credential Storage:** `useAppStore.ts` now securely intercepts the SIP password, pushes it through Electron's `safeStorage` DPAPI, encrypts it, and writes it to localStorage. It auto-decrypts seamlessly on application launch.
-- **Auto-Connect:** If valid SIP settings are present on boot, the app skips the UI and auto-connects to the telecom network instantly in the background.
-- **Window State Retention:** Resizing or moving the main app window saves the exact `x`, `y`, `width`, and `height` coordinates to `main-window-state.json`. Restoring from the system tray snaps it perfectly back to the exact monitor location.
-
-## Interval 5 — Seamless Installers & Auto-Updater Engine
-- **Versioning Utilities:** Added `formatVersion()` utility to scrub all UI elements of `v` and `0.0.0-` internal strings.
-- **Same-Day Nightly Support:** The auto-incrementer now dynamically counts tags and generates `-1`, `-2` suffixes. The update engine cross-references `__APP_BUILD_TIMESTAMP__` against the GitHub API's `published_at` timestamp to flawlessly update even when the version names match exactly on same-day pushes.
-- **Silent Background Installation:** Downloads the file from GitHub CDN. Uses NSIS `/S` and `/D=` arguments to quietly overwrite the active install directory without triggering wizard popups.
-- **HTML Application (HTA) Progress UI:** While the Electron app closes to release file locks, a custom borderless HTA window is spawned natively through Windows. It mimics the app's `#202020` theme, embeds the CallerFlash logo, and displays an animated progress bar.
-- **First-Run UX:** Skips the "Start Minimized" preference explicitly on the *first run after an update* or install, forcefully showing the UI so the user clearly sees the update was successful.
-- **Bulletproof `artifactUrl`:** The installer safely re-scans the GitHub CDN asset endpoints if the UI memory drops the active URL pointer before the "Install" button is clicked.
+## Interval 4 — Auto-Check Bug Fixed
+- **Bug**: On app start, the automatic update check showed the current installed version as an available update. Manually clicking "Check for Updates" correctly showed "No update available."
+- **Root cause**: `getDownloadState()` effect (searches for previously downloaded `.exe` files on disk) could return a stale download matching the current running version (e.g., `0.1.26-alpha` downloaded in a prior session). This set `updateAvailable: true` before or after the auto-check cleared it, due to async IPC timing. The manual check always calls `handleCheckAndDownload()` which always resets `updateAvailable`.
+- **Fix**: Added version comparison in `getDownloadState` effect — skip setting `updateAvailable: true` if the found version is not newer (`compareVersions(found, current) <= 0`) than the running version.
 
 ---
 
@@ -47,22 +41,20 @@ Extended session covering CI/CD pipeline fixes, UI/UX compaction, SIP backend ne
 
 | Item | Status |
 |------|--------|
-| CI pipeline | ✅ All fixes applied, nightly/beta/stable build correctly |
-| Dependencies | ✅ SIP networking package successfully bundled into asar |
-| GitHub Actions | ✅ `build` renamed to `buildResources` to bypass exclusion |
-| Toast notifications | ✅ Triggers off real network UDP/TCP payloads with Native OS fallback |
-| Window State | ✅ `x/y/w/h` persists across reboots perfectly |
-| Updater Engine | ✅ Seamless `/S` installations with custom HTA visual progress |
-| Versioning | ✅ `-N` auto-incrementing suffixes built, UI format stripping enabled |
-| SIP Backend | ✅ Digest auth, realms, auto-reconnect, and diagnostics logs wired |
-| First-Boot UX | ✅ Starts visibly after updates; auto-connects to SIP server |
+| Updater install mechanism | ✅ Batch script replaces Electron helper — survives process exit |
+| Sound toggle | ✅ Functional for both native (silent flag) and custom (Web Audio) |
+| Diagnostics persistence | ✅ Rolling file log in userData, loaded on startup |
+| Auto-check false positive | ✅ Fixed — stale same-version downloads no longer shown as updates |
+| Update race condition | ✅ Fixed — `onStatus('ready')` no longer resets phase |
+| Cleanup loop | ✅ Fixed — `v` prefix stripped in comparison |
+| Native settings grey-out | ✅ Fields disabled when Native Windows style selected |
 
 ---
 
 ## Architecture Notes
 
-- **Release workflows** trigger on channel branches, NOT main
-- **Toast system**: Electron = IPC to dedicated BrowserWindow; Web = `window.open()` popup
-- **Update flow**: GitHub API → filter by channel → sort by version → verify (Ed25519) → download (fetch + streaming) → install (Electron IPC: MSHTA progress spawn + .exe `/S` + quit + auto-restart)
-- **PAT_TOKEN** required for sync workflow (GITHUB_TOKEN pushes don't trigger workflows)
-- **Nightly version**: `0.0.0-nightly-20260624-2` in package.json, `CallerFlash-nightly-20260624-2.exe` filename
+- **Batch script install**: `installUpdate()` writes `update.bat` to `%TEMP%`, spawned via `cmd /c start /min` with `detached: true`. Batch polls for parent PID to exit, runs `NSIS installer /S`, starts updated app, self-deletes. No UAC needed for per-user install.
+- **Sound generation**: Web Audio API oscillators in `toast.html`. 4 presets (chime=440Hz sine, ring=660Hz square, beep=880Hz sine, gentle=330Hz sine). No audio files required.
+- **Diagnostics log file**: `{userData}/diagnostics.log`, JSON lines format, 10k line cap, trim at 10MB. Handlers in `electron/diagnostics.cjs`.
+- **Auto-check flow**: Main process `scheduleStartupUpdateCheck()` reads settings from file, calls `checkForUpdates()`, and sends status via IPC to renderer. Renderer's mount effect calls `handleCheckAndDownload()` independently through `updater:check` IPC.
+- **`getDownloadState` guard**: Now compares `foundVersion` against `currentVersion` using `compareVersions()` before setting `updateAvailable: true`. Prevents stale same-version downloads from triggering false update banners.

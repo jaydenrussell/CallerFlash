@@ -12,6 +12,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "prebuild": "node scripts\\build-preloader.cjs",
     "build": "vite build",
     "preview": "vite preview",
     "electron:build": "npm run build && npx electron-builder --win --x64 --publish never",

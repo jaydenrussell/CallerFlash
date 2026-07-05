@@ -757,13 +757,14 @@ ipcMain.on('shell:open-external', (_event, url) => {
 // tray menu.
 ipcMain.on('notify:show', (_event, ...args) => {
   // Support both legacy (title, body) and new ({title,body,urgency,...}) signatures
-  let title, body, urgency, timeoutType;
+  let title, body, urgency, timeoutType, soundEnabled;
   if (args.length === 1 && typeof args[0] === 'object' && args[0] !== null) {
     const d = args[0];
     title = d.title;
     body = d.body;
     urgency = d.urgency;
     timeoutType = d.timeoutType;
+    soundEnabled = d.soundEnabled;
   } else {
     [title, body] = args;
   }
@@ -780,7 +781,7 @@ ipcMain.on('notify:show', (_event, ...args) => {
       const opts = {
         title: safeTitle,
         body: safeBody,
-        silent: !d.soundEnabled, // default false (sound plays) when undefined
+        silent: soundEnabled === undefined ? false : !soundEnabled,
       };
       if (typeof urgency === 'string') opts.urgency = urgency;
       if (typeof timeoutType === 'string') opts.timeoutType = timeoutType;

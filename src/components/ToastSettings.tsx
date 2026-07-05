@@ -234,11 +234,6 @@ export function ToastSettings() {
                 onChange={(v) => update({ soundEnabled: v })}
               />
               <ToggleField
-                label="Auto-copy number"
-                value={toastConfig.autoCopyToClipboard}
-                onChange={(v) => update({ autoCopyToClipboard: v })}
-              />
-              <ToggleField
                 label="Show caller name"
                 value={toastConfig.showCallerName}
                 disabled={toastConfig.style === 'native'}

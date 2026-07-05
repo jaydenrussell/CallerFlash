@@ -140,21 +140,6 @@ html,body{width:100%;overflow:hidden;background:transparent;font-family:'Segoe U
     // Play sound if enabled
     if (c.soundEnabled !== false) playSound(c.soundName || 'chime');
 
-    // Auto-copy indicator
-    if (c.autoCopyToClipboard) {
-      var hint = document.querySelector('.auto-copy-hint');
-      if (!hint) {
-        hint = document.createElement('div');
-        hint.className = 'auto-copy-hint';
-        hint.textContent = 'Number auto-copied to clipboard';
-        hint.style.cssText = 'font-size:10px;color:rgba(255,255,255,0.4);margin-top:3px;';
-        document.querySelector('.info').appendChild(hint);
-      }
-    } else {
-      var existing = document.querySelector('.auto-copy-hint');
-      if (existing) existing.remove();
-    }
-
     // Resize window to fit content
     requestAnimationFrame(function() {
       try {

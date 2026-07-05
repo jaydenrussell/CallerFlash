@@ -106,10 +106,6 @@ function showSeparateToast(data: {
     ? '<span style="font-size:' + (c.fontSize - 4) + 'px;color:' + c.textColor + '70;">' + ts + '</span>'
     : '';
 
-  const copyHintHtml = c.autoCopyToClipboard
-    ? '<p style="margin:6px 0 0;font-size:' + Math.max(c.fontSize - 5, 9) + 'px;color:' + c.textColor + '40;">📋 Number auto-copied to clipboard</p>'
-    : '';
-
   const html = '<!DOCTYPE html>' +
     '<html><head><style>' +
     '*{margin:0;padding:0;box-sizing:border-box}' +
@@ -144,7 +140,6 @@ function showSeparateToast(data: {
     '</div>' +
     '<div class="number" style="color:' + c.textColor + ';font-size:' + (c.fontSize + 4) + 'px;">' + data.callerNumber + '</div>' +
     callerNameHtml +
-    copyHintHtml +
     '</div></div>' +
     '<div class="progress-track" style="background:' + c.accentColor + '10;">' +
     '<div class="progress-bar" id="pb" style="width:100%;background:' + c.accentColor + ';"></div>' +

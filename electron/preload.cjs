@@ -54,7 +54,7 @@ contextBridge.exposeInMainWorld('callerflash', {
   // In the production build, shows a native OS notification. In the
   // web demo, this is a no-op (the renderer swallows the call).
   notify: {
-    show: (title, body) => ipcRenderer.send('notify:show', title, body),
+    show: (data) => ipcRenderer.send('notify:show', data),
   },
 
   // ── Toast window (separate frameless BrowserWindow) ───────────
