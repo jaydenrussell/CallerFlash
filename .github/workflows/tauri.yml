@@ -1,0 +1,128 @@
+# Build + release CallerFlash via Tauri 2.0 on the refactor/tauri branch.
+# Versioning: <package.json version>-tauri (e.g. "1.4.2-tauri") so it's
+# distinguishable from Electron builds but follows the same semver base.
+
+name: Tauri Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [refactor/tauri]
+    paths-ignore: ["**.md", ".github/**", "!.github/workflows/tauri.yml"]
+
+concurrency:
+  group: tauri
+  cancel-in-progress: false
+
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  tag-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.full }}
+      tag:     ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/tauri
+
+      - name: Read version and build tauri tag
+        id: version
+        shell: bash
+        run: |
+          BASE=$(node -p "require('./package.json').version")
+          FULL="${BASE}-tauri"
+          TAG="v${FULL}"
+          echo "base=$BASE"    >> "$GITHUB_OUTPUT"
+          echo "full=$FULL"    >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG"      >> "$GITHUB_OUTPUT"
+
+      - name: Check tag does not already exist
+        shell: bash
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          if git ls-remote --tags origin "$TAG" | grep -q .; then
+            echo "Tag $TAG already exists — skipping build."
+            exit 1
+          fi
+
+  build:
+    needs: tag-version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/tauri
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build Tauri app (NSIS per-user)
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          npm run build
+          cargo tauri build --bundles nsis --ci
+
+      - name: Locate installer
+        id: installer
+        shell: bash
+        run: |
+          VERSION="${{ needs.tag-version.outputs.version }}"
+          INSTALLER="src-tauri/target/release/bundle/nsis/CallerFlash_${VERSION}_x64-setup.exe"
+          if [ ! -f "$INSTALLER" ]; then
+            # Fallback: find any .exe in the nsis bundle dir
+            INSTALLER=$(ls src-tauri/target/release/bundle/nsis/*.exe 2>/dev/null | head -1)
+          fi
+          if [ -z "$INSTALLER" ] || [ ! -f "$INSTALLER" ]; then
+            echo "No installer found!" >&2
+            ls -la src-tauri/target/release/bundle/nsis/ 2>/dev/null || true
+            exit 1
+          fi
+          echo "path=$INSTALLER" >> "$GITHUB_OUTPUT"
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CallerFlash-${{ needs.tag-version.outputs.version }}-setup
+          path: ${{ steps.installer.outputs.path }}
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          TAG="${{ needs.tag-version.outputs.tag }}"
+          VERSION="${{ needs.tag-version.outputs.version }}"
+          INSTALLER="${{ steps.installer.outputs.path }}"
+          INSTALLER_NAME="CallerFlash-${VERSION}-setup.exe"
+
+          # Create release
+          gh release create "$TAG" \
+            --title "CallerFlash $VERSION" \
+            --notes "Tauri build $VERSION — automatic release." \
+            --target refactor/tauri \
+            --latest=false
+
+          # Upload asset
+          gh release upload "$TAG" "$INSTALLER" --clobber
