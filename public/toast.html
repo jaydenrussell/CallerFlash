@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CallerFlash Toast</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: transparent;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      color: #fff;
+      user-select: none;
+    }
+    .toast {
+      position: relative;
+      width: 100%; height: 100%;
+      padding: 16px 20px;
+      border-radius: 12px;
+      background: rgba(30, 30, 50, 0.85);
+      border: 1px solid rgba(96, 205, 255, 0.3);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      cursor: pointer;
+      backdrop-filter: blur(8px);
+      -webkit-app-region: drag;
+    }
+    .toast-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+    .toast-icon {
+      width: 18px; height: 18px;
+      color: #60cdff;
+    }
+    .toast-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #60cdff;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .toast-body {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding-left: 28px;
+    }
+    .caller-number {
+      font-size: 20px;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: 0.5px;
+    }
+    .caller-name {
+      font-size: 14px;
+      font-weight: 400;
+      color: rgba(255,255,255,0.7);
+    }
+    .caller-name:empty { display: none; }
+    .toast-timestamp {
+      font-size: 11px;
+      color: rgba(255,255,255,0.4);
+      padding-left: 28px;
+      margin-top: 2px;
+    }
+    .accent-bar {
+      position: absolute;
+      left: 0;
+      top: 8px;
+      bottom: 8px;
+      width: 3px;
+      border-radius: 0 2px 2px 0;
+      background: #60cdff;
+    }
+  </style>
+</head>
+<body>
+  <div class="toast" id="toast">
+    <div class="accent-bar"></div>
+    <div class="toast-header">
+      <svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+      </svg>
+      <span class="toast-title">Incoming Call</span>
+    </div>
+    <div class="toast-body">
+      <span class="caller-number" id="callerNumber"></span>
+      <span class="caller-name" id="callerName"></span>
+    </div>
+    <div class="toast-timestamp" id="timestamp"></div>
+  </div>
+
+  <script>
+    (function() {
+      'use strict';
+
+      const elNumber = document.getElementById('callerNumber');
+      const elName = document.getElementById('callerName');
+      const elTimestamp = document.getElementById('timestamp');
+      const elToast = document.getElementById('toast');
+
+      let hideTimer = null;
+      let currentDuration = 5000;
+
+      function formatTimestamp(iso) {
+        if (!iso) return '';
+        const d = new Date(iso);
+        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      }
+
+      function showCall(data) {
+        const config = data.config || {};
+        currentDuration = config.duration || 5000;
+
+        elNumber.textContent = data.callerNumber || 'Unknown';
+        elName.textContent = data.callerName || '';
+        elName.style.display = data.callerName ? '' : 'none';
+        elTimestamp.textContent = formatTimestamp(data.timestamp);
+        elTimestamp.style.display = config.showTimestamp !== false ? '' : 'none';
+
+        // Apply styling from config
+        if (config.fontFamily) {
+          elToast.style.fontFamily = config.fontFamily;
+        }
+        if (config.fontSize) {
+          elNumber.style.fontSize = config.fontSize + 'px';
+        }
+        if (config.backgroundColor) {
+          elToast.style.background = config.backgroundColor;
+        }
+        if (config.accentColor) {
+          elToast.querySelector('.accent-bar').style.background = config.accentColor;
+          elToast.querySelector('.toast-title').style.color = config.accentColor;
+          elToast.querySelector('.toast-icon').style.color = config.accentColor;
+        }
+        if (config.borderRadius) {
+          elToast.style.borderRadius = config.borderRadius + 'px';
+        }
+        if (config.opacity !== undefined) {
+          elToast.style.opacity = String(config.opacity);
+        }
+
+        // Auto-hide timer
+        if (hideTimer) clearTimeout(hideTimer);
+        if (currentDuration > 0) {
+          hideTimer = setTimeout(() => {
+            window.__TAURI__.core.invoke('toast_hide').catch(() => {});
+          }, currentDuration);
+        }
+      }
+
+      // Request initial data
+      window.__TAURI__.core.invoke('toast_get_initial').then(data => {
+        if (data) showCall(data);
+      }).catch(() => {});
+
+      // Listen for subsequent toast events
+      window.__TAURI__.event.listen('toast:show:event', (event) => {
+        if (event.payload) showCall(event.payload);
+      }).catch(() => {});
+
+      // Click to close
+      elToast.addEventListener('click', () => {
+        if (hideTimer) clearTimeout(hideTimer);
+        window.__TAURI__.core.invoke('toast_hide').catch(() => {});
+      });
+
+      // Play Web Audio tone
+      function playTone(type) {
+        try {
+          const ctx = new (window.AudioContext || window.webkitAudioContext)();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+
+          switch(type) {
+            case 'ring':
+              osc.type = 'sine';
+              osc.frequency.value = 440;
+              gain.gain.value = 0.3;
+              osc.start();
+              osc.stop(ctx.currentTime + 0.5);
+              break;
+            case 'beep':
+              osc.type = 'square';
+              osc.frequency.value = 800;
+              gain.gain.value = 0.2;
+              osc.start();
+              osc.stop(ctx.currentTime + 0.15);
+              break;
+            case 'gentle':
+              osc.type = 'sine';
+              osc.frequency.value = 523;
+              gain.gain.value = 0.15;
+              // Fade in
+              gain.gain.setValueAtTime(0.15, ctx.currentTime);
+              gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.8);
+              osc.start();
+              osc.stop(ctx.currentTime + 0.8);
+              break;
+            default: // chime
+              osc.type = 'sine';
+              osc.frequency.value = 880;
+              gain.gain.value = 0.2;
+              osc.start();
+              osc.stop(ctx.currentTime + 0.2);
+              break;
+          }
+        } catch(e) {
+          console.log('[toast] audio error:', e);
+        }
+      }
+
+      // Play sound when data arrives
+      window.__TAURI__.event.listen('toast:show:event', (event) => {
+        const config = (event.payload && event.payload.config) || {};
+        if (config.soundEnabled !== false) {
+          playTone(config.soundName || 'chime');
+        }
+      }).catch(() => {});
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,96 @@
+use tauri::{
+    menu::{Menu, MenuItem, PredefinedMenuItem},
+    tray::TrayIconBuilder,
+    AppHandle, Emitter, Manager,
+};
+
+pub struct TrayState {
+    pub sip_status: std::sync::Mutex<String>,
+    pub update_version: std::sync::Mutex<Option<String>>,
+}
+
+pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
+    let show = MenuItem::with_id(app, "show", "Show CallerFlash", true, None::<&str>)?;
+    let hide = MenuItem::with_id(app, "hide", "Hide to Tray", true, None::<&str>)?;
+    let sip_status_item =
+        MenuItem::with_id(app, "sip_status", "SIP: Offline", false, None::<&str>)?;
+    let separator1 = PredefinedMenuItem::separator(app)?;
+    let separator2 = PredefinedMenuItem::separator(app)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit CallerFlash", true, None::<&str>)?;
+
+    let menu = Menu::with_items(app, &[
+        &show,
+        &hide,
+        &separator1,
+        &sip_status_item,
+        &separator2,
+        &quit,
+    ])?;
+
+    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))
+        .unwrap_or_else(|_| tauri::image::Image::new(&[], 0, 0));
+
+    TrayIconBuilder::new()
+        .icon(icon)
+        .menu(&menu)
+        .tooltip("CallerFlash — SIP Offline")
+        .on_menu_event(move |app, event| {
+            match event.id().as_ref() {
+                "show" => {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                    let _ = app.emit("window:restored-from-tray", ());
+                }
+                "hide" => {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.hide();
+                    }
+                    let _ = app.emit("window:hidden-to-tray", ());
+                }
+                "quit" => {
+                    app.exit(0);
+                }
+                _ => {}
+            }
+        })
+        .build(app)?;
+
+    app.manage(TrayState {
+        sip_status: std::sync::Mutex::new("Offline".to_string()),
+        update_version: std::sync::Mutex::new(None),
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn tray_set_sip_status(app: AppHandle, status: String) {
+    if let Some(state) = app.try_state::<TrayState>() {
+        if let Ok(mut s) = state.sip_status.lock() {
+            *s = status.clone();
+        }
+    }
+    let tip = format!("CallerFlash — SIP {}", status);
+    if let Some(tray) = app.tray_by_id("main") {
+        let _ = tray.set_tooltip(Some(&tip));
+    }
+}
+
+#[tauri::command]
+pub fn tray_set_update_available(app: AppHandle, version: Option<String>) {
+    if let Some(state) = app.try_state::<TrayState>() {
+        if let Ok(mut v) = state.update_version.lock() {
+            *v = version.clone();
+        }
+    }
+    let tip = if let Some(ref ver) = version {
+        format!("CallerFlash — Update {} available", ver.trim_start_matches('v'))
+    } else {
+        "CallerFlash".to_string()
+    };
+    if let Some(tray) = app.tray_by_id("main") {
+        let _ = tray.set_tooltip(Some(&tip));
+    }
+}

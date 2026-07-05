@@ -2,7 +2,6 @@
   "name": "callerflash",
   "private": true,
   "version": "1.4.2",
-  "main": "electron/main.cjs",
   "author": "CallerFlash",
   "description": "SIP-compliant client with toast notifications for any standard SIP provider",
   "license": "MIT",
@@ -12,14 +11,13 @@
   },
   "scripts": {
     "dev": "vite",
-    "prebuild": "node scripts\\build-preloader.cjs",
+    "dev:tauri": "cargo tauri dev",
     "build": "vite build",
-    "preview": "vite preview",
-    "electron:build": "npm run build && npx electron-builder --win --x64 --publish never",
-    "electron:publish": "npm run electron:build && npx electron-builder --win --x64 --publish always"
+    "build:tauri": "vite build && cargo tauri build --bundles nsis",
+    "preview": "vite preview"
   },
   "dependencies": {
-    "sip": "^0.0.6"
+    "@tauri-apps/api": "^2.2.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.1",
@@ -28,9 +26,6 @@
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.3",
     "clsx": "2.1.1",
-    "electron": "^42.5.0",
-    "electron-builder": "^26.15.3",
-    "ico-endec": "^0.1.6",
     "lucide-react": "^1.21.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
@@ -38,62 +33,6 @@
     "tailwindcss": "4.3.1",
     "typescript": "^6.0.3",
     "vite": "8.1.0",
-    "vite-plugin-singlefile": "2.3.3",
     "zustand": "^5.0.14"
-  },
-  "build": {
-    "appId": "com.callerflash.app",
-    "productName": "CallerFlash",
-    "directories": {
-      "output": "release",
-      "buildResources": "buildResources"
-    },
-    "files": [
-      "dist/**/*",
-      "electron/**/*"
-    ],
-    "asarUnpack": [
-      "buildResources/**"
-    ],
-    "artifactName": "CallerFlash-${version}.${ext}",
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "icon": "app.ico"
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowElevation": true,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "CallerFlash",
-      "installerIcon": "cflogo.ico",
-      "uninstallerIcon": "cflogo.ico",
-      "installerHeaderIcon": "cflogo.ico",
-      "runAfterFinish": true
-    },
-    "publish": null,
-    "extraResources": [
-      {
-        "from": "buildResources/cflogo.ico",
-        "to": "cflogo.ico"
-      },
-      {
-        "from": "buildResources/cflogo.png",
-        "to": "cflogo.png"
-      },
-      {
-        "from": "buildResources/app.ico",
-        "to": "app.ico"
-      }
-    ]
   }
 }

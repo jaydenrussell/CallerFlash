@@ -5,3 +5,9 @@ release
 *.log
 *.local
 .vite
+
+# Tauri build artifacts
+src-tauri/target/
+src-tauri/gen/
+src-tauri/icons/ios/
+src-tauri/icons/android/
