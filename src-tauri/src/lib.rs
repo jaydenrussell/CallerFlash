@@ -7,8 +7,6 @@ use diagnostics::Diagnostics;
 use sip::SipClient;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Listener, Manager};
-#[cfg(target_os = "windows")]
-use tauri::window::{Effect, EffectState, Effects};
 
 // Re-export command functions so generate_handler can find the generated __cmd__ macros
 pub use storage::{storage_load, storage_save};
@@ -220,15 +218,6 @@ pub fn run() {
                 pending_data: Mutex::new(None),
             });
             tray::setup_tray(app.handle())?;
-
-            // Apply Windows 11 Mica effect
-            #[cfg(target_os = "windows")]
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.set_effects(Effects {
-                    effects: vec![Effect::Mica],
-                    state: EffectState::FollowingWindow,
-                });
-            }
 
             // Intercept close to hide to tray instead of quitting
             if let Some(main_window) = app.get_webview_window("main") {
