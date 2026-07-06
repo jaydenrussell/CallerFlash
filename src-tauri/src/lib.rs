@@ -14,6 +14,7 @@ pub use storage::{storage_load, storage_save};
 pub use tray::{tray_set_sip_status, tray_set_update_available};
 
 #[derive(Clone, serde::Serialize)]
+#[allow(dead_code)]
 struct DiagnosticEvent {
     level: String,
     message: String,
@@ -113,7 +114,7 @@ async fn toast_show(app: AppHandle, data: serde_json::Value) -> Result<(), Strin
         .get("config")
         .and_then(|c| c.get("maxWidth"))
         .and_then(|v| v.as_u64())
-        .map(|w| w.max(260).min(800) as f64)
+        .map(|w| w.clamp(260, 800) as f64)
         .unwrap_or(380.0);
 
     let builder = tauri::WebviewWindowBuilder::new(
@@ -141,7 +142,7 @@ async fn toast_show(app: AppHandle, data: serde_json::Value) -> Result<(), Strin
     if let Some(monitor) = window.current_monitor().map_err(|e| e.to_string())? {
         let size = monitor.size();
         let scale = monitor.scale_factor();
-        let wa_w = (size.width as f64 / scale) as f64;
+        let wa_w = size.width as f64 / scale;
         let x = wa_w - width - 16.0;
         let y = 40.0;
         let _ = window.set_position(tauri::PhysicalPosition::new(x as i32, y as i32));

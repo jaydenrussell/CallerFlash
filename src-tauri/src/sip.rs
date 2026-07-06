@@ -52,6 +52,7 @@ impl SipClient {
         format!("{:x}", hasher.finalize())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn compute_digest_response(
         username: &str,
         realm: &str,
@@ -113,11 +114,7 @@ impl SipClient {
         let mut params = HashMap::new();
         // Parse: Digest realm="...", nonce="...", algorithm=MD5, qop="auth"
         // Remove "Digest " prefix
-        let rest = if header.starts_with("Digest ") {
-            &header[7..]
-        } else {
-            header
-        };
+        let rest = header.strip_prefix("Digest ").unwrap_or(header);
 
         let mut in_quoted = false;
         let mut key = String::new();
@@ -448,7 +445,7 @@ impl SipClient {
                         };
 
                         let (status_code, reason, _headers) = Self::parse_sip_response(&buf[..len]);
-                        if status_code >= 200 && status_code < 300 {
+                        if (200..300).contains(&status_code) {
                             *connected.lock().await = true;
                             handle
                                 .emit(
@@ -488,7 +485,7 @@ impl SipClient {
                             .ok();
                         return;
                     }
-                } else if status_code >= 200 && status_code < 300 {
+                } else if (200..300).contains(&status_code) {
                     *connected.lock().await = true;
                     handle
                         .emit(
