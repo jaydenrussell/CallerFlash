@@ -54,7 +54,7 @@ export function ToastSettings() {
   };
 
   return (
-    <div className="space-y-3 animate-fade-in">
+    <div className="space-y-2 animate-fade-in">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <h2 className="text-xl font-bold text-win-text">Notifications</h2>
@@ -65,14 +65,14 @@ export function ToastSettings() {
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={handlePreview}
-            className="flex items-center gap-2 px-3 py-1.5 bg-win-accent/15 hover:bg-win-accent/25 text-win-accent rounded-lg text-sm font-medium transition-colors border border-win-accent/20"
+            className="flex items-center gap-1.5 px-2.5 py-1 bg-win-accent/15 hover:bg-win-accent/25 text-win-accent rounded-lg text-sm font-medium transition-colors border border-win-accent/20"
           >
             <PhoneIncoming className="w-3.5 h-3.5" />
-            {toastConfig.style === 'native' ? 'Test Native Windows' : 'Test Modern'}
+            {toastConfig.style === 'native' ? 'Test Native' : 'Test Modern'}
           </button>
           <button
             onClick={handleReset}
-            className="flex items-center gap-2 px-3 py-1.5 bg-win-surface hover:bg-win-surface-hover text-win-text-secondary rounded-lg text-sm font-medium transition-colors border border-win-border"
+            className="flex items-center gap-1.5 px-2.5 py-1 bg-win-surface hover:bg-win-surface-hover text-win-text-secondary rounded-lg text-sm font-medium transition-colors border border-win-border"
           >
             <RotateCcw className="w-3.5 h-3.5" />
             Reset
@@ -82,8 +82,8 @@ export function ToastSettings() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
         {/* Row 1: Style + Duration side by side */}
-        <div className="bg-win-surface rounded-xl border border-win-border p-3">
-          <div className="flex items-center gap-2 mb-2">
+        <div className="bg-win-surface rounded-xl border border-win-border p-2.5">
+          <div className="flex items-center gap-2 mb-1.5">
             <span className="text-win-accent"><Bell className="w-4 h-4" /></span>
             <h3 className="text-sm font-semibold text-win-text">Notification style</h3>
           </div>
@@ -130,10 +130,10 @@ export function ToastSettings() {
         </div>
 
         {/* Duration + Sound */}
-        <div className="bg-win-surface rounded-xl border border-win-border p-3">
-          <div className="grid grid-cols-2 gap-3">
+        <div className="bg-win-surface rounded-xl border border-win-border p-2.5">
+          <div className="grid grid-cols-2 gap-2">
             <div>
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex items-center gap-2 mb-1.5">
                 <span className="text-win-accent"><Clock className="w-4 h-4" /></span>
                 <h3 className="text-sm font-semibold text-win-text">Duration</h3>
               </div>
@@ -148,18 +148,18 @@ export function ToastSettings() {
               />
             </div>
             <div>
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex items-center gap-2 mb-1.5">
                 <span className="text-win-accent"><Bell className="w-4 h-4" /></span>
                 <h3 className="text-sm font-semibold text-win-text">Sound</h3>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-win-text-secondary">Ringtone</span>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   {toastConfig.style === 'custom' ? (
                     <select
                       value={toastConfig.soundName}
                       onChange={(e) => update({ soundName: e.target.value })}
-                      className="px-2 py-1 bg-win-card border border-win-border rounded-lg text-xs text-win-text focus:outline-none focus:border-win-accent transition-colors appearance-none pr-6"
+                      className="px-1.5 py-1 bg-win-card border border-win-border rounded-lg text-xs text-win-text focus:outline-none focus:border-win-accent transition-colors appearance-none pr-5"
                     >
                       <option value="chime">Chime</option>
                       <option value="ring">Phone Ring</option>
@@ -182,12 +182,12 @@ export function ToastSettings() {
         </div>
 
         {/* Behavior */}
-        <div className="bg-win-surface rounded-xl border border-win-border p-3">
-          <div className="flex items-center gap-2 mb-2">
+        <div className="bg-win-surface rounded-xl border border-win-border p-2.5">
+          <div className="flex items-center gap-2 mb-1.5">
             <span className="text-win-accent"><RotateCcw className="w-4 h-4" /></span>
             <h3 className="text-sm font-semibold text-win-text">Behavior</h3>
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             <ToggleField
               label="Auto-copy to clipboard"
               description="Copy caller number to clipboard when a call arrives"
@@ -213,12 +213,12 @@ export function ToastSettings() {
 
         {/* Modern-only appearance */}
         {toastConfig.style === 'custom' && (
-        <div className="bg-win-surface rounded-xl border border-win-border p-3 lg:col-span-2">
-          <div className="flex items-center gap-2 mb-2">
+        <div className="bg-win-surface rounded-xl border border-win-border p-2.5 lg:col-span-2">
+          <div className="flex items-center gap-2 mb-1.5">
             <span className="text-win-accent"><Palette className="w-4 h-4" /></span>
             <h3 className="text-sm font-semibold text-win-text">Appearance</h3>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5">
             <div className="col-span-1">
               <SliderField
                 label="Font size"
@@ -267,7 +267,7 @@ export function ToastSettings() {
               onChange={(v) => update({ maxWidth: v })}
             />
           </div>
-          <div className="grid grid-cols-3 gap-2 mt-2">
+          <div className="grid grid-cols-3 gap-1.5 mt-1">
             <SliderField
               label="Radius"
               value={toastConfig.borderRadius}
@@ -412,16 +412,16 @@ function ToggleField({ label, value, disabled, onChange, compact, description }:
       type="button"
       disabled={disabled}
       onClick={() => onChange(!value)}
-      className={`flex w-full items-center justify-between rounded-lg border border-win-border/50 px-3 py-2.5 transition-colors ${disabled ? 'opacity-40 cursor-not-allowed' : 'bg-win-card hover:border-win-border hover:bg-win-surface-hover'}`}
+      className={`flex w-full items-center justify-between rounded-lg border border-win-border/50 px-3 py-2 transition-colors ${disabled ? 'opacity-40 cursor-not-allowed' : 'bg-win-card hover:border-win-border hover:bg-win-surface-hover'}`}
     >
       <div className="text-left min-w-0 pr-2">
-        <span className="text-sm text-win-text">{label}</span>
+        <span className="text-sm text-win-text leading-snug">{label}</span>
         {description && (
           <p className="text-[11px] text-win-text-tertiary leading-tight mt-0.5">{description}</p>
         )}
       </div>
-      <div className={`relative h-[22px] w-10 rounded-full transition-colors flex-shrink-0 ${value ? 'bg-win-accent' : 'bg-win-border'}`}>
-        <div className={`absolute top-[3px] h-4 w-4 rounded-full bg-white shadow transition-transform ${value ? 'translate-x-[21px]' : 'translate-x-[3px]'}`} />
+      <div className={`relative h-[20px] w-9 rounded-full transition-colors flex-shrink-0 ${value ? 'bg-win-accent' : 'bg-win-border'}`}>
+        <div className={`absolute top-[2px] h-4 w-4 rounded-full bg-white shadow transition-transform ${value ? 'translate-x-[18px]' : 'translate-x-[2px]'}`} />
       </div>
     </button>
   );
