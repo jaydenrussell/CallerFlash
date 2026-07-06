@@ -75,7 +75,7 @@ export function About() {
         </h3>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5">
           {[
-            { name: 'Electron', desc: 'Desktop runtime' },
+            { name: 'Tauri', desc: 'Desktop runtime' },
             { name: 'React', desc: 'UI framework' },
             { name: 'TypeScript', desc: 'Type safety' },
             { name: 'Tailwind CSS', desc: 'Styling' },

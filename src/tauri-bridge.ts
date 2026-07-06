@@ -273,7 +273,7 @@ function setup(): void {
     platform: {
       isElectron: false,
       arch: 'x64',
-      version: '__APP_VERSION__',
+      version: __APP_VERSION__,
     },
   } satisfies CallerFlashBridge;
 

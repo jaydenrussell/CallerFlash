@@ -71,6 +71,7 @@ jobs:
             require('fs').writeFileSync('./package.json', JSON.stringify(p, null, 2) + '\n');
           "
           sed -i "s/^version = \".*\"/version = \"$FULL\"/" src-tauri/Cargo.toml
+          sed -i "s/\"version\": \".*\"/\"version\": \"$FULL\"/" src-tauri/tauri.conf.json
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
