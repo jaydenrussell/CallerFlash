@@ -18,14 +18,17 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let separator2 = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Quit CallerFlash", true, None::<&str>)?;
 
-    let menu = Menu::with_items(app, &[
-        &show,
-        &hide,
-        &separator1,
-        &sip_status_item,
-        &separator2,
-        &quit,
-    ])?;
+    let menu = Menu::with_items(
+        app,
+        &[
+            &show,
+            &hide,
+            &separator1,
+            &sip_status_item,
+            &separator2,
+            &quit,
+        ],
+    )?;
 
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))
         .unwrap_or_else(|_| tauri::image::Image::new(&[], 0, 0));
@@ -48,26 +51,24 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
                 }
             }
         })
-        .on_menu_event(move |app, event| {
-            match event.id().as_ref() {
-                "show" => {
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
-                    let _ = app.emit("window:restored-from-tray", ());
+        .on_menu_event(move |app, event| match event.id().as_ref() {
+            "show" => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
                 }
-                "hide" => {
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.hide();
-                    }
-                    let _ = app.emit("window:hidden-to-tray", ());
-                }
-                "quit" => {
-                    app.exit(0);
-                }
-                _ => {}
+                let _ = app.emit("window:restored-from-tray", ());
             }
+            "hide" => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+                let _ = app.emit("window:hidden-to-tray", ());
+            }
+            "quit" => {
+                app.exit(0);
+            }
+            _ => {}
         })
         .build(app)?;
 
@@ -100,7 +101,10 @@ pub fn tray_set_update_available(app: AppHandle, version: Option<String>) {
         }
     }
     let tip = if let Some(ref ver) = version {
-        format!("CallerFlash — Update {} available", ver.trim_start_matches('v'))
+        format!(
+            "CallerFlash — Update {} available",
+            ver.trim_start_matches('v')
+        )
     } else {
         "CallerFlash".to_string()
     };

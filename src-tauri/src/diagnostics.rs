@@ -52,7 +52,11 @@ impl Diagnostics {
             Ok(c) => c,
             Err(_) => return Vec::new(),
         };
-        let lines: Vec<&str> = content.trim().split('\n').filter(|l| !l.is_empty()).collect();
+        let lines: Vec<&str> = content
+            .trim()
+            .split('\n')
+            .filter(|l| !l.is_empty())
+            .collect();
         let start = lines.len().saturating_sub(limit);
         let mut entries: Vec<LogEntry> = Vec::new();
         for line in lines[start..].iter() {

@@ -9,8 +9,8 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Listener, Manager};
 
 // Re-export command functions so generate_handler can find the generated __cmd__ macros
-pub use storage::{storage_load, storage_save};
 pub use sip::{sip_connect, sip_disconnect};
+pub use storage::{storage_load, storage_save};
 pub use tray::{tray_set_sip_status, tray_set_update_available};
 
 #[derive(Clone, serde::Serialize)]
@@ -26,12 +26,34 @@ async fn diagnostics_append(app: AppHandle, entry: serde_json::Value) {
     let diag = Diagnostics::new(data_dir);
 
     let log_entry = diagnostics::LogEntry {
-        id: entry.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-        timestamp: entry.get("timestamp").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-        level: entry.get("level").and_then(|v| v.as_str()).unwrap_or("info").to_string(),
-        category: entry.get("category").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-        message: entry.get("message").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-        details: entry.get("details").and_then(|v| v.as_str().map(String::from)),
+        id: entry
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        timestamp: entry
+            .get("timestamp")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        level: entry
+            .get("level")
+            .and_then(|v| v.as_str())
+            .unwrap_or("info")
+            .to_string(),
+        category: entry
+            .get("category")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        message: entry
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        details: entry
+            .get("details")
+            .and_then(|v| v.as_str().map(String::from)),
     };
     diag.append(&log_entry);
 }
@@ -82,7 +104,8 @@ async fn toast_show(app: AppHandle, data: serde_json::Value) -> Result<(), Strin
             let _ = window.show();
             let _ = window.set_focus();
         }
-        app.emit("toast:show:event", data).map_err(|e| e.to_string())?;
+        app.emit("toast:show:event", data)
+            .map_err(|e| e.to_string())?;
         return Ok(());
     }
 
@@ -108,7 +131,9 @@ async fn toast_show(app: AppHandle, data: serde_json::Value) -> Result<(), Strin
     .resizable(false)
     .visible(false);
 
-    let window = builder.build().map_err(|e| format!("Failed to create toast window: {}", e))?;
+    let window = builder
+        .build()
+        .map_err(|e| format!("Failed to create toast window: {}", e))?;
 
     let _ = window.set_always_on_top(true);
 
@@ -140,7 +165,9 @@ async fn toast_hide(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 async fn toast_set_position(app: AppHandle, x: i32, y: i32) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("toast") {
-        window.set_position(tauri::PhysicalPosition::new(x, y)).map_err(|e| e.to_string())?;
+        window
+            .set_position(tauri::PhysicalPosition::new(x, y))
+            .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
