@@ -220,8 +220,8 @@ export function SipSettings() {
   const dropdownValue = customMode ? '__custom__' : localConfig.server;
 
   return (
-    <div className="space-y-4 animate-fade-in">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-3 animate-fade-in">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <h2 className="text-xl font-bold text-win-text">SIP Settings</h2>
           <p className="text-xs text-win-text-secondary mt-0.5">Connection parameters for your SIP provider</p>
@@ -280,7 +280,7 @@ export function SipSettings() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
         {/* Server Configuration */}
         <SettingsSection
           icon={<Server className="w-4 h-4" />}
@@ -392,7 +392,7 @@ export function SipSettings() {
           title="Authentication"
           description="SIP account credentials"
         >
-          <div className="space-y-3">
+          <div className="space-y-2">
             <InputField label="SIP Username">
               <input
                 type="text"
@@ -459,12 +459,12 @@ function SettingsSection({ icon, title, description, children }: {
   children: React.ReactNode;
 }) {
   return (
-    <div className="bg-win-surface rounded-xl border border-win-border p-4">
+    <div className="bg-win-surface rounded-xl border border-win-border p-3">
       <div className="flex items-center gap-2 mb-1">
         <span className="text-win-accent">{icon}</span>
         <h3 className="text-sm font-semibold text-win-text">{title}</h3>
       </div>
-      <p className="text-xs text-win-text-tertiary mb-3">{description}</p>
+      <p className="text-xs text-win-text-tertiary mb-2">{description}</p>
       {children}
     </div>
   );

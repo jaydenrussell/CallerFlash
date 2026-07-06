@@ -108,7 +108,7 @@ export function Sidebar({ collapsed }: SidebarProps) {
   }
 
   return (
-    <div className="w-56 min-w-56 bg-win-card border-r border-win-border flex flex-col h-full">
+    <div className="w-52 min-w-52 bg-win-card border-r border-win-border flex flex-col h-full">
       {/* App Header */}
       <div className="p-4 border-b border-win-border">
         <div className="flex items-center gap-3">
@@ -157,7 +157,7 @@ export function Sidebar({ collapsed }: SidebarProps) {
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
                 className={cn(
-                  'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 relative',
+                  'w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 relative',
                   isActive
                     ? 'bg-win-accent/15 text-win-accent border border-win-accent/20'
                     : 'text-win-text-secondary hover:bg-win-surface-hover hover:text-win-text border border-transparent'
@@ -166,7 +166,7 @@ export function Sidebar({ collapsed }: SidebarProps) {
                 <Icon className="w-[18px] h-[18px] flex-shrink-0" />
                 <span className="truncate">{item.label}</span>
                 {showUpdateBadge && (
-                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" />
+                  <span className="absolute right-2 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" />
                 )}
               </button>
             );

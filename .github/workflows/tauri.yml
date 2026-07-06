@@ -64,13 +64,13 @@ jobs:
       - name: Patch version files with auto-bumped version
         shell: bash
         run: |
-          BASE="${{ needs.tag-version.outputs.base_ver }}"
+          FULL="${{ needs.tag-version.outputs.version }}"
           node -e "
             const p = require('./package.json');
-            p.version = '$BASE';
+            p.version = '$FULL';
             require('fs').writeFileSync('./package.json', JSON.stringify(p, null, 2) + '\n');
           "
-          sed -i "s/^version = \".*\"/version = \"$BASE\"/" src-tauri/Cargo.toml
+          sed -i "s/^version = \".*\"/version = \"$FULL\"/" src-tauri/Cargo.toml
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -108,6 +108,7 @@ jobs:
         shell: bash
         run: |
           set +e
+          FULL_VER="${{ needs.tag-version.outputs.version }}"
           BASE_VER="${{ needs.tag-version.outputs.base_ver }}"
           BUNDLE_ROOT="src-tauri/target/release/bundle"
           echo "--- Bundle root contents ---"
@@ -115,8 +116,8 @@ jobs:
           echo "---"
 
           INSTALLER=
-          # Try exact expected name first
-          EXACT="$BUNDLE_ROOT/nsis/CallerFlash_${BASE_VER}_x64-setup.exe"
+          # Try exact expected name first (full version includes -tauri suffix)
+          EXACT="$BUNDLE_ROOT/nsis/CallerFlash_${FULL_VER}_x64-setup.exe"
           [ -f "$EXACT" ] && INSTALLER="$EXACT"
 
           # Fallback: any .exe in nsis dir

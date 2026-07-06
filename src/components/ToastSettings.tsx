@@ -61,8 +61,8 @@ export function ToastSettings() {
   };
 
   return (
-    <div className="space-y-4 animate-fade-in">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-3 animate-fade-in">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <h2 className="text-xl font-bold text-win-text">Notifications</h2>
           <p className="text-xs text-win-text-secondary mt-0.5">
@@ -87,7 +87,7 @@ export function ToastSettings() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
         {/* Notification Style */}
         <Section icon={<Bell className="w-4 h-4" />} title="Notification style" desc="How incoming call alerts appear">
           <div className="space-y-2">
@@ -300,12 +300,12 @@ function Section({ icon, title, desc, children }: {
   children: React.ReactNode;
 }) {
   return (
-    <div className="bg-win-surface rounded-xl border border-win-border p-4">
+    <div className="bg-win-surface rounded-xl border border-win-border p-3">
       <div className="flex items-center gap-2 mb-1">
         <span className="text-win-accent">{icon}</span>
         <h3 className="text-sm font-semibold text-win-text">{title}</h3>
       </div>
-      <p className="text-xs text-win-text-tertiary mb-3">{desc}</p>
+      <p className="text-xs text-win-text-tertiary mb-2">{desc}</p>
       {children}
     </div>
   );

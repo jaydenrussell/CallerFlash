@@ -248,8 +248,9 @@ function ToastItem({
       style={{
         top: `${stackIndex * 8}px`,
         right: 0,
-        maxWidth: `${config.maxWidth}px`,
-        width: `${config.maxWidth}px`,
+        left: 0,
+        width: '100%',
+        maxWidth: '100%',
         userSelect: 'none',
         transition: isDragging ? 'none' : undefined,
       }}
