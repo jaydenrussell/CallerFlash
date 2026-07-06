@@ -430,6 +430,18 @@ impl SipClient {
                                 }
                             }
 
+                            // Sanitize: strip non-printable chars and HTML tags
+                            let sanitize = |s: &str| -> String {
+                                s.chars()
+                                    .filter(|&c| c.is_ascii_graphic() || c == ' ')
+                                    .collect::<String>()
+                                    .chars()
+                                    .take(128)
+                                    .collect()
+                            };
+                            caller_number = sanitize(&caller_number);
+                            caller_name = sanitize(&caller_name);
+
                             handle.emit("sip:invite", InviteData {
                                 caller_number,
                                 caller_name,

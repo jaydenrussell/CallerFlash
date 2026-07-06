@@ -28,7 +28,7 @@ jobs:
       base_ver: ${{ steps.version.outputs.base }}
       tag:      ${{ steps.version.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: refactor/tauri
 
@@ -57,7 +57,7 @@ jobs:
     needs: tag-version
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: refactor/tauri
 
@@ -74,22 +74,26 @@ jobs:
           sed -i "s/\"version\": \".*\"/\"version\": \"$FULL\"/" src-tauri/tauri.conf.json
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "24"
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable branch
         with:
           targets: x86_64-pc-windows-msvc
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
         with:
           workspaces: src-tauri
 
       - name: Install npm dependencies
         run: npm ci
+
+      - name: Run npm audit
+        continue-on-error: true
+        run: npm audit --audit-level=high
 
       - name: Install Tauri CLI
         shell: bash
@@ -162,7 +166,7 @@ jobs:
           [ -n "$UPDATE_BUNDLE" ] && [ -f "$UPDATE_BUNDLE" ] && echo "update_bundle=$UPDATE_BUNDLE" >> "$GITHUB_OUTPUT" || true
 
       - name: Upload installer artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: CallerFlash-${{ needs.tag-version.outputs.version }}-setup
           path: ${{ steps.bundles.outputs.installer }}

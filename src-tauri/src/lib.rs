@@ -44,22 +44,6 @@ async fn diagnostics_load(app: AppHandle) -> Vec<diagnostics::LogEntry> {
 }
 
 #[tauri::command]
-async fn safe_storage_encrypt(plaintext: String) -> Result<Option<String>, String> {
-    Ok(Some(base64::Engine::encode(
-        &base64::engine::general_purpose::STANDARD,
-        plaintext.as_bytes(),
-    )))
-}
-
-#[tauri::command]
-async fn safe_storage_decrypt(base64_cipher: String) -> Result<Option<String>, String> {
-    match base64::Engine::decode(&base64::engine::general_purpose::STANDARD, base64_cipher.as_bytes()) {
-        Ok(bytes) => Ok(Some(String::from_utf8(bytes).unwrap_or_default())),
-        Err(_) => Ok(None),
-    }
-}
-
-#[tauri::command]
 async fn shell_open_external(url: String) -> Result<(), String> {
     if url.starts_with("https:") || url.starts_with("http:") {
         open::that(&url).map_err(|e| e.to_string())?;
@@ -267,8 +251,6 @@ pub fn run() {
             storage_save,
             diagnostics_append,
             diagnostics_load,
-            safe_storage_encrypt,
-            safe_storage_decrypt,
             shell_open_external,
             notify_show,
             sip_connect,
