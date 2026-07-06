@@ -15,19 +15,41 @@
       color: #fff;
       user-select: none;
     }
+    @keyframes ring-pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.15); opacity: 0.7; }
+    }
+    @keyframes ring-glow {
+      0%, 100% { box-shadow: 0 0 4px rgba(96, 205, 255, 0.3); }
+      50% { box-shadow: 0 0 14px rgba(96, 205, 255, 0.7); }
+    }
+    @keyframes slideIn {
+      from { transform: translateY(-100%); opacity: 0; }
+      to   { transform: translateY(0); opacity: 1; }
+    }
     .toast {
       position: relative;
       width: 100%; height: 100%;
-      padding: 16px 20px;
+      padding: 14px 18px;
       border-radius: 12px;
       background: rgba(30, 30, 50, 0.85);
       border: 1px solid rgba(96, 205, 255, 0.3);
       display: flex;
       flex-direction: column;
-      justify-content: center;
       cursor: pointer;
       backdrop-filter: blur(8px);
       -webkit-app-region: drag;
+      animation: slideIn 0.3s cubic-bezier(.16,1,.3,1) forwards;
+      overflow: hidden;
+    }
+    .accent-bar {
+      position: absolute;
+      left: 0;
+      top: 8px;
+      bottom: 8px;
+      width: 3px;
+      border-radius: 0 2px 2px 0;
+      background: #60cdff;
     }
     .toast-header {
       display: flex;
@@ -35,8 +57,28 @@
       gap: 10px;
       margin-bottom: 6px;
     }
+    .toast-header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .toast-header-right {
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+    .toast-icon-wrap {
+      flex-shrink: 0;
+      width: 22px;
+      height: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: ring-pulse 1.2s ease-in-out infinite, ring-glow 1.2s ease-in-out infinite;
+    }
     .toast-icon {
-      width: 18px; height: 18px;
+      width: 18px;
+      height: 18px;
       color: #60cdff;
     }
     .toast-title {
@@ -45,8 +87,18 @@
       color: #60cdff;
       text-transform: uppercase;
       letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+    .toast-timestamp {
+      font-size: 11px;
+      font-weight: 600;
+      color: #60cdff;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
     }
     .toast-body {
+      flex: 1;
       display: flex;
       flex-direction: column;
       gap: 2px;
@@ -64,20 +116,22 @@
       color: rgba(255,255,255,0.7);
     }
     .caller-name:empty { display: none; }
-    .toast-timestamp {
-      font-size: 11px;
-      color: rgba(255,255,255,0.4);
-      padding-left: 28px;
-      margin-top: 2px;
-    }
-    .accent-bar {
+    .progress-track {
       position: absolute;
+      bottom: 0;
       left: 0;
-      top: 8px;
-      bottom: 8px;
-      width: 3px;
-      border-radius: 0 2px 2px 0;
+      width: 100%;
+      height: 3px;
+      background: rgba(96, 205, 255, 0.08);
+    }
+    .progress-bar {
+      position: absolute;
+      top: 0;
+      right: 0;
+      height: 100%;
       background: #60cdff;
+      box-shadow: 0 0 8px #60cdff, 0 0 16px rgba(96, 205, 255, 0.4);
+      transition: width 80ms linear;
     }
   </style>
 </head>
@@ -85,16 +139,25 @@
   <div class="toast" id="toast">
     <div class="accent-bar"></div>
     <div class="toast-header">
-      <svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
-      </svg>
-      <span class="toast-title">Incoming Call</span>
+      <div class="toast-header-left">
+        <div class="toast-icon-wrap">
+          <svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+          </svg>
+        </div>
+        <span class="toast-title">Incoming Call</span>
+      </div>
+      <div class="toast-header-right">
+        <span class="toast-timestamp" id="timestamp"></span>
+      </div>
     </div>
     <div class="toast-body">
       <span class="caller-number" id="callerNumber"></span>
       <span class="caller-name" id="callerName"></span>
     </div>
-    <div class="toast-timestamp" id="timestamp"></div>
+    <div class="progress-track" id="progressTrack">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
   </div>
 
   <script>
@@ -105,8 +168,11 @@
       const elName = document.getElementById('callerName');
       const elTimestamp = document.getElementById('timestamp');
       const elToast = document.getElementById('toast');
+      const elProgress = document.getElementById('progressBar');
+      const elIconWrap = document.querySelector('.toast-icon-wrap');
 
       let hideTimer = null;
+      let progressInterval = null;
       let currentDuration = 5000;
 
       function formatTimestamp(iso) {
@@ -117,7 +183,6 @@
 
       function showCall(data) {
         const config = data.config || {};
-        // config.duration is in seconds (slider range 3-30)
         var durationSec = (typeof config.duration === 'number' ? config.duration : 5);
         currentDuration = durationSec * 1000;
 
@@ -127,7 +192,6 @@
         elTimestamp.textContent = formatTimestamp(data.timestamp);
         elTimestamp.style.display = config.showTimestamp !== false ? '' : 'none';
 
-        // Apply styling from config
         if (config.fontFamily) {
           elToast.style.fontFamily = config.fontFamily;
         }
@@ -141,9 +205,15 @@
           elToast.style.background = config.backgroundColor;
         }
         if (config.accentColor) {
-          elToast.querySelector('.accent-bar').style.background = config.accentColor;
-          elToast.querySelector('.toast-title').style.color = config.accentColor;
-          elToast.querySelector('.toast-icon').style.color = config.accentColor;
+          var accent = config.accentColor;
+          elToast.querySelector('.accent-bar').style.background = accent;
+          elToast.querySelector('.toast-title').style.color = accent;
+          elTimestamp.style.color = accent;
+          elIconWrap.style.setProperty('--accent', accent);
+          elProgress.style.background = accent;
+          elProgress.style.boxShadow = '0 0 8px ' + accent + ', 0 0 16px ' + accent + '66';
+          elProgress.parentElement.style.background = accent + '14';
+          elToast.style.borderColor = accent + '55';
         }
         if (config.borderRadius) {
           elToast.style.borderRadius = config.borderRadius + 'px';
@@ -152,32 +222,42 @@
           elToast.style.opacity = String(config.opacity);
         }
 
-        // Auto-hide timer
+        // Reset progress bar
+        elProgress.style.width = '100%';
+        if (progressInterval) clearInterval(progressInterval);
+
         if (hideTimer) clearTimeout(hideTimer);
         if (currentDuration > 0) {
+          var startTime = Date.now();
+          progressInterval = setInterval(function () {
+            var elapsed = Date.now() - startTime;
+            var remaining = Math.max(0, currentDuration - elapsed);
+            var pct = (remaining / currentDuration) * 100;
+            elProgress.style.width = pct + '%';
+            if (pct <= 0) clearInterval(progressInterval);
+          }, 40);
+
           hideTimer = setTimeout(function () {
+            clearInterval(progressInterval);
             window.__TAURI__.core.invoke('toast_hide').catch(function () {});
           }, currentDuration);
         }
       }
 
-      // Request initial data
       window.__TAURI__.core.invoke('toast_get_initial').then(data => {
         if (data) showCall(data);
       }).catch(() => {});
 
-      // Listen for subsequent toast events
       window.__TAURI__.event.listen('toast:show:event', (event) => {
         if (event.payload) showCall(event.payload);
       }).catch(() => {});
 
-      // Click to close
       elToast.addEventListener('click', () => {
         if (hideTimer) clearTimeout(hideTimer);
+        if (progressInterval) clearInterval(progressInterval);
         window.__TAURI__.core.invoke('toast_hide').catch(() => {});
       });
 
-      // Play Web Audio tone
       function playTone(type) {
         try {
           const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -205,13 +285,12 @@
               osc.type = 'sine';
               osc.frequency.value = 523;
               gain.gain.value = 0.15;
-              // Fade in
               gain.gain.setValueAtTime(0.15, ctx.currentTime);
               gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.8);
               osc.start();
               osc.stop(ctx.currentTime + 0.8);
               break;
-            default: // chime
+            default:
               osc.type = 'sine';
               osc.frequency.value = 880;
               gain.gain.value = 0.2;
@@ -224,7 +303,6 @@
         }
       }
 
-      // Play sound when data arrives
       window.__TAURI__.event.listen('toast:show:event', (event) => {
         const config = (event.payload && event.payload.config) || {};
         if (config.soundEnabled !== false) {
