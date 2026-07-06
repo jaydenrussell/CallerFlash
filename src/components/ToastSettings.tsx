@@ -218,8 +218,9 @@ export function ToastSettings() {
             <span className="text-win-accent"><Palette className="w-4 h-4" /></span>
             <h3 className="text-sm font-semibold text-win-text">Appearance</h3>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5">
-            <div className="col-span-1">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+            <div className="bg-win-card rounded-lg border border-win-border/50 p-2">
+              <p className="text-[11px] font-semibold text-win-text-secondary uppercase tracking-wider mb-1.5">Typography</p>
               <SliderField
                 label="Font size"
                 value={toastConfig.fontSize}
@@ -229,64 +230,73 @@ export function ToastSettings() {
                 unit="px"
                 onChange={(v) => update({ fontSize: v })}
               />
+              <div className="mt-1">
+                <InputField label="Font family">
+                  <select
+                    value={toastConfig.fontFamily}
+                    onChange={(e) => update({ fontFamily: e.target.value })}
+                    className="w-full px-2 py-1.5 bg-win-card border border-win-border rounded-lg text-xs text-win-text focus:outline-none focus:border-win-accent transition-colors appearance-none pr-6"
+                    style={{ fontFamily: toastConfig.fontFamily }}
+                  >
+                    {fontFamilies.map((font) => (
+                      <option key={font} value={font} style={{ fontFamily: font }}>{font}</option>
+                    ))}
+                  </select>
+                </InputField>
+              </div>
             </div>
-            <InputField label="Font">
-              <select
-                value={toastConfig.fontFamily}
-                onChange={(e) => update({ fontFamily: e.target.value })}
-                className="w-full px-2 py-1.5 bg-win-card border border-win-border rounded-lg text-xs text-win-text focus:outline-none focus:border-win-accent transition-colors appearance-none pr-6"
-                style={{ fontFamily: toastConfig.fontFamily }}
-              >
-                {fontFamilies.map((font) => (
-                  <option key={font} value={font} style={{ fontFamily: font }}>{font}</option>
-                ))}
-              </select>
-            </InputField>
-            <ColorField
-              label="Text"
-              value={toastConfig.textColor}
-              onChange={(v) => update({ textColor: v })}
-            />
-            <ColorField
-              label="BG"
-              value={toastConfig.backgroundColor}
-              onChange={(v) => update({ backgroundColor: v })}
-            />
-            <ColorField
-              label="Accent"
-              value={toastConfig.accentColor}
-              onChange={(v) => update({ accentColor: v })}
-            />
-            <SliderField
-              label="Width"
-              value={toastConfig.maxWidth}
-              min={300}
-              max={600}
-              step={10}
-              unit="px"
-              onChange={(v) => update({ maxWidth: v })}
-            />
-          </div>
-          <div className="grid grid-cols-3 gap-1.5 mt-1">
-            <SliderField
-              label="Radius"
-              value={toastConfig.borderRadius}
-              min={0}
-              max={24}
-              step={1}
-              unit="px"
-              onChange={(v) => update({ borderRadius: v })}
-            />
-            <SliderField
-              label="Opacity"
-              value={toastConfig.opacity}
-              min={50}
-              max={100}
-              step={1}
-              unit="%"
-              onChange={(v) => update({ opacity: v })}
-            />
-            <div />
+            <div className="bg-win-card rounded-lg border border-win-border/50 p-2">
+              <p className="text-[11px] font-semibold text-win-text-secondary uppercase tracking-wider mb-1.5">Colors</p>
+              <div className="grid grid-cols-3 gap-1">
+                <ColorField
+                  label="Text"
+                  value={toastConfig.textColor}
+                  onChange={(v) => update({ textColor: v })}
+                />
+                <ColorField
+                  label="BG"
+                  value={toastConfig.backgroundColor}
+                  onChange={(v) => update({ backgroundColor: v })}
+                />
+                <ColorField
+                  label="Accent"
+                  value={toastConfig.accentColor}
+                  onChange={(v) => update({ accentColor: v })}
+                />
+              </div>
+            </div>
+            <div className="bg-win-card rounded-lg border border-win-border/50 p-2">
+              <p className="text-[11px] font-semibold text-win-text-secondary uppercase tracking-wider mb-1.5">Sizing</p>
+              <SliderField
+                label="Width"
+                value={toastConfig.maxWidth}
+                min={300}
+                max={600}
+                step={10}
+                unit="px"
+                onChange={(v) => update({ maxWidth: v })}
+              />
+              <div className="grid grid-cols-2 gap-1 mt-1">
+                <SliderField
+                  label="Radius"
+                  value={toastConfig.borderRadius}
+                  min={0}
+                  max={24}
+                  step={1}
+                  unit="px"
+                  onChange={(v) => update({ borderRadius: v })}
+                />
+                <SliderField
+                  label="Opacity"
+                  value={toastConfig.opacity}
+                  min={50}
+                  max={100}
+                  step={1}
+                  unit="%"
+                  onChange={(v) => update({ opacity: v })}
+                />
+              </div>
+            </div>
           </div>
         </div>
         )}
