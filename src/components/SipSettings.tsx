@@ -403,38 +403,39 @@ export function SipSettings() {
               />
             </InputField>
 
-            <InputField label="Auth Username" hint="usually the same">
-              <input
-                type="text"
-                value={localConfig.authUsername}
-                onChange={(e) => updateLocal({ authUsername: e.target.value })}
-                placeholder="username"
-                className="w-full px-3 py-2 bg-win-card border border-win-border rounded-lg text-sm text-win-text placeholder:text-win-text-tertiary focus:outline-none focus:border-win-accent transition-colors"
-              />
-            </InputField>
-
-            <InputField label="SIP Password">
-              <div className="relative">
+            <div className="grid grid-cols-2 gap-2">
+              <InputField label="Auth Username" hint="usually the same">
                 <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={localConfig.password}
-                  onChange={(e) => updateLocal({ password: e.target.value })}
-                  placeholder="••••••••"
-                  name="sip-password"
-                  autoComplete="off"
-                  spellCheck={false}
-                  data-private="true"
-                  className="w-full px-3 py-2 pr-10 bg-win-card border border-win-border rounded-lg text-sm text-win-text placeholder:text-win-text-tertiary focus:outline-none focus:border-win-accent transition-colors"
+                  type="text"
+                  value={localConfig.authUsername}
+                  onChange={(e) => updateLocal({ authUsername: e.target.value })}
+                  placeholder="username"
+                  className="w-full px-3 py-2 bg-win-card border border-win-border rounded-lg text-sm text-win-text placeholder:text-win-text-tertiary focus:outline-none focus:border-win-accent transition-colors"
                 />
-                <button
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-win-text-tertiary hover:text-win-text transition-colors"
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </InputField>
+              </InputField>
+              <InputField label="SIP Password">
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={localConfig.password}
+                    onChange={(e) => updateLocal({ password: e.target.value })}
+                    placeholder="••••••••"
+                    name="sip-password"
+                    autoComplete="off"
+                    spellCheck={false}
+                    data-private="true"
+                    className="w-full px-3 py-2 pr-10 bg-win-card border border-win-border rounded-lg text-sm text-win-text placeholder:text-win-text-tertiary focus:outline-none focus:border-win-accent transition-colors"
+                  />
+                  <button
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-win-text-tertiary hover:text-win-text transition-colors"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </InputField>
+            </div>
 
             <div
               className="flex items-start gap-1.5 rounded-lg border border-win-success/20 bg-win-success/8 px-2.5 py-1.5"
