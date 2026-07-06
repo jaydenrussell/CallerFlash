@@ -153,6 +153,11 @@ jobs:
             [ -f "$f" ] && UPDATE_BUNDLE="$f" && break
           done
 
+          # For NSIS, Tauri does not produce a separate archive — use installer as bundle
+          if [ -z "$UPDATE_BUNDLE" ] && [ -f "$INSTALLER" ]; then
+            UPDATE_BUNDLE="$INSTALLER"
+          fi
+
           [ -n "$SIG" ] && [ -f "$SIG" ] && echo "sig=$SIG" >> "$GITHUB_OUTPUT" || true
           [ -n "$UPDATE_BUNDLE" ] && [ -f "$UPDATE_BUNDLE" ] && echo "update_bundle=$UPDATE_BUNDLE" >> "$GITHUB_OUTPUT" || true
 
