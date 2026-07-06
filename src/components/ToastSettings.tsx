@@ -129,80 +129,84 @@ export function ToastSettings() {
           </div>
         </div>
 
+        {/* Duration + Sound */}
         <div className="bg-win-surface rounded-xl border border-win-border p-3">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-win-accent"><Clock className="w-4 h-4" /></span>
-            <h3 className="text-sm font-semibold text-win-text">Duration</h3>
-          </div>
-          <SliderField
-            label="Display time"
-            value={toastConfig.duration}
-            min={3}
-            max={30}
-            step={1}
-            unit="sec"
-            onChange={(v) => update({ duration: v })}
-          />
-        </div>
-
-        {/* Common features — apply to both styles */}
-        <div className="bg-win-surface rounded-xl border border-win-border p-3">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-win-accent"><Bell className="w-4 h-4" /></span>
-            <h3 className="text-sm font-semibold text-win-text">Sound</h3>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-win-text-secondary">Ringtone</span>
-            <div className="flex items-center gap-2">
-              {toastConfig.style === 'custom' ? (
-                <select
-                  value={toastConfig.soundName}
-                  onChange={(e) => update({ soundName: e.target.value })}
-                  className="px-2 py-1 bg-win-card border border-win-border rounded-lg text-xs text-win-text focus:outline-none focus:border-win-accent transition-colors appearance-none pr-6"
-                >
-                  <option value="chime">Chime</option>
-                  <option value="ring">Phone Ring</option>
-                  <option value="beep">Beep</option>
-                  <option value="gentle">Gentle</option>
-                </select>
-              ) : (
-                <span className="text-xs text-win-text-tertiary">Uses OS default</span>
-              )}
-              <ToggleField
-                label=""
-                value={toastConfig.soundEnabled}
-                onChange={(v) => update({ soundEnabled: v })}
-                compact
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-win-accent"><Clock className="w-4 h-4" /></span>
+                <h3 className="text-sm font-semibold text-win-text">Duration</h3>
+              </div>
+              <SliderField
+                label="Display time"
+                value={toastConfig.duration}
+                min={3}
+                max={30}
+                step={1}
+                unit="sec"
+                onChange={(v) => update({ duration: v })}
               />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-win-accent"><Bell className="w-4 h-4" /></span>
+                <h3 className="text-sm font-semibold text-win-text">Sound</h3>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-win-text-secondary">Ringtone</span>
+                <div className="flex items-center gap-2">
+                  {toastConfig.style === 'custom' ? (
+                    <select
+                      value={toastConfig.soundName}
+                      onChange={(e) => update({ soundName: e.target.value })}
+                      className="px-2 py-1 bg-win-card border border-win-border rounded-lg text-xs text-win-text focus:outline-none focus:border-win-accent transition-colors appearance-none pr-6"
+                    >
+                      <option value="chime">Chime</option>
+                      <option value="ring">Phone Ring</option>
+                      <option value="beep">Beep</option>
+                      <option value="gentle">Gentle</option>
+                    </select>
+                  ) : (
+                    <span className="text-xs text-win-text-tertiary">Uses OS default</span>
+                  )}
+                  <ToggleField
+                    label=""
+                    value={toastConfig.soundEnabled}
+                    onChange={(v) => update({ soundEnabled: v })}
+                    compact
+                  />
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
+        {/* Behavior */}
         <div className="bg-win-surface rounded-xl border border-win-border p-3">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-win-accent"><RotateCcw className="w-4 h-4" /></span>
             <h3 className="text-sm font-semibold text-win-text">Behavior</h3>
           </div>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="space-y-1.5">
             <ToggleField
-              label="Auto-copy"
+              label="Auto-copy to clipboard"
+              description="Copy caller number to clipboard when a call arrives"
               value={toastConfig.autoCopyToClipboard}
               onChange={(v) => update({ autoCopyToClipboard: v })}
-              compact
             />
             <ToggleField
-              label="Show caller"
+              label="Show caller name"
+              description="Display caller name in the toast notification"
               value={toastConfig.showCallerName}
               disabled={toastConfig.style === 'native'}
               onChange={(v) => update({ showCallerName: v })}
-              compact
             />
             <ToggleField
-              label="Show time"
+              label="Show timestamp"
+              description="Display call time in the toast notification"
               value={toastConfig.showTimestamp}
               disabled={toastConfig.style === 'native'}
               onChange={(v) => update({ showTimestamp: v })}
-              compact
             />
           </div>
         </div>
@@ -377,12 +381,13 @@ function ColorField({ label, value, disabled, onChange }: {
   );
 }
 
-function ToggleField({ label, value, disabled, onChange, compact }: {
+function ToggleField({ label, value, disabled, onChange, compact, description }: {
   label: string;
   value: boolean;
   disabled?: boolean;
   onChange: (v: boolean) => void;
   compact?: boolean;
+  description?: string;
 }) {
   if (compact) {
     return (
@@ -409,7 +414,12 @@ function ToggleField({ label, value, disabled, onChange, compact }: {
       onClick={() => onChange(!value)}
       className={`flex w-full items-center justify-between rounded-lg border border-win-border/50 px-3 py-2.5 transition-colors ${disabled ? 'opacity-40 cursor-not-allowed' : 'bg-win-card hover:border-win-border hover:bg-win-surface-hover'}`}
     >
-      <span className="text-sm text-win-text">{label}</span>
+      <div className="text-left min-w-0 pr-2">
+        <span className="text-sm text-win-text">{label}</span>
+        {description && (
+          <p className="text-[11px] text-win-text-tertiary leading-tight mt-0.5">{description}</p>
+        )}
+      </div>
       <div className={`relative h-[22px] w-10 rounded-full transition-colors flex-shrink-0 ${value ? 'bg-win-accent' : 'bg-win-border'}`}>
         <div className={`absolute top-[3px] h-4 w-4 rounded-full bg-white shadow transition-transform ${value ? 'translate-x-[21px]' : 'translate-x-[3px]'}`} />
       </div>

@@ -391,6 +391,17 @@ export function SipSettings() {
           icon={<Lock className="w-4 h-4" />}
           title="Authentication"
           description="SIP account credentials"
+          headerRight={
+            <div
+              className="flex items-start gap-1.5 rounded-lg border border-win-success/20 bg-win-success/8 px-2 py-1 max-w-[240px]"
+              title="Server inputs are sanitized — paths, credentials in the URI, and whitespace are stripped. Passwords are encrypted at rest via DPAPI."
+            >
+              <ShieldCheck className="w-3 h-3 text-win-success flex-shrink-0 mt-0.5" />
+              <p className="text-[11px] text-win-text-secondary leading-snug">
+                Sanitized inputs &bull; DPAPI encryption
+              </p>
+            </div>
+          }
         >
           <div className="space-y-2">
             <InputField label="SIP Username">
@@ -436,16 +447,6 @@ export function SipSettings() {
                 </div>
               </InputField>
             </div>
-
-            <div
-              className="flex items-start gap-1.5 rounded-lg border border-win-success/20 bg-win-success/8 px-2.5 py-1.5"
-              title="Server inputs are sanitized — paths, credentials in the URI, and whitespace are stripped. Passwords are encrypted at rest (Windows DPAPI via Electron safeStorage in production)."
-            >
-              <ShieldCheck className="w-3 h-3 text-win-success flex-shrink-0 mt-0.5" />
-              <p className="text-[11px] text-win-text-secondary leading-snug">
-                Server inputs are sanitized. Passwords encrypted at rest via DPAPI.
-              </p>
-            </div>
           </div>
         </SettingsSection>
       </div>
@@ -453,17 +454,21 @@ export function SipSettings() {
   );
 }
 
-function SettingsSection({ icon, title, description, children }: {
+function SettingsSection({ icon, title, description, children, headerRight }: {
   icon: React.ReactNode;
   title: string;
   description: string;
   children: React.ReactNode;
+  headerRight?: React.ReactNode;
 }) {
   return (
     <div className="bg-win-surface rounded-xl border border-win-border p-3">
-      <div className="flex items-center gap-2 mb-1">
-        <span className="text-win-accent">{icon}</span>
-        <h3 className="text-sm font-semibold text-win-text">{title}</h3>
+      <div className="flex items-start justify-between gap-2 mb-1">
+        <div className="flex items-center gap-2">
+          <span className="text-win-accent">{icon}</span>
+          <h3 className="text-sm font-semibold text-win-text">{title}</h3>
+        </div>
+        {headerRight}
       </div>
       <p className="text-xs text-win-text-tertiary mb-2">{description}</p>
       {children}
