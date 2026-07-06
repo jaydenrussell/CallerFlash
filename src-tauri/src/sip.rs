@@ -1,3 +1,4 @@
+use futures_util::FutureExt;
 use md5::{Digest, Md5};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -169,6 +170,7 @@ impl SipClient {
         let connected = self.connected.clone();
 
         tokio::spawn(async move {
+            let future = std::panic::AssertUnwindSafe(async move {
             let server = config.server.clone();
             let port = config.port.unwrap_or(5060);
             let is_tcp = config.protocol.as_deref() == Some("TCP");
@@ -481,6 +483,10 @@ impl SipClient {
                     }
                 }
             }
+            });
+            if let Err(panic) = future.catch_unwind().await {
+                log::error!("[sip] connection task panicked: {:?}", panic);
+            }
         });
     }
 
@@ -501,7 +507,7 @@ pub async fn sip_connect(app: AppHandle, config: SipConfig) -> Result<serde_json
 }
 
 #[tauri::command]
-pub async fn sip_disconnect(app: AppHandle) -> Result<serde_json::Value, String> {
+    pub async fn sip_disconnect(app: AppHandle) -> Result<serde_json::Value, String> {
     let sip_client = app.state::<SipClient>();
     sip_client.disconnect();
     app.emit("sip:status", SipStatus {
@@ -509,4 +515,70 @@ pub async fn sip_disconnect(app: AppHandle) -> Result<serde_json::Value, String>
         message: None,
     }).map_err(|e| e.to_string())?;
     Ok(serde_json::json!({"success": true}))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SipClient;
+
+    #[test]
+    fn test_md5_hex() {
+        assert_eq!(SipClient::md5_hex(""), "d41d8cd98f00b204e9800998ecf8427e");
+        assert_eq!(SipClient::md5_hex("hello"), "5d41402abc4b2a76b9719d911017c592");
+    }
+
+    #[test]
+    fn test_compute_digest_response() {
+        // Known values from RFC 2617 example
+        let resp = SipClient::compute_digest_response(
+            "Mufasa",
+            "testrealm@host.com",
+            "Circle Of Life",
+            "GET",
+            "/dir/index.html",
+            "dcd98b7102dd2f0e8b11d0f600bfb0c093",
+            "00000001",
+            "0a4f113b",
+            "auth",
+        );
+        // Expected: 6629fae49393a05397450978507c4ef1
+        assert_eq!(resp, "6629fae49393a05397450978507c4ef1");
+    }
+
+    #[test]
+    fn test_compute_digest_response_different_qop() {
+        let resp = SipClient::compute_digest_response(
+            "alice",
+            "sip.example.com",
+            "secret123",
+            "REGISTER",
+            "sip:sip.example.com",
+            "abc123def456",
+            "00000002",
+            "deadbeef",
+            "auth-int",
+        );
+        // Verify format — 32 hex chars
+        assert_eq!(resp.len(), 32);
+        assert!(resp.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn test_parse_sip_response() {
+        let data = b"SIP/2.0 200 OK\r\nContent-Length: 0\r\n\r\n";
+        let (code, reason, headers) = SipClient::parse_sip_response(data);
+        assert_eq!(code, 200);
+        assert_eq!(reason, "OK");
+        assert_eq!(headers.get("Content-Length").map(|s| s.as_str()), Some("0"));
+    }
+
+    #[test]
+    fn test_parse_www_authenticate() {
+        let header = r#"Digest realm="sip.example.com", nonce="abc123", algorithm=MD5, qop="auth""#;
+        let params = SipClient::parse_www_authenticate(header);
+        assert_eq!(params.get("realm").map(|s| s.as_str()), Some("sip.example.com"));
+        assert_eq!(params.get("nonce").map(|s| s.as_str()), Some("abc123"));
+        assert_eq!(params.get("algorithm").map(|s| s.as_str()), Some("MD5"));
+        assert_eq!(params.get("qop").map(|s| s.as_str()), Some("auth"));
+    }
 }

@@ -10,6 +10,7 @@ import { AutoUpdate } from './components/AutoUpdate';
 import { About } from './components/About';
 import { ToastContainer } from './components/ToastNotification';
 import { useAppStore } from './store/useAppStore';
+import { sanitizeCallerNumberForClipboard } from './security/secretRedactor';
 
 // Threshold below which the sidebar collapses to icons only
 const SIDEBAR_COLLAPSE_BREAKPOINT = 720;
@@ -194,7 +195,7 @@ export default function App() {
     if (!window.callerflash?.sip?.onInvite) return;
     return window.callerflash.sip.onInvite((callerData) => {
       const { toastConfig } = useAppStore.getState();
-      const safeNumber = callerData.callerNumber;
+      const safeNumber = sanitizeCallerNumberForClipboard(callerData.callerNumber);
       const safeName = callerData.callerName || '';
 
       const record = {

@@ -182,3 +182,63 @@ pub fn storage_save(app: AppHandle, data: serde_json::Value) -> Result<(), Strin
     let storage = SecureStorage::new(data_dir);
     storage.save_data(&data)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_encrypt_decrypt_round_trip() {
+        let key = [0x42u8; 32];
+        let plaintext = b"hello world";
+        let (ct, nonce) = encrypt_data(&key, plaintext).expect("encrypt");
+        let decrypted = decrypt_data(&key, &ct, &nonce).expect("decrypt");
+        assert_eq!(decrypted, plaintext);
+    }
+
+    #[test]
+    fn test_encrypt_decrypt_empty() {
+        let key = [0xabu8; 32];
+        let plaintext = b"";
+        let (ct, nonce) = encrypt_data(&key, plaintext).expect("encrypt");
+        let decrypted = decrypt_data(&key, &ct, &nonce).expect("decrypt");
+        assert_eq!(decrypted, plaintext);
+    }
+
+    #[test]
+    fn test_encrypt_decrypt_large() {
+        let key = [0x99u8; 32];
+        let plaintext = vec![0xffu8; 65536];
+        let (ct, nonce) = encrypt_data(&key, &plaintext).expect("encrypt");
+        let decrypted = decrypt_data(&key, &ct, &nonce).expect("decrypt");
+        assert_eq!(decrypted, plaintext);
+    }
+
+    #[test]
+    fn test_decrypt_wrong_key_fails() {
+        let key1 = [0x01u8; 32];
+        let key2 = [0x02u8; 32];
+        let plaintext = b"secret";
+        let (ct, nonce) = encrypt_data(&key1, plaintext).expect("encrypt");
+        let result = decrypt_data(&key2, &ct, &nonce);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_decrypt_tampered_ciphertext_fails() {
+        let key = [0x55u8; 32];
+        let plaintext = b"data";
+        let (mut ct, nonce) = encrypt_data(&key, plaintext).expect("encrypt");
+        // Flip a byte in the base64 ciphertext
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(ct.as_bytes())
+            .expect("decode");
+        let mut tampered = bytes.clone();
+        if !tampered.is_empty() {
+            tampered[0] ^= 0xff;
+        }
+        ct = base64::engine::general_purpose::STANDARD.encode(tampered);
+        let result = decrypt_data(&key, &ct, &nonce);
+        assert!(result.is_err());
+    }
+}

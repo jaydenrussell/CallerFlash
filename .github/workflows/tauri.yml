@@ -92,8 +92,26 @@ jobs:
         run: npm ci
 
       - name: Run npm audit
-        continue-on-error: true
         run: npm audit --audit-level=high
+
+      - name: Rust format check
+        shell: bash
+        run: cargo fmt --check --manifest-path src-tauri/Cargo.toml
+
+      - name: Rust lint
+        shell: bash
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+
+      - name: Rust tests
+        shell: bash
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Rust audit
+        continue-on-error: true
+        shell: bash
+        run: |
+          cargo install cargo-audit --locked 2>/dev/null || true
+          cargo audit --manifest-path src-tauri/Cargo.toml
 
       - name: Install Tauri CLI
         shell: bash

@@ -9,10 +9,12 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, emit } from '@tauri-apps/api/event';
 import { check as updaterCheck } from '@tauri-apps/plugin-updater';
+import { sanitizeSipServer } from './security/secretRedactor';
 
 let invocations = 0;
 
 const log = (...args: unknown[]) => console.log('[tauri-bridge]', ...args);
+const logError = (...args: unknown[]) => console.error('[tauri-bridge]', ...args);
 
 function setup(): void {
   if (window.callerflash) {
@@ -28,81 +30,69 @@ function setup(): void {
 
   const bridge = {
     window: {
-      minimize: () => { emit('window:minimize').catch(() => {}); },
-      maximize: () => { emit('window:maximize').catch(() => {}); },
-      close: () => { emit('window:close').catch(() => {}); },
-      hideToTray: () => { emit('window:hide-to-tray').catch(() => {}); },
-      show: () => { emit('window:show').catch(() => {}); },
+      minimize: () => { emit('window:minimize').catch((e) => logError('minimize', e)); },
+      maximize: () => { emit('window:maximize').catch((e) => logError('maximize', e)); },
+      close: () => { emit('window:close').catch((e) => logError('close', e)); },
+      hideToTray: () => { emit('window:hide-to-tray').catch((e) => logError('hideToTray', e)); },
+      show: () => { emit('window:show').catch((e) => logError('show', e)); },
       onRestoredFromTray: (callback: () => void) => {
-        const unlisten: Promise<() => void> = listen('window:restored-from-tray', () => callback()).catch(() => () => {});
-        return () => { unlisten.then((fn) => fn()).catch(() => {}); };
+        const unlisten: Promise<() => void> = listen('window:restored-from-tray', () => callback()).catch((e) => { logError('onRestoredFromTray', e); return () => {}; });
+        return () => { unlisten.then((fn) => fn()).catch((e) => logError('onRestoredFromTray cleanup', e)); };
       },
       onHiddenToTray: (callback: () => void) => {
-        const unlisten: Promise<() => void> = listen('window:hidden-to-tray', () => callback()).catch(() => () => {});
-        return () => { unlisten.then((fn) => fn()).catch(() => {}); };
+        const unlisten: Promise<() => void> = listen('window:hidden-to-tray', () => callback()).catch((e) => { logError('onHiddenToTray', e); return () => {}; });
+        return () => { unlisten.then((fn) => fn()).catch((e) => logError('onHiddenToTray cleanup', e)); };
       },
       onNavigateToUpdate: (callback: () => void) => {
-        const unlisten: Promise<() => void> = listen('navigate-to-update', () => callback()).catch(() => () => {});
-        return () => { unlisten.then((fn) => fn()).catch(() => {}); };
+        const unlisten: Promise<() => void> = listen('navigate-to-update', () => callback()).catch((e) => { logError('onNavigateToUpdate', e); return () => {}; });
+        return () => { unlisten.then((fn) => fn()).catch((e) => logError('onNavigateToUpdate cleanup', e)); };
       },
     },
 
     tray: {
       setSipStatus: (status: string) => {
-        invoke('tray_set_sip_status', { status }).catch(() => {});
+        invoke('tray_set_sip_status', { status }).catch((e) => logError('tray.setSipStatus', e));
       },
       setUpdateAvailable: (version: string | null) => {
-        invoke('tray_set_update_available', { version }).catch(() => {});
-      },
-    },
-
-    safeStorage: {
-      encrypt: async (plaintext: string): Promise<string | null> => {
-        return (await invoke('safe_storage_encrypt', { plaintext }).catch(() => null)) as string | null;
-      },
-      decrypt: async (base64Cipher: string): Promise<string | null> => {
-        return (await invoke('safe_storage_decrypt', { base64Cipher }).catch(() => null)) as string | null;
+        invoke('tray_set_update_available', { version }).catch((e) => logError('tray.setUpdateAvailable', e));
       },
     },
 
     shell: {
       openExternal: (url: string) => {
-        invoke('shell_open_external', { url }).catch(() => {});
+        invoke('shell_open_external', { url }).catch((e) => logError('shell.openExternal', e));
       },
     },
 
     notify: {
       show: (data: { title: string; body: string; urgency?: string; timeoutType?: string; soundEnabled?: boolean }) => {
-        invoke('notify_show', { title: data.title, body: data.body }).catch(() => {});
+        invoke('notify_show', { title: data.title, body: data.body }).catch((e) => logError('notify.show', e));
       },
     },
 
     toast: {
       show: (data: unknown) => {
-        invoke('toast_show', { data }).catch(() => {});
+        invoke('toast_show', { data }).catch((e) => logError('toast.show', e));
       },
       hide: () => {
-        invoke('toast_hide').catch(() => {});
+        invoke('toast_hide').catch((e) => logError('toast.hide', e));
       },
       setPosition: (x: number, y: number) => {
-        invoke('toast_set_position', { x, y }).catch(() => {});
+        invoke('toast_set_position', { x, y }).catch((e) => logError('toast.setPosition', e));
       },
       getPosition: async (): Promise<{ x: number; y: number } | null> => {
-        return (await invoke('toast_get_position').catch(() => null)) as { x: number; y: number } | null;
+        return (await invoke('toast_get_position').catch((e) => { logError('toast.getPosition', e); return null; })) as { x: number; y: number } | null;
       },
       getInitial: async (): Promise<unknown> => {
-        return (await invoke('toast_get_initial').catch(() => null)) as unknown;
+        return (await invoke('toast_get_initial').catch((e) => { logError('toast.getInitial', e); return null; })) as unknown;
       },
       onShow: (callback: (data: unknown) => void) => {
         const unlisten: Promise<() => void> = listen('toast:show:event', (event) => {
           callback(event.payload);
-        }).catch(() => () => {});
-        return () => { unlisten.then((fn) => fn()).catch(() => {}); };
+        }).catch((e) => { logError('toast.onShow', e); return () => {}; });
+        return () => { unlisten.then((fn) => fn()).catch((e) => logError('toast.onShow cleanup', e)); };
       },
-      resizeContent: () => {
-        // In Tauri, we use the webview's content size detection
-        // This is a no-op for now
-      },
+      resizeContent: () => {},
     },
 
     updater: {
@@ -143,13 +133,13 @@ function setup(): void {
                 downloadedBytes += progress.data.chunkLength;
                 if (totalContentLength > 0) {
                   var pct = Math.round((downloadedBytes / totalContentLength) * 100);
-                  emit('updater:progress', { percent: pct }).catch(function () {});
-                  emit('updater:status', { status: 'downloading', progress: pct }).catch(function () {});
+                  emit('updater:progress', { percent: pct }).catch((e) => logError('updater progress', e));
+                  emit('updater:status', { status: 'downloading', progress: pct }).catch((e) => logError('updater status', e));
                 }
                 break;
               case 'Finished':
-                emit('updater:progress', { percent: 100 }).catch(function () {});
-                emit('updater:status', { status: 'ready', version: currentUpdate?.version }).catch(function () {});
+                emit('updater:progress', { percent: 100 }).catch((e) => logError('updater progress finished', e));
+                emit('updater:status', { status: 'ready', version: currentUpdate?.version }).catch((e) => logError('updater status ready', e));
                 break;
             }
           });
@@ -163,7 +153,7 @@ function setup(): void {
           return { status: 'error', error: 'No downloaded update. Download first.' };
         }
         try {
-          emit('updater:status', { status: 'installing', version: currentUpdate.version }).catch(function () {});
+          emit('updater:status', { status: 'installing', version: currentUpdate.version }).catch((e) => logError('updater install status', e));
           await currentUpdate.install();
           return { status: 'success' };
         } catch (e) {
@@ -182,20 +172,20 @@ function setup(): void {
       onStatus: function (callback: (data: unknown) => void) {
         var unlisten: Promise<() => void> = listen('updater:status', function (event) {
           callback(event.payload);
-        }).catch(function () { return function () {}; });
-        return function () { unlisten.then(function (fn) { return fn(); }).catch(function () {}); };
+        }).catch(function (e) { logError('updater.onStatus', e); return function () {}; });
+        return function () { unlisten.then(function (fn) { return fn(); }).catch(function (e) { logError('updater.onStatus cleanup', e); }); };
       },
       onProgress: function (callback: (data: unknown) => void) {
         var unlisten: Promise<() => void> = listen('updater:progress', function (event) {
           callback(event.payload);
-        }).catch(function () { return function () {}; });
-        return function () { unlisten.then(function (fn) { return fn(); }).catch(function () {}); };
+        }).catch(function (e) { logError('updater.onProgress', e); return function () {}; });
+        return function () { unlisten.then(function (fn) { return fn(); }).catch(function (e) { logError('updater.onProgress cleanup', e); }); };
       },
       onDiagnostic: function (callback: (data: unknown) => void) {
         var unlisten: Promise<() => void> = listen('updater:diagnostic', function (event) {
           callback(event.payload);
-        }).catch(function () { return function () {}; });
-        return function () { unlisten.then(function (fn) { return fn(); }).catch(function () {}); };
+        }).catch(function (e) { logError('updater.onDiagnostic', e); return function () {}; });
+        return function () { unlisten.then(function (fn) { return fn(); }).catch(function (e) { logError('updater.onDiagnostic cleanup', e); }); };
       },
       onBackgroundCheck: function (_callback: (data: unknown) => void) {
         return function () {};
@@ -204,6 +194,10 @@ function setup(): void {
 
     sip: {
       connect: async (config: unknown) => {
+        const cfg = config as Record<string, unknown>;
+        if (typeof cfg.server === 'string') {
+          cfg.server = sanitizeSipServer(cfg.server);
+        }
         return (await invoke('sip_connect', { config }).catch((e) => ({ success: false, message: e }))) as { success: boolean; message?: string };
       },
       disconnect: async () => {
@@ -212,36 +206,36 @@ function setup(): void {
       onStatus: (callback: (data: { status: string; message?: string }) => void) => {
         const unlisten: Promise<() => void> = listen('sip:status', (event) => {
           callback(event.payload as { status: string; message?: string });
-        }).catch(() => () => {});
-        return () => { unlisten.then((fn) => fn()).catch(() => {}); };
+        }).catch((e) => { logError('sip.onStatus', e); return () => {}; });
+        return () => { unlisten.then((fn) => fn()).catch((e) => logError('sip.onStatus cleanup', e)); };
       },
       onLog: (callback: (data: { message: string }) => void) => {
         const unlisten: Promise<() => void> = listen('sip:log', (event) => {
           callback(event.payload as { message: string });
-        }).catch(() => () => {});
-        return () => { unlisten.then((fn) => fn()).catch(() => {}); };
+        }).catch((e) => { logError('sip.onLog', e); return () => {}; });
+        return () => { unlisten.then((fn) => fn()).catch((e) => logError('sip.onLog cleanup', e)); };
       },
       onInvite: (callback: (data: { callerNumber: string; callerName: string }) => void) => {
         const unlisten: Promise<() => void> = listen('sip:invite', (event) => {
           callback(event.payload as { callerNumber: string; callerName: string });
-        }).catch(() => () => {});
-        return () => { unlisten.then((fn) => fn()).catch(() => {}); };
+        }).catch((e) => { logError('sip.onInvite', e); return () => {}; });
+        return () => { unlisten.then((fn) => fn()).catch((e) => logError('sip.onInvite cleanup', e)); };
       },
     },
 
     onToastDiagnostic: (callback: (data: { level: string; message: string; details?: string }) => void) => {
       const unlisten: Promise<() => void> = listen('toast:diagnostic', (event) => {
         callback(event.payload as { level: string; message: string; details?: string });
-      }).catch(() => () => {});
-      return () => { unlisten.then((fn) => fn()).catch(() => {}); };
+      }).catch((e) => { logError('onToastDiagnostic', e); return () => {}; });
+      return () => { unlisten.then((fn) => fn()).catch((e) => logError('onToastDiagnostic cleanup', e)); };
     },
 
     diagnostics: {
       append: (entry: { id: string; timestamp: Date | string; level: string; category: string; message: string; details?: string | null }) => {
-        invoke('diagnostics_append', { entry }).catch(() => {});
+        invoke('diagnostics_append', { entry }).catch((e) => logError('diagnostics.append', e));
       },
       load: async () => {
-        return (await invoke('diagnostics_load').catch(() => [])) as Array<{
+        return (await invoke('diagnostics_load').catch((e) => { logError('diagnostics.load', e); return []; })) as Array<{
           id: string;
           timestamp: Date;
           level: string;
@@ -254,7 +248,7 @@ function setup(): void {
 
     app: {
       setStartWithWindows: (enabled: boolean) => {
-        invoke('app_set_start_with_windows', { enabled }).catch(() => {});
+        invoke('app_set_start_with_windows', { enabled }).catch((e) => logError('app.setStartWithWindows', e));
       },
       setStartMinimized: (_enabled: boolean) => {
         // Handled by frontend
@@ -263,10 +257,10 @@ function setup(): void {
 
     storage: {
       load: async () => {
-        return (await invoke('storage_load').catch(() => ({}))) as Record<string, unknown>;
+        return (await invoke('storage_load').catch((e) => { logError('storage.load', e); return {}; })) as Record<string, unknown>;
       },
       save: async (data: Record<string, unknown>) => {
-        return (await invoke('storage_save', { data }).catch(() => ({ success: false }))) as { success: boolean };
+        return (await invoke('storage_save', { data }).catch((e) => { logError('storage.save', e); return { success: false }; })) as { success: boolean };
       },
     },
 

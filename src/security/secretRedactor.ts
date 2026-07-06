@@ -74,10 +74,11 @@ export function redactMessage(message: string): string {
  * terminal or SQL field.
  */
 export function sanitizeCallerNumberForClipboard(raw: string): string {
-  // Allow + at the start, then digits only. Length cap of 20.
   const cleaned = raw.replace(/[^\d+]/g, '');
   const withPlus = cleaned.startsWith('+') ? cleaned : `+${cleaned}`;
-  return withPlus.replace(/[^\d]/g, '+'.length > 0 ? '' : '').slice(0, 20);
+  // Remove any extra + signs beyond the leading one
+  const singlePlus = '+' + withPlus.replace(/\+/g, '');
+  return singlePlus.slice(0, 20);
 }
 
 /**

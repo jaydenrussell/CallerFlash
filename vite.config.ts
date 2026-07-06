@@ -22,6 +22,11 @@ export default defineConfig({
     __APP_REPO__: JSON.stringify("https://github.com/jaydenrussell/CallerFlash"),
     __APP_BUILD_TIMESTAMP__: Date.now(),
   },
+  test: {
+    environment: "jsdom",
+    globals: true,
+    setupFiles: ["./src/test-setup.ts"],
+  },
   // Tauri expects the build output to work without hashes in filenames
   build: {
     rollupOptions: {

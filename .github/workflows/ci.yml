@@ -16,9 +16,9 @@ jobs:
     name: Lint & Build Check
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: '.nvmrc'
           check-latest: true
@@ -32,6 +32,15 @@ jobs:
 
       - name: TypeScript check
         run: npx tsc --noEmit
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format
+
+      - name: npm audit
+        run: npm audit --audit-level=high
 
       - name: Build check
         run: npm run build
