@@ -108,16 +108,16 @@ export function Sidebar({ collapsed }: SidebarProps) {
   }
 
   return (
-    <div className="w-52 min-w-52 bg-win-card border-r border-win-border flex flex-col h-full">
+    <div className="w-44 min-w-44 bg-win-card border-r border-win-border flex flex-col h-full">
       {/* App Header */}
-      <div className="p-4 border-b border-win-border">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 flex items-center justify-center flex-shrink-0 drop-shadow-md">
+      <div className="px-3 py-3 border-b border-win-border">
+        <div className="flex items-center gap-2">
+          <div className="w-9 h-9 flex items-center justify-center flex-shrink-0 drop-shadow-md">
             <img src={logoUrl} alt="CallerFlash" className="w-full h-full object-contain" />
           </div>
           <div className="min-w-0">
-            <h1 className="text-base font-bold text-win-text tracking-tight truncate">CallerFlash</h1>
-            <p className="text-xs text-win-text-secondary truncate">SIP Client</p>
+            <h1 className="text-sm font-bold text-win-text tracking-tight truncate">CallerFlash</h1>
+            <p className="text-[11px] text-win-text-secondary truncate">SIP Client</p>
           </div>
         </div>
       </div>
