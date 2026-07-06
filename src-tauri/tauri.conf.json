@@ -23,12 +23,7 @@
         "decorations": true,
         "transparent": false,
         "center": true,
-        "visible": true,
-        "effects": {
-          "effects": [
-            { "mica": {} }
-          ]
-        }
+        "visible": true
       }
     ],
     "security": {
