@@ -205,7 +205,7 @@ jobs:
             PUB_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
             UPDATE_URL="https://github.com/jaydenrussell/CallerFlash/releases/download/${TAG}/${UPDATE_BASENAME}"
             printf '{"version":"%s","notes":"https://github.com/jaydenrussell/CallerFlash/releases/tag/%s","pub_date":"%s","platforms":{"windows-x86_64":{"signature":"%s","url":"%s"}}}\n' \
-              "$BASE_VER" "$TAG" "$PUB_DATE" "$SIGNATURE" "$UPDATE_URL" > update.json
+              "$VERSION" "$TAG" "$PUB_DATE" "$SIGNATURE" "$UPDATE_URL" > update.json
 
             # Upload update.json to this release
             gh release upload "$TAG" update.json --clobber
