@@ -3,8 +3,6 @@ use md5::{Digest, Md5};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::net::SocketAddr;
-use std::str::FromStr;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::net::UdpSocket;
@@ -278,24 +276,42 @@ impl SipClient {
                     }
                 };
 
-                let server_addr = match SocketAddr::from_str(&format!("{}:{}", server, port)) {
-                    Ok(addr) => addr,
-                    Err(_) => {
-                        handle
-                            .emit(
-                                "sip:status",
-                                SipStatus {
-                                    status: "error".to_string(),
-                                    message: Some(format!(
-                                        "Invalid server address: {}:{}",
-                                        server, port
-                                    )),
-                                },
-                            )
-                            .ok();
-                        return;
-                    }
-                };
+                let server_addr =
+                    match tokio::net::lookup_host(format!("{}:{}", server, port)).await {
+                        Ok(mut addrs) => match addrs.next() {
+                            Some(addr) => addr,
+                            None => {
+                                handle
+                                    .emit(
+                                        "sip:status",
+                                        SipStatus {
+                                            status: "error".to_string(),
+                                            message: Some(format!(
+                                                "No addresses found for {}:{}",
+                                                server, port
+                                            )),
+                                        },
+                                    )
+                                    .ok();
+                                return;
+                            }
+                        },
+                        Err(e) => {
+                            handle
+                                .emit(
+                                    "sip:status",
+                                    SipStatus {
+                                        status: "error".to_string(),
+                                        message: Some(format!(
+                                            "DNS resolution failed for {}:{}: {}",
+                                            server, port, e
+                                        )),
+                                    },
+                                )
+                                .ok();
+                            return;
+                        }
+                    };
 
                 handle
                     .emit(
