@@ -112,12 +112,17 @@ function setup(): void {
           if (!update) {
             return { upToDate: true };
           }
-          var platforms = update.rawJson?.platforms as Record<string, { url?: string }> | undefined;
+          var rawPlatforms: unknown = update.rawJson?.platforms;
+          var platforms = (typeof rawPlatforms === 'object' && rawPlatforms !== null ? rawPlatforms : {}) as Record<string, { url?: string }>;
           var win = platforms?.['windows-x86_64'];
+          var downloadUrl = typeof win?.url === 'string' ? win.url : '';
+          if (downloadUrl && !/^https:\/\//.test(downloadUrl)) {
+            downloadUrl = '';
+          }
           return {
-            version: update.version,
-            downloadUrl: win?.url || '',
-            publishedAt: update.date || '',
+            version: typeof update.version === 'string' ? update.version : '',
+            downloadUrl,
+            publishedAt: typeof update.date === 'string' ? update.date : '',
             friendlyName: update.version,
           };
         } catch (e) {

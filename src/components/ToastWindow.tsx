@@ -62,7 +62,9 @@ export function ToastWindow() {
     // Claim any call data that was sent before this window was ready
     if (window.callerflash?.toast?.getInitial) {
       window.callerflash.toast.getInitial().then((data) => {
-        if (data) setActiveToasts((prev) => [...prev, data as ActiveToast]);
+        if (data && typeof data === 'object' && 'callerNumber' in data) {
+          setActiveToasts((prev) => [...prev, data as ActiveToast]);
+        }
       });
     }
   }, []);
@@ -70,7 +72,9 @@ export function ToastWindow() {
   useEffect(() => {
     if (!window.callerflash?.toast?.onShow) return;
     const off = window.callerflash.toast.onShow((data: ToastEventData) => {
-      setActiveToasts((prev) => [...prev, data as ActiveToast]);
+      if (data && typeof data === 'object' && 'callerNumber' in data) {
+        setActiveToasts((prev) => [...prev, data as ActiveToast]);
+      }
     });
     return () => off?.();
   }, []);

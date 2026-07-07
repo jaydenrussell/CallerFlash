@@ -494,7 +494,9 @@ export const useAppStore = create<AppState>((set) => ({
     const entry = { ...sanitized, id: crypto.randomUUID(), timestamp: new Date() };
     try {
       window.callerflash?.diagnostics?.append(entry);
-    } catch {}
+    } catch (e) {
+      console.error('[store] diagnostics.append failed:', e);
+    }
     return {
       diagnosticLogs: [entry, ...s.diagnosticLogs].slice(0, 1000),
     };

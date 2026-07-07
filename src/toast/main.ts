@@ -92,7 +92,7 @@ function show(data: ToastPayload): void {
     }, 30);
     hideTimer = setTimeout(() => {
       if (progTimer) { clearInterval(progTimer); progTimer = null; }
-      invoke('toast_hide').catch(() => {});
+      invoke('toast_hide').catch((e) => console.error('[toast] hide on timeout failed:', e));
     }, dur);
   } else {
     if (elProg) elProg.style.width = '0%';
@@ -145,9 +145,9 @@ async function init(): Promise<void> {
     elInner.addEventListener('click', () => {
       if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
       if (progTimer) { clearInterval(progTimer); progTimer = null; }
-      invoke('toast_hide').catch(() => {});
+      invoke('toast_hide').catch((e) => console.error('[toast] hide on click failed:', e));
     });
   }
 }
 
-init().catch(() => {});
+init().catch((e) => console.error('[toast] init failed:', e));
