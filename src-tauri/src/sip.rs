@@ -344,6 +344,8 @@ impl SipClient {
                     }
                 };
 
+                let local_port = socket.local_addr().map(|a| a.port()).unwrap_or(5060);
+
                 let server_addr =
                     match tokio::net::lookup_host(format!("{}:{}", server, port)).await {
                         Ok(mut addrs) => match addrs.next() {
@@ -396,7 +398,8 @@ impl SipClient {
                     headers.insert(
                         "Via".to_string(),
                         format!(
-                            "SIP/2.0/UDP 127.0.0.1:5060;branch=z9hG4bK{}",
+                            "SIP/2.0/UDP 127.0.0.1:{};branch=z9hG4bK{}",
+                            local_port,
                             Uuid::new_v4().to_string().split('-').next().unwrap_or("a")
                         ),
                     );
@@ -418,7 +421,7 @@ impl SipClient {
                     headers.insert("CSeq".to_string(), format!("{} REGISTER", cseq_val));
                     headers.insert(
                         "Contact".to_string(),
-                        format!("<sip:{}@127.0.0.1:5060>", config.username),
+                        format!("<sip:{}@127.0.0.1:{}>", config.username, local_port),
                     );
                     headers.insert("Expires".to_string(), expires_val.to_string());
                     headers.insert("User-Agent".to_string(), "CallerFlash".to_string());
@@ -669,6 +672,7 @@ impl SipClient {
 
                 let refresh_ms = std::cmp::max((expiry as u64).saturating_sub(15) * 1000, 30_000);
                 let socket = Arc::new(socket);
+                let local_port_copy = local_port;
                 let socket_clone = socket.clone();
                 let config_clone = config.clone();
                 let call_id_clone = call_id.clone();
@@ -685,7 +689,8 @@ impl SipClient {
                         hdrs.insert(
                             "Via".to_string(),
                             format!(
-                                "SIP/2.0/UDP 127.0.0.1:5060;branch=z9hG4bK{}",
+                                "SIP/2.0/UDP 127.0.0.1:{};branch=z9hG4bK{}",
+                                local_port_copy,
                                 Uuid::new_v4().to_string().split('-').next().unwrap_or("r")
                             ),
                         );
@@ -707,7 +712,10 @@ impl SipClient {
                         hdrs.insert("CSeq".to_string(), format!("{} REGISTER", cseq_clone));
                         hdrs.insert(
                             "Contact".to_string(),
-                            format!("<sip:{}@127.0.0.1:5060>", config_clone.username),
+                            format!(
+                                "<sip:{}@127.0.0.1:{}>",
+                                config_clone.username, local_port_copy
+                            ),
                         );
                         hdrs.insert("Expires".to_string(), expiry.to_string());
                         hdrs.insert("User-Agent".to_string(), "CallerFlash".to_string());
@@ -769,13 +777,14 @@ impl SipClient {
 
                                 let resp = format!(
                                     "SIP/2.0 486 Busy Here\r\n\
-                                     Via: SIP/2.0/UDP 127.0.0.1:5060;received=127.0.0.1\r\n\
+                                     Via: SIP/2.0/UDP 127.0.0.1:{};received=127.0.0.1\r\n\
                                      From: <sip:unknown@unknown>\r\n\
                                      To: <sip:{}@{}>;tag={}\r\n\
                                      Call-ID: {}\r\n\
                                      CSeq: 0 INVITE\r\n\
                                      User-Agent: CallerFlash\r\n\
                                      Content-Length: 0\r\n\r\n",
+                                    local_port,
                                     config.username, config.server,
                                     Uuid::new_v4().to_string().split('-').next().unwrap_or("t"),
                                     Uuid::new_v4()

@@ -109,9 +109,13 @@ interface PersistedUiSettings {
 
 // ── Secure storage wrapper (communicates with main process) ─────────
 class SecureStorage {
-  private cache: PersistedUiSettings | null = null;
+  private _cache: PersistedUiSettings | null = null;
   private writeQueue: Promise<void> = Promise.resolve();
   private isElectron: boolean;
+
+  get cache(): PersistedUiSettings | null {
+    return this._cache;
+  }
 
   constructor() {
     this.isElectron = typeof window !== 'undefined' && !!window.callerflash?.platform?.isElectron;
@@ -119,7 +123,7 @@ class SecureStorage {
 
   /** Pre-populate cache so first save doesn't clobber unrelated fields. */
   initCache(data: PersistedUiSettings): void {
-    this.cache = data;
+    this._cache = data;
   }
 
   async load(): Promise<PersistedUiSettings> {
@@ -146,7 +150,7 @@ class SecureStorage {
     // Migration: ensure version is set
     if (!data.version) data.version = STORAGE_VERSION;
 
-    this.cache = data;
+    this._cache = data;
     return data;
   }
 
@@ -158,7 +162,7 @@ class SecureStorage {
 
   private async doSave(settings: PersistedUiSettings): Promise<void> {
     const toSave = { ...settings, version: STORAGE_VERSION };
-    this.cache = toSave;
+    this._cache = toSave;
 
     if (this.isElectron) {
       try {
@@ -196,7 +200,7 @@ class SecureStorage {
   }
 
   clearCache(): void {
-    this.cache = null;
+    this._cache = null;
   }
 }
 

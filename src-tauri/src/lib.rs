@@ -5,6 +5,7 @@ mod sip;
 mod startup;
 mod storage;
 mod tray;
+mod update;
 
 use diagnostics::{diagnostics_append, diagnostics_load};
 use error::CommandError;
@@ -16,6 +17,7 @@ use tauri::{AppHandle, Emitter, Listener, Manager};
 pub use sip::{sip_connect, sip_disconnect};
 pub use storage::{storage_decrypt_value, storage_encrypt_value, storage_load, storage_save};
 pub use tray::{tray_set_sip_status, tray_set_update_available};
+pub use update::cmd_verify_update;
 
 const MAX_NOTIFY_TITLE_LENGTH: usize = 256;
 const MAX_NOTIFY_BODY_LENGTH: usize = 1024;
@@ -48,6 +50,7 @@ async fn shell_open_external(url: String) -> Result<(), CommandError> {
             || after_protocol.starts_with("0.")
             || after_protocol.starts_with("172.16.")
             || after_protocol.starts_with("::1")
+            || after_protocol.starts_with("[::1]")
         {
             return Err(CommandError::invalid_input(
                 "URL points to a private or loopback address",
@@ -142,6 +145,13 @@ async fn toast_show(app: AppHandle, data: serde_json::Value) -> Result<(), Comma
         .and_then(|v| v.as_u64())
         .map(|w| w.clamp(MIN_TOAST_WIDTH, MAX_TOAST_WIDTH) as f64)
         .unwrap_or(DEFAULT_TOAST_WIDTH);
+
+    let _duration = data
+        .get("config")
+        .and_then(|c| c.get("duration"))
+        .and_then(|v| v.as_u64())
+        .map(|d| d.clamp(5, 300))
+        .unwrap_or(10);
 
     let builder = tauri::WebviewWindowBuilder::new(
         &app,
@@ -367,6 +377,7 @@ pub fn run() {
             toast_get_initial,
             app_set_start_with_windows,
             run_startup_checks,
+            cmd_verify_update,
         ]);
 
     builder.run(tauri::generate_context!()).unwrap_or_else(|e| {

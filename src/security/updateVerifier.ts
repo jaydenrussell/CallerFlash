@@ -71,40 +71,20 @@ export interface VerificationResult {
   artifact?: UpdateArtifact;
 }
 
-function base64ToBytes(base64: string): Uint8Array {
-  try {
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    return bytes;
-  } catch {
-    return new Uint8Array(0);
-  }
-}
-
 async function verifyDetachedSignature(manifest: string, signatureB64: string): Promise<boolean> {
-  const subtle = globalThis.crypto?.subtle;
-  if (!subtle) return false;
-
-  const publicKeyBytes = base64ToBytes(RELEASE_SIGNING_PUBLIC_KEY_B64);
-  const signatureBytes = base64ToBytes(signatureB64);
-  if (!publicKeyBytes.length || !signatureBytes.length) return false;
-
-  const key = await subtle.importKey(
-    'raw',
-    publicKeyBytes,
-    { name: 'Ed25519' },
-    false,
-    ['verify'],
-  );
-  return subtle.verify(
-    { name: 'Ed25519' },
-    key,
-    signatureBytes,
-    new TextEncoder().encode(manifest),
-  );
+  const dataHex = Array.from(new TextEncoder().encode(manifest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const result = await invoke<{ valid: boolean }>('cmd_verify_update', {
+      signatureB64,
+      dataHex,
+    });
+    return result.valid;
+  } catch {
+    return false;
+  }
 }
 
 /**
