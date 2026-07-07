@@ -290,6 +290,14 @@ function setup(): void {
       setStartWithWindows: (enabled: boolean) => {
         invoke('app_set_start_with_windows', { enabled }).catch((e) => logError('app.setStartWithWindows', e));
       },
+      getStartWithWindows: async () => {
+        try {
+          return await invoke<boolean>('app_get_start_with_windows');
+        } catch (e) {
+          logError('app.getStartWithWindows', e);
+          return null;
+        }
+      },
       setStartMinimized: (_enabled: boolean) => {
         // Handled by frontend
       },

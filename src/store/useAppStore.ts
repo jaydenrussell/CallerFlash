@@ -559,3 +559,21 @@ if (typeof window !== 'undefined' && window.callerflash?.safeStorage?.decrypt &&
 
 // Init storage migration (async, non-blocking)
 initStorageMigration();
+
+// ── Sync start-with-Windows toggle with actual Windows state ─────────
+if (typeof window !== 'undefined' && window.callerflash?.app?.getStartWithWindows) {
+  window.callerflash.app.getStartWithWindows().then((enabled) => {
+    if (enabled === null) return;
+    const current = useAppStore.getState().appPreferences.startWithWindows;
+    if (current !== enabled) {
+      useAppStore.setState((s) => ({
+        appPreferences: { ...s.appPreferences, startWithWindows: enabled },
+      }));
+      // Persist the corrected value so it survives restart
+      const corrected = { ...useAppStore.getState().appPreferences, startWithWindows: enabled };
+      const cache = secureStorage.cache;
+      secureStorage.save({ ...cache, appPreferences: corrected });
+      console.log('[store] Synced startWithWindows to', enabled);
+    }
+  });
+}

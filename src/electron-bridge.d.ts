@@ -143,6 +143,11 @@ declare global {
       append: (entry: { id: string; timestamp: Date | string; level: string; category: string; message: string; details?: string | null }) => void;
       load: () => Promise<Array<{ id: string; timestamp: Date; level: string; category: string; message: string; details?: string | null }>>;
     };
+    app: {
+      setStartWithWindows: (enabled: boolean) => void;
+      getStartWithWindows: () => Promise<boolean | null>;
+      setStartMinimized: (enabled: boolean) => void;
+    };
   }
 
   interface Window {

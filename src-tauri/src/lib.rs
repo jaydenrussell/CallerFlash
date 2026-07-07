@@ -280,6 +280,47 @@ fn app_set_start_with_windows(_enabled: bool) -> Result<(), CommandError> {
     Ok(())
 }
 
+#[tauri::command]
+#[cfg(target_os = "windows")]
+fn app_get_start_with_windows() -> Result<bool, CommandError> {
+    use winreg::enums::KEY_READ;
+    use winreg::RegKey;
+
+    // 1. Check whether the Run key entry exists
+    let run_key = RegKey::predef(winreg::enums::HKEY_CURRENT_USER)
+        .open_subkey_with_flags(r"Software\Microsoft\Windows\CurrentVersion\Run", KEY_READ)
+        .map_err(|e| CommandError::io(format!("Failed to open Run key: {}", e)))?;
+    if run_key.get_value::<String, _>("CallerFlash").is_err() {
+        log::info!("[startup] Run key entry missing — startup disabled externally");
+        return Ok(false);
+    }
+
+    // 2. Check Task Manager / Settings "StartupApproved" state
+    //    Byte 8 = 2 means disabled, 3 means enabled.
+    if let Ok(approved_key) = RegKey::predef(winreg::enums::HKEY_CURRENT_USER)
+        .open_subkey_with_flags(
+            r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run",
+            KEY_READ,
+        )
+    {
+        if let Ok(raw) = approved_key.get_raw_value("CallerFlash") {
+            let data = raw.bytes;
+            if data.len() >= 9 && data[8] == 2 {
+                log::info!("[startup] StartupApproved shows disabled — toggling off");
+                return Ok(false);
+            }
+        }
+    }
+
+    Ok(true)
+}
+
+#[tauri::command]
+#[cfg(not(target_os = "windows"))]
+fn app_get_start_with_windows() -> Result<bool, CommandError> {
+    Ok(false)
+}
+
 // ── Startup check command ──────────────────────────────────────────
 
 #[tauri::command]
@@ -403,6 +444,7 @@ pub fn run() {
             toast_get_position,
             toast_get_initial,
             app_set_start_with_windows,
+            app_get_start_with_windows,
             run_startup_checks,
             cmd_verify_update,
         ]);
