@@ -30,8 +30,9 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         ],
     )?;
 
-    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))
-        .unwrap_or_else(|_| tauri::image::Image::new(&[], 0, 0));
+    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png")).expect(
+        "Failed to load tray icon — ensure src-tauri/icons/32x32.png exists and is a valid PNG",
+    );
 
     TrayIconBuilder::new()
         .icon(icon)

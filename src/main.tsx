@@ -21,7 +21,11 @@ if (isToastWindow && typeof document !== "undefined") {
   document.body.classList.add("toast-window");
 }
 
-createRoot(document.getElementById("root")!).render(
+const rootEl = document.getElementById("root");
+if (!rootEl) {
+  throw new Error("Root element #root not found — check index.html for <div id='root'>");
+}
+createRoot(rootEl).render(
   <StrictMode>
     {isToastWindow ? <ToastWindow /> : <App />}
   </StrictMode>

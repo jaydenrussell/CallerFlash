@@ -342,7 +342,7 @@ export function SipSettings() {
                 <input
                   type="number"
                   value={localConfig.port}
-                  onChange={(e) => updateLocal({ port: parseInt(e.target.value) || 5060 })}
+                  onChange={(e) => updateLocal({ port: parseInt(e.target.value, 10) || 5060 })}
                   className="w-full px-3 py-2 bg-win-card border border-win-border rounded-lg text-sm text-win-text focus:outline-none focus:border-win-accent transition-colors"
                 />
               </InputField>
@@ -350,7 +350,12 @@ export function SipSettings() {
                 <div className="relative">
                   <select
                     value={localConfig.protocol}
-                    onChange={(e) => updateLocal({ protocol: e.target.value as any })}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v === 'UDP' || v === 'TCP' || v === 'TLS') {
+                        updateLocal({ protocol: v });
+                      }
+                    }}
                     className="w-full px-3 py-2 bg-win-card border border-win-border rounded-lg text-sm text-win-text focus:outline-none focus:border-win-accent transition-colors appearance-none pr-10"
                   >
                     <option value="UDP">UDP</option>
@@ -369,7 +374,7 @@ export function SipSettings() {
                   min={30}
                   max={3600}
                   value={localConfig.registerExpiry}
-                  onChange={(e) => updateLocal({ registerExpiry: parseInt(e.target.value) || 300 })}
+                  onChange={(e) => updateLocal({ registerExpiry: parseInt(e.target.value, 10) || 300 })}
                   className="w-full px-3 py-2 bg-win-card border border-win-border rounded-lg text-sm text-win-text focus:outline-none focus:border-win-accent transition-colors"
                 />
               </InputField>

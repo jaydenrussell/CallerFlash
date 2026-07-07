@@ -12,6 +12,7 @@ pub struct CommandError {
 pub enum ErrorKind {
     NotFound,
     PermissionDenied,
+    RateLimited,
     InvalidInput(String),
     ConfigError(String),
     Io(String),
@@ -26,6 +27,7 @@ impl fmt::Display for ErrorKind {
         match self {
             ErrorKind::NotFound => write!(f, "Not found"),
             ErrorKind::PermissionDenied => write!(f, "Permission denied"),
+            ErrorKind::RateLimited => write!(f, "Too many requests. Please slow down."),
             ErrorKind::InvalidInput(detail) => write!(f, "Invalid input: {}", detail),
             ErrorKind::ConfigError(detail) => write!(f, "Configuration error: {}", detail),
             ErrorKind::Io(detail) => write!(f, "IO error: {}", detail),
@@ -77,6 +79,13 @@ impl CommandError {
         }
     }
 
+    pub fn rate_limited() -> Self {
+        Self {
+            message: "Too many requests. Please slow down.".to_string(),
+            kind: ErrorKind::RateLimited,
+        }
+    }
+
     pub fn sip(detail: impl Into<String>) -> Self {
         let detail = detail.into();
         Self {
@@ -107,6 +116,7 @@ impl CommandError {
             ErrorKind::Crypto(_) => "A secure storage error occurred. Check logs for details.",
             ErrorKind::NotFound => "Requested resource was not found.",
             ErrorKind::PermissionDenied => "Permission denied.",
+            ErrorKind::RateLimited => "Too many requests. Please slow down.",
             ErrorKind::InvalidInput(_) => &self.message,
             ErrorKind::ConfigError(_) => &self.message,
             ErrorKind::Sip(_) => &self.message,

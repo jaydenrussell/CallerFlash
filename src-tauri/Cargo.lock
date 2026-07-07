@@ -610,6 +610,7 @@ dependencies = [
  "keyring",
  "log",
  "md-5",
+ "once_cell",
  "open",
  "rand 0.8.6",
  "serde",

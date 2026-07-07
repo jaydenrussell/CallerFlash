@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use tauri::Manager;
 
 use crate::error::CommandError;
+use crate::ratelimit::RATE_LIMITER;
 
 const MAX_LINES: usize = 10000;
 const MAX_SIZE: u64 = 10 * 1024 * 1024;
@@ -106,6 +107,9 @@ pub fn diagnostics_append(
     app: tauri::AppHandle,
     entry: serde_json::Value,
 ) -> Result<(), CommandError> {
+    if !RATE_LIMITER.check("diagnostics_append") {
+        return Err(CommandError::rate_limited());
+    }
     let log_entry: LogEntry = serde_json::from_value(entry)
         .map_err(|e| CommandError::invalid_input(format!("Invalid log entry: {}", e)))?;
     log_entry.validate()?;

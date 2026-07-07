@@ -37,7 +37,7 @@ jobs:
         run: npm run format
 
       - name: npm audit
-        run: npm audit --audit-level=high
+        run: npm audit
 
       - name: Run tests
         run: npm test

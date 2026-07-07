@@ -1,5 +1,6 @@
 mod diagnostics;
 mod error;
+mod ratelimit;
 mod sip;
 mod startup;
 mod storage;
@@ -7,6 +8,7 @@ mod tray;
 
 use diagnostics::{diagnostics_append, diagnostics_load};
 use error::CommandError;
+use ratelimit::RATE_LIMITER;
 use sip::SipClient;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Listener, Manager};
@@ -17,6 +19,8 @@ pub use tray::{tray_set_sip_status, tray_set_update_available};
 
 const MAX_NOTIFY_TITLE_LENGTH: usize = 256;
 const MAX_NOTIFY_BODY_LENGTH: usize = 1024;
+
+// Rate limiters are defined in ratelimit.rs — use RATE_LIMITER and SIP_RATE_LIMITER
 
 #[tauri::command]
 async fn shell_open_external(url: String) -> Result<(), CommandError> {
@@ -56,6 +60,9 @@ async fn shell_open_external(url: String) -> Result<(), CommandError> {
 
 #[tauri::command]
 async fn notify_show(app: AppHandle, title: String, body: String) -> Result<(), CommandError> {
+    if !RATE_LIMITER.check("notify_show") {
+        return Err(CommandError::rate_limited());
+    }
     let title = title.trim().to_string();
     let body = body.trim().to_string();
     if title.is_empty() {
@@ -94,9 +101,22 @@ const TOAST_MIN_HEIGHT: f64 = 80.0;
 
 #[tauri::command]
 async fn toast_show(app: AppHandle, data: serde_json::Value) -> Result<(), CommandError> {
+    if !RATE_LIMITER.check("toast_show") {
+        return Err(CommandError::rate_limited());
+    }
     if !data.is_object() {
         return Err(CommandError::invalid_input(
             "Toast data must be a JSON object",
+        ));
+    }
+
+    // Size limit: 64KB max toast payload
+    let serialized = serde_json::to_string(&data).map_err(|e| {
+        CommandError::invalid_input(format!("Toast data serialization failed: {}", e))
+    })?;
+    if serialized.len() > 65536 {
+        return Err(CommandError::invalid_input(
+            "Toast data exceeds maximum size of 64KB",
         ));
     }
 
@@ -165,6 +185,9 @@ async fn toast_show(app: AppHandle, data: serde_json::Value) -> Result<(), Comma
 
 #[tauri::command]
 async fn toast_hide(app: AppHandle) -> Result<(), CommandError> {
+    if !RATE_LIMITER.check("toast_hide") {
+        return Err(CommandError::rate_limited());
+    }
     if let Some(window) = app.get_webview_window("toast") {
         let _ = window.hide();
     }

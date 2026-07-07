@@ -10,6 +10,7 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::error::CommandError;
+use crate::ratelimit::SIP_RATE_LIMITER;
 
 const MAX_CALLER_ID_LENGTH: usize = 128;
 const MIN_REGISTER_EXPIRY: u32 = 30;
@@ -810,6 +811,9 @@ pub async fn sip_connect(
     app: AppHandle,
     config: SipConfig,
 ) -> Result<serde_json::Value, CommandError> {
+    if !SIP_RATE_LIMITER.check("sip_connect") {
+        return Err(CommandError::rate_limited());
+    }
     config.validate()?;
     let sip_client = app.state::<SipClient>();
     sip_client.start(config).await;
@@ -818,6 +822,9 @@ pub async fn sip_connect(
 
 #[tauri::command]
 pub async fn sip_disconnect(app: AppHandle) -> Result<serde_json::Value, CommandError> {
+    if !SIP_RATE_LIMITER.check("sip_disconnect") {
+        return Err(CommandError::rate_limited());
+    }
     let sip_client = app.state::<SipClient>();
     sip_client.disconnect();
     app.emit(
