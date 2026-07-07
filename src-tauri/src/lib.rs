@@ -356,7 +356,17 @@ pub fn run() {
                 .path()
                 .app_data_dir()
                 .unwrap_or_else(|_| std::path::PathBuf::from("."));
-            let report = startup::run_self_check(data_dir);
+            let report = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                startup::run_self_check(data_dir)
+            }))
+            .unwrap_or_else(|_| error::StartupReport {
+                checks: Vec::new(),
+                all_ok: false,
+                os_name: "unknown".to_string(),
+                os_version: "0".to_string(),
+                is_windows_11: false,
+                edition: String::new(),
+            });
             if !report.all_ok {
                 log::warn!("[startup] Some self-checks failed — see report for details");
             }
