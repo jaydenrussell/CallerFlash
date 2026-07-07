@@ -17,6 +17,7 @@ const MIN_REGISTER_EXPIRY: u32 = 30;
 const MAX_REGISTER_EXPIRY: u32 = 86400;
 const MIN_PORT: u16 = 1;
 
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SipConfig {
     pub username: String,
@@ -126,6 +127,7 @@ pub struct InviteData {
 pub struct SipClient {
     pub connected: Arc<Mutex<bool>>,
     pub handle: AppHandle,
+    pub task_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
 }
 
 impl SipClient {
@@ -133,6 +135,7 @@ impl SipClient {
         Self {
             connected: Arc::new(Mutex::new(false)),
             handle,
+            task_handle: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -296,7 +299,7 @@ impl SipClient {
         let handle = self.handle.clone();
         let connected = self.connected.clone();
 
-        tokio::spawn(async move {
+        let join_handle: tokio::task::JoinHandle<()> = tokio::spawn(async move {
             let future = std::panic::AssertUnwindSafe(async move {
                 let server = config.server.clone();
                 let port = config.port.unwrap_or(5060);
@@ -805,12 +808,24 @@ impl SipClient {
                 log::error!("[sip] connection task panicked: {:?}", panic);
             }
         });
+
+        let mut handle = self.task_handle.lock().await;
+        // Cancel any previous task first
+        if let Some(prev) = handle.take() {
+            prev.abort();
+        }
+        *handle = Some(join_handle);
     }
 
     pub fn disconnect(&self) {
         let connected = self.connected.clone();
+        let task_handle = self.task_handle.clone();
         tokio::spawn(async move {
             *connected.lock().await = false;
+            let mut handle = task_handle.lock().await;
+            if let Some(h) = handle.take() {
+                h.abort();
+            }
         });
     }
 }
