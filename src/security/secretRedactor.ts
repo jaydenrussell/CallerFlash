@@ -82,6 +82,18 @@ export function sanitizeCallerNumberForClipboard(raw: string): string {
 }
 
 /**
+ * Sanitize a caller name received from a SIP INVITE before storing or
+ * displaying. Strips control characters (0x00-0x1F except \t), truncates
+ * to 128 chars, and ensures the output is safe for DOM textContent and
+ * notification body text.
+ */
+export function sanitizeCallerName(raw: string): string {
+  return raw
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+    .slice(0, 128);
+}
+
+/**
  * Validate a URL before opening externally. Defends against accidentally
  * accepting `javascript:` or `file:` or `vbscript:` from remote metadata.
  */

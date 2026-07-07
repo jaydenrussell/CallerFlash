@@ -107,7 +107,6 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
       - name: Rust audit
-        continue-on-error: true
         shell: bash
         run: |
           cargo install cargo-audit --locked 2>/dev/null || true

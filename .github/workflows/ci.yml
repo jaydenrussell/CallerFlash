@@ -25,10 +25,7 @@ jobs:
           package-manager-cache: false
 
       - name: Install dependencies
-        shell: bash
-        run: |
-          rm -rf node_modules package-lock.json
-          npm install
+        run: npm ci
 
       - name: TypeScript check
         run: npx tsc --noEmit
@@ -41,6 +38,9 @@ jobs:
 
       - name: npm audit
         run: npm audit --audit-level=high
+
+      - name: Run tests
+        run: npm test
 
       - name: Build check
         run: npm run build

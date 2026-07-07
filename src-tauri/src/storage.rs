@@ -252,6 +252,27 @@ pub fn storage_save(app: AppHandle, data: serde_json::Value) -> Result<(), Comma
     storage.save_data(&data)
 }
 
+#[tauri::command]
+pub fn storage_encrypt_value(plaintext: String) -> Result<String, CommandError> {
+    let key = get_or_create_key()?;
+    let (ciphertext_b64, nonce_b64) = encrypt_data(&key, plaintext.as_bytes())?;
+    Ok(format!("{}:{}", ciphertext_b64, nonce_b64))
+}
+
+#[tauri::command]
+pub fn storage_decrypt_value(payload: String) -> Result<String, CommandError> {
+    let key = get_or_create_key()?;
+    let parts: Vec<&str> = payload.splitn(2, ':').collect();
+    if parts.len() != 2 {
+        return Err(CommandError::invalid_input(
+            "Invalid encrypted payload format",
+        ));
+    }
+    let decrypted = decrypt_data(&key, parts[0], parts[1])?;
+    String::from_utf8(decrypted)
+        .map_err(|_| CommandError::crypto("Decrypted data is not valid UTF-8"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

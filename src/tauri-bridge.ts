@@ -16,6 +16,13 @@ let invocations = 0;
 const log = (...args: unknown[]) => console.log('[tauri-bridge]', ...args);
 const logError = (...args: unknown[]) => console.error('[tauri-bridge]', ...args);
 
+function safeJsonResponse(data: unknown): Record<string, unknown> {
+  if (data === null || data === undefined || typeof data !== 'object') {
+    return {};
+  }
+  return data as Record<string, unknown>;
+}
+
 function setup(): void {
   if (window.callerflash) {
     log('bridge already set up, skipping');
@@ -192,16 +199,46 @@ function setup(): void {
       },
     },
 
+    safeStorage: {
+      encrypt: async (plaintext: string) => {
+        try {
+          return await invoke<string>('storage_encrypt_value', { plaintext });
+        } catch (e) {
+          logError('safeStorage.encrypt', e);
+          return null;
+        }
+      },
+      decrypt: async (payload: string) => {
+        try {
+          return await invoke<string>('storage_decrypt_value', { payload });
+        } catch (e) {
+          logError('safeStorage.decrypt', e);
+          return null;
+        }
+      },
+    },
+
     sip: {
       connect: async (config: unknown) => {
         const cfg = config as Record<string, unknown>;
         if (typeof cfg.server === 'string') {
           cfg.server = sanitizeSipServer(cfg.server);
         }
-        return (await invoke('sip_connect', { config }).catch((e) => ({ success: false, message: e }))) as { success: boolean; message?: string };
+        try {
+          const result = safeJsonResponse(await invoke('sip_connect', { config }));
+          return { success: result.success === true, message: typeof result.message === 'string' ? result.message : undefined };
+        } catch (e) {
+          return { success: false, message: String(e) };
+        }
       },
       disconnect: async () => {
-        return (await invoke('sip_disconnect').catch(() => ({ success: true }))) as { success: boolean };
+        try {
+          const result = safeJsonResponse(await invoke('sip_disconnect'));
+          return { success: result.success === true };
+        } catch (e) {
+          logError('sip.disconnect', e);
+          return { success: false };
+        }
       },
       onStatus: (callback: (data: { status: string; message?: string }) => void) => {
         const unlisten: Promise<() => void> = listen('sip:status', (event) => {

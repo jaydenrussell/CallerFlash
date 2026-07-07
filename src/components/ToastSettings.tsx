@@ -3,7 +3,7 @@ import {
   Clock, PhoneIncoming
 } from 'lucide-react';
 import { useAppStore, type ToastConfig } from '../store/useAppStore';
-import { simulateIncomingCall } from '../utils/simulateIncomingCall';
+
 
 const fontFamilies = [
   'Inter', 'Segoe UI', 'Arial', 'Helvetica', 'Roboto',
@@ -45,7 +45,17 @@ export function ToastSettings() {
 
   const handlePreview = (e: React.MouseEvent) => {
     e.stopPropagation();
-    simulateIncomingCall('toast-settings');
+    if (toastConfig.style === 'custom' && window.callerflash?.toast?.show) {
+      window.callerflash.toast.show({
+        id: crypto.randomUUID(),
+        callerNumber: '(555) 123-4567',
+        callerName: 'Preview Call',
+        timestamp: new Date().toISOString(),
+        config: toastConfig,
+      });
+    } else if (toastConfig.style === 'native' && window.callerflash?.notify?.show) {
+      window.callerflash.notify.show({ title: 'Incoming Call', body: '(555) 123-4567 - Preview Call', urgency: 'critical', timeoutType: 'never', soundEnabled: toastConfig.soundEnabled });
+    }
     addDiagnosticLog({
       level: 'info',
       category: 'TOAST',

@@ -10,7 +10,7 @@ import { AutoUpdate } from './components/AutoUpdate';
 import { About } from './components/About';
 import { ToastContainer } from './components/ToastNotification';
 import { useAppStore } from './store/useAppStore';
-import { sanitizeCallerNumberForClipboard } from './security/secretRedactor';
+import { sanitizeCallerNumberForClipboard, sanitizeCallerName } from './security/secretRedactor';
 
 // Threshold below which the sidebar collapses to icons only
 const SIDEBAR_COLLAPSE_BREAKPOINT = 720;
@@ -83,8 +83,8 @@ export default function App() {
           setIsFirstRunAfterUpdate(true);
           window.localStorage.setItem('callerflash-ui-settings', JSON.stringify({ lastRunVersion: __APP_VERSION__ }));
         }
-      } catch {
-        // ignore
+      } catch (e) {
+        addDiagnosticLog({ level: 'error', category: 'SYSTEM', message: `Failed to read UI settings: ${e}` });
       }
     }
   }, []);
@@ -96,7 +96,7 @@ export default function App() {
         if (entries && entries.length > 0) {
           useAppStore.getState().loadPersistedDiagnostics(entries);
         }
-      }).catch(() => {});
+      }).catch((e) => addDiagnosticLog({ level: 'error', category: 'SYSTEM', message: `Failed to load diagnostics: ${e}` }));
     }
   }, []);
 
@@ -196,7 +196,7 @@ export default function App() {
     return window.callerflash.sip.onInvite((callerData) => {
       const { toastConfig } = useAppStore.getState();
       const safeNumber = sanitizeCallerNumberForClipboard(callerData.callerNumber);
-      const safeName = callerData.callerName || '';
+      const safeName = sanitizeCallerName(callerData.callerName || '');
 
       const record = {
         id: crypto.randomUUID(),
@@ -286,7 +286,7 @@ export default function App() {
       } else if (result?.upToDate) {
         addDiagnosticLog({ level: 'info', category: 'UPDATE', message: 'App is up to date.' });
       }
-    }).catch(() => {});
+    }).catch((e) => addDiagnosticLog({ level: 'error', category: 'UPDATE', message: `Update check failed: ${e}` }));
   }, [addDiagnosticLog]);
 
   return (

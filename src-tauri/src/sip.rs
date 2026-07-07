@@ -28,6 +28,15 @@ pub struct SipConfig {
 }
 
 impl SipConfig {
+    fn contains_sip_dangerous_chars(s: &str) -> bool {
+        s.chars().any(|c| {
+            matches!(
+                c,
+                '\r' | '\n' | '"' | '(' | ')' | '<' | '>' | '\\' | ',' | '?' | '[' | ']'
+            )
+        })
+    }
+
     pub fn validate(&self) -> Result<(), CommandError> {
         if self.username.is_empty() {
             return Err(CommandError::invalid_input("SIP username is required"));
@@ -37,12 +46,22 @@ impl SipConfig {
                 "SIP username exceeds maximum length of 128 characters",
             ));
         }
+        if Self::contains_sip_dangerous_chars(&self.username) {
+            return Err(CommandError::invalid_input(
+                "SIP username contains invalid characters",
+            ));
+        }
         if self.server.is_empty() {
             return Err(CommandError::invalid_input("SIP server is required"));
         }
         if self.server.len() > 256 {
             return Err(CommandError::invalid_input(
                 "SIP server address exceeds maximum length",
+            ));
+        }
+        if Self::contains_sip_dangerous_chars(&self.server) {
+            return Err(CommandError::invalid_input(
+                "SIP server contains invalid characters",
             ));
         }
         if let Some(port) = self.port {
@@ -70,10 +89,20 @@ impl SipConfig {
                 )));
             }
         }
+        if self.password.len() > 512 {
+            return Err(CommandError::invalid_input(
+                "SIP password exceeds maximum length of 512 characters",
+            ));
+        }
         if let Some(ref auth_user) = self.auth_username {
             if auth_user.len() > 128 {
                 return Err(CommandError::invalid_input(
                     "Auth username exceeds maximum length of 128 characters",
+                ));
+            }
+            if Self::contains_sip_dangerous_chars(auth_user) {
+                return Err(CommandError::invalid_input(
+                    "Auth username contains invalid characters",
                 ));
             }
         }
@@ -244,6 +273,24 @@ impl SipClient {
             .collect()
     }
 
+    fn user_safe_sip_error(msg: &str) -> String {
+        if msg.contains("Connection refused") || msg.contains("os error") {
+            "Connection to SIP server failed. Check server address and port.".to_string()
+        } else if msg.contains("DNS resolution failed") || msg.contains("No addresses found") {
+            "Could not resolve SIP server hostname. Check server address.".to_string()
+        } else if msg.contains("Timeout") || msg.contains("timeout") {
+            "SIP server did not respond. Check server availability.".to_string()
+        } else {
+            format!("SIP error: {}", msg.chars().take(128).collect::<String>())
+        }
+    }
+
+    fn safe_emit(handle: &AppHandle, event: &str, payload: impl serde::Serialize + Clone) {
+        if let Err(e) = handle.emit(event, payload) {
+            log::error!("[sip] Failed to emit {}: {}", event, e);
+        }
+    }
+
     pub async fn start(&self, config: SipConfig) {
         let handle = self.handle.clone();
         let connected = self.connected.clone();
@@ -255,31 +302,43 @@ impl SipClient {
                 let is_tcp = config.protocol.as_deref() == Some("TCP");
 
                 if is_tcp {
-                    handle
-                        .emit(
+                    Self::safe_emit(
+                        &handle,
+                        "sip:status",
+                        SipStatus {
+                            status: "error".to_string(),
+                            message: Some("TCP not yet supported, falling back to UDP".to_string()),
+                        },
+                    );
+                }
+
+                let socket = match UdpSocket::bind("0.0.0.0:0").await {
+                    Ok(s) => {
+                        let local_addr = s.local_addr().ok();
+                        if let Some(addr) = local_addr {
+                            Self::safe_emit(
+                                &handle,
+                                "sip:status",
+                                SipStatus {
+                                    status: "connecting".to_string(),
+                                    message: Some(format!("Bound to UDP port {}", addr.port())),
+                                },
+                            );
+                        }
+                        s
+                    }
+                    Err(e) => {
+                        Self::safe_emit(
+                            &handle,
                             "sip:status",
                             SipStatus {
                                 status: "error".to_string(),
-                                message: Some(
-                                    "TCP not yet supported, falling back to UDP".to_string(),
-                                ),
+                                message: Some(Self::user_safe_sip_error(&format!(
+                                    "Failed to bind UDP: {}",
+                                    e
+                                ))),
                             },
-                        )
-                        .ok();
-                }
-
-                let socket = match UdpSocket::bind("0.0.0.0:5060").await {
-                    Ok(s) => s,
-                    Err(e) => {
-                        handle
-                            .emit(
-                                "sip:status",
-                                SipStatus {
-                                    status: "error".to_string(),
-                                    message: Some(format!("Failed to bind UDP: {}", e)),
-                                },
-                            )
-                            .ok();
+                        );
                         return;
                     }
                 };
@@ -289,47 +348,35 @@ impl SipClient {
                         Ok(mut addrs) => match addrs.next() {
                             Some(addr) => addr,
                             None => {
-                                handle
-                                    .emit(
-                                        "sip:status",
-                                        SipStatus {
-                                            status: "error".to_string(),
-                                            message: Some(format!(
-                                                "No addresses found for {}:{}",
-                                                server, port
-                                            )),
-                                        },
-                                    )
-                                    .ok();
+                                Self::safe_emit(
+                                    &handle,
+                                    "sip:status",
+                                    SipStatus {
+                                        status: "error".to_string(),
+                                        message: Some(Self::user_safe_sip_error(&format!(
+                                            "No addresses found for {}:{}",
+                                            server, port
+                                        ))),
+                                    },
+                                );
                                 return;
                             }
                         },
                         Err(e) => {
-                            handle
-                                .emit(
-                                    "sip:status",
-                                    SipStatus {
-                                        status: "error".to_string(),
-                                        message: Some(format!(
-                                            "DNS resolution failed for {}:{}: {}",
-                                            server, port, e
-                                        )),
-                                    },
-                                )
-                                .ok();
+                            Self::safe_emit(
+                                &handle,
+                                "sip:status",
+                                SipStatus {
+                                    status: "error".to_string(),
+                                    message: Some(Self::user_safe_sip_error(&format!(
+                                        "DNS resolution failed: {}",
+                                        e
+                                    ))),
+                                },
+                            );
                             return;
                         }
                     };
-
-                handle
-                    .emit(
-                        "sip:status",
-                        SipStatus {
-                            status: "connecting".to_string(),
-                            message: Some("Bound to UDP 5060".to_string()),
-                        },
-                    )
-                    .ok();
 
                 let call_id = format!("{}@127.0.0.1", Uuid::new_v4());
                 let mut cseq = 1u32;
@@ -389,15 +436,17 @@ impl SipClient {
 
                 let reg_msg = build_register(cseq, &call_id, None, expiry);
                 if let Err(e) = socket.send_to(reg_msg.as_bytes(), server_addr).await {
-                    handle
-                        .emit(
-                            "sip:status",
-                            SipStatus {
-                                status: "error".to_string(),
-                                message: Some(format!("Failed to send REGISTER: {}", e)),
-                            },
-                        )
-                        .ok();
+                    Self::safe_emit(
+                        &handle,
+                        "sip:status",
+                        SipStatus {
+                            status: "error".to_string(),
+                            message: Some(Self::user_safe_sip_error(&format!(
+                                "Failed to send REGISTER: {}",
+                                e
+                            ))),
+                        },
+                    );
                     return;
                 }
                 cseq += 1;
@@ -411,17 +460,10 @@ impl SipClient {
                 {
                     Ok(Ok((len, addr))) => (len, addr),
                     _ => {
-                        handle
-                            .emit(
-                                "sip:status",
-                                SipStatus {
-                                    status: "error".to_string(),
-                                    message: Some(
-                                        "Timeout waiting for REGISTER response".to_string(),
-                                    ),
-                                },
-                            )
-                            .ok();
+                        Self::safe_emit(&handle, "sip:status", SipStatus {
+                            status: "error".to_string(),
+                            message: Some("SIP server did not respond to REGISTER. Check server availability.".to_string()),
+                        });
                         return;
                     }
                 };
@@ -452,18 +494,17 @@ impl SipClient {
                         let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Digest challenge params — realm: {}, algorithm: {}, qop: {:?}, nonce: {} (first 8 chars: {})", realm, algorithm, qop, nonce, &nonce[..nonce.len().min(8)])}));
 
                         if algorithm.to_uppercase() != "MD5" {
-                            handle
-                                .emit(
-                                    "sip:status",
-                                    SipStatus {
-                                        status: "error".to_string(),
-                                        message: Some(format!(
-                                            "Unsupported digest algorithm: {}",
-                                            algorithm
-                                        )),
-                                    },
-                                )
-                                .ok();
+                            Self::safe_emit(
+                                &handle,
+                                "sip:status",
+                                SipStatus {
+                                    status: "error".to_string(),
+                                    message: Some(format!(
+                                        "Unsupported digest algorithm: {}",
+                                        algorithm
+                                    )),
+                                },
+                            );
                             return;
                         }
 
@@ -510,18 +551,17 @@ impl SipClient {
                         let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Sending authenticated REGISTER to {}:{} (username: {}, realm: {})", server, port, auth_username, realm)}));
                         let auth_reg = build_register(cseq, &call_id, Some(&auth_val), expiry);
                         if let Err(e) = socket.send_to(auth_reg.as_bytes(), server_addr).await {
-                            handle
-                                .emit(
-                                    "sip:status",
-                                    SipStatus {
-                                        status: "error".to_string(),
-                                        message: Some(format!(
-                                            "Failed to send authenticated REGISTER: {}",
-                                            e
-                                        )),
-                                    },
-                                )
-                                .ok();
+                            Self::safe_emit(
+                                &handle,
+                                "sip:status",
+                                SipStatus {
+                                    status: "error".to_string(),
+                                    message: Some(Self::user_safe_sip_error(&format!(
+                                        "Failed to send authenticated REGISTER: {}",
+                                        e
+                                    ))),
+                                },
+                            );
                             return;
                         }
                         cseq += 1;
@@ -534,18 +574,10 @@ impl SipClient {
                         {
                             Ok(Ok((len, addr))) => (len, addr),
                             _ => {
-                                handle
-                                    .emit(
-                                        "sip:status",
-                                        SipStatus {
-                                            status: "error".to_string(),
-                                            message: Some(
-                                                "Timeout waiting for auth REGISTER response"
-                                                    .to_string(),
-                                            ),
-                                        },
-                                    )
-                                    .ok();
+                                Self::safe_emit(&handle, "sip:status", SipStatus {
+                                    status: "error".to_string(),
+                                    message: Some("SIP server did not respond to registration. Check server availability.".to_string()),
+                                });
                                 return;
                             }
                         };
@@ -555,15 +587,14 @@ impl SipClient {
                         let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Authenticated REGISTER response — {} {} ({} headers)", status_code, reason.trim(), _headers.len())}));
                         if (200..300).contains(&status_code) {
                             *connected.lock().await = true;
-                            handle
-                                .emit(
-                                    "sip:status",
-                                    SipStatus {
-                                        status: "registered".to_string(),
-                                        message: None,
-                                    },
-                                )
-                                .ok();
+                            Self::safe_emit(
+                                &handle,
+                                "sip:status",
+                                SipStatus {
+                                    status: "registered".to_string(),
+                                    message: None,
+                                },
+                            );
                             log::info!("[sip] Registered successfully");
                         } else {
                             let raw_response = String::from_utf8_lossy(&buf[..len]);
@@ -575,44 +606,41 @@ impl SipClient {
                                 reason.trim(),
                                 detail
                             );
-                            handle
-                                .emit(
-                                    "sip:status",
-                                    SipStatus {
-                                        status: "error".to_string(),
-                                        message: Some(format!(
-                                            "Registration failed: {} {}",
-                                            status_code,
-                                            reason.trim()
-                                        )),
-                                    },
-                                )
-                                .ok();
-                            return;
-                        }
-                    } else {
-                        handle
-                            .emit(
+                            Self::safe_emit(
+                                &handle,
                                 "sip:status",
                                 SipStatus {
                                     status: "error".to_string(),
-                                    message: Some("No authentication header received".to_string()),
+                                    message: Some(format!(
+                                        "Registration failed: {} {}",
+                                        status_code,
+                                        reason.trim()
+                                    )),
                                 },
-                            )
-                            .ok();
+                            );
+                            return;
+                        }
+                    } else {
+                        Self::safe_emit(
+                            &handle,
+                            "sip:status",
+                            SipStatus {
+                                status: "error".to_string(),
+                                message: Some("No authentication header received".to_string()),
+                            },
+                        );
                         return;
                     }
                 } else if (200..300).contains(&status_code) {
                     *connected.lock().await = true;
-                    handle
-                        .emit(
-                            "sip:status",
-                            SipStatus {
-                                status: "registered".to_string(),
-                                message: None,
-                            },
-                        )
-                        .ok();
+                    Self::safe_emit(
+                        &handle,
+                        "sip:status",
+                        SipStatus {
+                            status: "registered".to_string(),
+                            message: None,
+                        },
+                    );
                     log::info!("[sip] Registered successfully (no auth)");
                 } else {
                     let raw = String::from_utf8_lossy(&buf[..len]);
@@ -624,18 +652,17 @@ impl SipClient {
                         detail
                     );
                     let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Initial REGISTER failed: {} — response:\n{}", first_line, detail)}));
-                    handle
-                        .emit(
-                            "sip:status",
-                            SipStatus {
-                                status: "error".to_string(),
-                                message: Some(format!(
-                                    "Registration failed: {} {}",
-                                    status_code, first_line
-                                )),
-                            },
-                        )
-                        .ok();
+                    Self::safe_emit(
+                        &handle,
+                        "sip:status",
+                        SipStatus {
+                            status: "error".to_string(),
+                            message: Some(format!(
+                                "Registration failed: {} {}",
+                                status_code, first_line
+                            )),
+                        },
+                    );
                     return;
                 }
 
@@ -734,7 +761,7 @@ impl SipClient {
                                 caller_number = Self::sanitize_caller_id(&caller_number);
                                 caller_name = Self::sanitize_caller_id(&caller_name);
 
-                                let _ = handle.emit("sip:invite", InviteData {
+                                Self::safe_emit(&handle, "sip:invite", InviteData {
                                     caller_number,
                                     caller_name,
                                 });

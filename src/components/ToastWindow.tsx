@@ -163,7 +163,7 @@ function ToastItem({
   useEffect(() => {
     if (config.autoCopyToClipboard) {
       const clean = sanitizeCallerNumberForClipboard(toast.callerNumber);
-      if (clean) navigator.clipboard?.writeText(clean).catch(() => {});
+      if (clean) navigator.clipboard?.writeText(clean).catch((e) => console.error('[ToastWindow] clipboard write failed:', e));
     }
   }, []);
 

@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Least-privilege permissions for CallerFlash main and toast windows",
-  "windows": ["main", "toast"],
+  "description": "Permissions for CallerFlash main window",
+  "windows": ["main"],
   "permissions": [
     "core:default",
     "core:window:default",

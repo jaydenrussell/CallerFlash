@@ -21,7 +21,7 @@ export function CallHistory() {
 
   const handleCopy = (number: string, id: string) => {
     const clean = number.replace(/\D/g, '');
-    navigator.clipboard?.writeText(clean).catch(() => {});
+    navigator.clipboard?.writeText(clean).catch((e) => addDiagnosticLog({ level: 'error', category: 'SYSTEM', message: `Clipboard write failed: ${e}` }));
     setClipboardText(clean);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
@@ -32,11 +32,19 @@ export function CallHistory() {
     });
   };
 
+  const sanitizeCSV = (val: string): string => {
+    const s = val.replace(/"/g, '""');
+    if (/^[=+\-@]/.test(s)) {
+      return `"'${s}"`;
+    }
+    return `"${s}"`;
+  };
+
   const exportCSV = () => {
     const csv = [
       'Number,Name,Time,Direction,Status',
       ...callHistory.map(c =>
-        `"${c.callerNumber}","${c.callerName}","${c.timestamp.toISOString()}","${c.direction}","${c.status}"`
+        [c.callerNumber, c.callerName, c.timestamp.toISOString(), c.direction, c.status].map(sanitizeCSV).join(',')
       ),
     ].join('\n');
 

@@ -12,7 +12,7 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Listener, Manager};
 
 pub use sip::{sip_connect, sip_disconnect};
-pub use storage::{storage_load, storage_save};
+pub use storage::{storage_decrypt_value, storage_encrypt_value, storage_load, storage_save};
 pub use tray::{tray_set_sip_status, tray_set_update_available};
 
 const MAX_NOTIFY_TITLE_LENGTH: usize = 256;
@@ -28,6 +28,27 @@ async fn shell_open_external(url: String) -> Result<(), CommandError> {
     }
     if url.len() > 2048 {
         return Err(CommandError::invalid_input("URL too long"));
+    }
+    if url.contains('\r') || url.contains('\n') || url.contains('\t') {
+        return Err(CommandError::invalid_input(
+            "URL contains control characters",
+        ));
+    }
+    if let Some(host_start) = url.find("://") {
+        let after_protocol = &url[host_start + 3..];
+        if after_protocol.starts_with("localhost")
+            || after_protocol.starts_with("127.")
+            || after_protocol.starts_with("10.")
+            || after_protocol.starts_with("192.168.")
+            || after_protocol.starts_with("169.254.")
+            || after_protocol.starts_with("0.")
+            || after_protocol.starts_with("172.16.")
+            || after_protocol.starts_with("::1")
+        {
+            return Err(CommandError::invalid_input(
+                "URL points to a private or loopback address",
+            ));
+        }
     }
     open::that(&url).map_err(|e| CommandError::io(format!("Failed to open URL: {}", e)))?;
     Ok(())
@@ -300,6 +321,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             storage_load,
             storage_save,
+            storage_encrypt_value,
+            storage_decrypt_value,
             diagnostics_append,
             diagnostics_load,
             shell_open_external,

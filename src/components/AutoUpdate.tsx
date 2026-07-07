@@ -373,7 +373,7 @@ export function AutoUpdate() {
         setPhase('downloading');
         setUpdateInfo({ isDownloading: true });
       }
-    }).catch(() => {});
+    }).catch((e) => addDiagnosticLog({ level: 'error', category: 'UPDATE', message: `Failed to get download state: ${e}` }));
   }, [updateInfo.updateChannel]);
 
   // Auto-check on tab mount — ALWAYS run on first load regardless of
