@@ -189,12 +189,6 @@ export function ToastSettings() {
           </div>
           <div className="space-y-1">
             <ToggleField
-              label="Auto-copy to clipboard"
-              description="Copy caller number to clipboard when a call arrives"
-              value={toastConfig.autoCopyToClipboard}
-              onChange={(v) => update({ autoCopyToClipboard: v })}
-            />
-            <ToggleField
               label="Show caller name"
               description="Display caller name in the toast notification"
               value={toastConfig.showCallerName}
