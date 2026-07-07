@@ -1,5 +1,6 @@
 mod diagnostics;
 mod error;
+mod migrate;
 mod ratelimit;
 mod sip;
 mod startup;
@@ -357,7 +358,7 @@ pub fn run() {
                 .app_data_dir()
                 .unwrap_or_else(|_| std::path::PathBuf::from("."));
             let report = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                startup::run_self_check(data_dir)
+                startup::run_self_check(data_dir.clone())
             }))
             .unwrap_or_else(|_| error::StartupReport {
                 checks: Vec::new(),
@@ -378,6 +379,8 @@ pub fn run() {
                     report.os_version, report.edition
                 );
             }
+
+            migrate::run_migration(&data_dir);
 
             Ok(())
         })

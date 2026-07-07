@@ -84,14 +84,14 @@ fn decrypt_data(
         .map_err(|e| CommandError::crypto(format!("Decryption failed: {}", e)))
 }
 
-struct SecureStorage {
+pub(crate) struct SecureStorage {
     settings_path: PathBuf,
     backup_path: PathBuf,
     tmp_path: PathBuf,
 }
 
 impl SecureStorage {
-    fn new(data_dir: PathBuf) -> Self {
+    pub(crate) fn new(data_dir: PathBuf) -> Self {
         Self {
             settings_path: data_dir.join("settings.json"),
             backup_path: data_dir.join("settings.json.bak"),
@@ -99,7 +99,7 @@ impl SecureStorage {
         }
     }
 
-    fn load_data(&self) -> serde_json::Value {
+    pub(crate) fn load_data(&self) -> serde_json::Value {
         if let Ok(raw) = fs::read_to_string(&self.settings_path) {
             if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) {
                 let enc = parsed
@@ -168,7 +168,7 @@ impl SecureStorage {
         serde_json::Value::Object(serde_json::Map::new())
     }
 
-    fn save_data(&self, data: &serde_json::Value) -> Result<(), CommandError> {
+    pub(crate) fn save_data(&self, data: &serde_json::Value) -> Result<(), CommandError> {
         let key = get_or_create_key()?;
         let plaintext = serde_json::to_string(data)
             .map_err(|e| CommandError::config(format!("Serialize: {}", e)))?;
