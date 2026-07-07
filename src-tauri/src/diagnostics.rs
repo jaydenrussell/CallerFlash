@@ -1,9 +1,15 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use tauri::Manager;
+
+use crate::error::CommandError;
 
 const MAX_LINES: usize = 10000;
 const MAX_SIZE: u64 = 10 * 1024 * 1024;
+const MAX_MESSAGE_LENGTH: usize = 4096;
+const MAX_CATEGORY_LENGTH: usize = 64;
+const MAX_FIELD_LENGTH: usize = 2048;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LogEntry {
@@ -13,6 +19,32 @@ pub struct LogEntry {
     pub category: String,
     pub message: String,
     pub details: Option<String>,
+}
+
+impl LogEntry {
+    pub fn validate(&self) -> Result<(), CommandError> {
+        if self.id.len() > 128 {
+            return Err(CommandError::invalid_input("Log entry id too long"));
+        }
+        if self.timestamp.len() > 64 {
+            return Err(CommandError::invalid_input("Log entry timestamp too long"));
+        }
+        if self.level.len() > 16 {
+            return Err(CommandError::invalid_input("Log entry level too long"));
+        }
+        if self.category.len() > MAX_CATEGORY_LENGTH {
+            return Err(CommandError::invalid_input("Log entry category too long"));
+        }
+        if self.message.len() > MAX_MESSAGE_LENGTH {
+            return Err(CommandError::invalid_input("Log entry message too long"));
+        }
+        if let Some(ref details) = self.details {
+            if details.len() > MAX_FIELD_LENGTH {
+                return Err(CommandError::invalid_input("Log entry details too long"));
+            }
+        }
+        Ok(())
+    }
 }
 
 pub struct Diagnostics {
@@ -67,4 +99,31 @@ impl Diagnostics {
         entries.reverse();
         entries
     }
+}
+
+#[tauri::command]
+pub fn diagnostics_append(
+    app: tauri::AppHandle,
+    entry: serde_json::Value,
+) -> Result<(), CommandError> {
+    let log_entry: LogEntry = serde_json::from_value(entry)
+        .map_err(|e| CommandError::invalid_input(format!("Invalid log entry: {}", e)))?;
+    log_entry.validate()?;
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| PathBuf::from("."));
+    let diag = Diagnostics::new(data_dir);
+    diag.append(&log_entry);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn diagnostics_load(app: tauri::AppHandle) -> Vec<LogEntry> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| PathBuf::from("."));
+    let diag = Diagnostics::new(data_dir);
+    diag.load(1000)
 }

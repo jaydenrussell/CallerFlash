@@ -1,88 +1,60 @@
 mod diagnostics;
+mod error;
 mod sip;
+mod startup;
 mod storage;
 mod tray;
 
-use diagnostics::Diagnostics;
+use diagnostics::{diagnostics_append, diagnostics_load};
+use error::CommandError;
 use sip::SipClient;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Listener, Manager};
 
-// Re-export command functions so generate_handler can find the generated __cmd__ macros
 pub use sip::{sip_connect, sip_disconnect};
 pub use storage::{storage_load, storage_save};
 pub use tray::{tray_set_sip_status, tray_set_update_available};
 
-#[derive(Clone, serde::Serialize)]
-#[allow(dead_code)]
-struct DiagnosticEvent {
-    level: String,
-    message: String,
-    details: Option<String>,
-}
+const MAX_NOTIFY_TITLE_LENGTH: usize = 256;
+const MAX_NOTIFY_BODY_LENGTH: usize = 1024;
 
 #[tauri::command]
-async fn diagnostics_append(app: AppHandle, entry: serde_json::Value) {
-    let data_dir = app.path().app_data_dir().unwrap_or_default();
-    let diag = Diagnostics::new(data_dir);
-
-    let log_entry = diagnostics::LogEntry {
-        id: entry
-            .get("id")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
-        timestamp: entry
-            .get("timestamp")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
-        level: entry
-            .get("level")
-            .and_then(|v| v.as_str())
-            .unwrap_or("info")
-            .to_string(),
-        category: entry
-            .get("category")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
-        message: entry
-            .get("message")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
-        details: entry
-            .get("details")
-            .and_then(|v| v.as_str().map(String::from)),
-    };
-    diag.append(&log_entry);
-}
-
-#[tauri::command]
-async fn diagnostics_load(app: AppHandle) -> Vec<diagnostics::LogEntry> {
-    let data_dir = app.path().app_data_dir().unwrap_or_default();
-    let diag = Diagnostics::new(data_dir);
-    diag.load(1000)
-}
-
-#[tauri::command]
-async fn shell_open_external(url: String) -> Result<(), String> {
-    if url.starts_with("https:") || url.starts_with("http:") {
-        open::that(&url).map_err(|e| e.to_string())?;
+async fn shell_open_external(url: String) -> Result<(), CommandError> {
+    let url = url.trim().to_string();
+    if !url.starts_with("https://") && !url.starts_with("http://") {
+        return Err(CommandError::invalid_input(
+            "Only HTTP and HTTPS URLs are allowed",
+        ));
     }
+    if url.len() > 2048 {
+        return Err(CommandError::invalid_input("URL too long"));
+    }
+    open::that(&url).map_err(|e| CommandError::io(format!("Failed to open URL: {}", e)))?;
     Ok(())
 }
 
 #[tauri::command]
-async fn notify_show(app: AppHandle, title: String, body: String) -> Result<(), String> {
+async fn notify_show(app: AppHandle, title: String, body: String) -> Result<(), CommandError> {
+    let title = title.trim().to_string();
+    let body = body.trim().to_string();
+    if title.is_empty() {
+        return Err(CommandError::invalid_input(
+            "Notification title is required",
+        ));
+    }
+    if title.len() > MAX_NOTIFY_TITLE_LENGTH {
+        return Err(CommandError::invalid_input("Notification title too long"));
+    }
+    if body.len() > MAX_NOTIFY_BODY_LENGTH {
+        return Err(CommandError::invalid_input("Notification body too long"));
+    }
     use tauri_plugin_notification::NotificationExt;
     app.notification()
         .builder()
         .title(&title)
         .body(&body)
         .show()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| CommandError::io(format!("Failed to show notification: {}", e)))?;
     Ok(())
 }
 
@@ -92,8 +64,21 @@ struct ToastState {
     pending_data: Mutex<Option<serde_json::Value>>,
 }
 
+const MAX_TOAST_WIDTH: u64 = 800;
+const MIN_TOAST_WIDTH: u64 = 260;
+const DEFAULT_TOAST_WIDTH: f64 = 380.0;
+const TOAST_INNER_HEIGHT: f64 = 150.0;
+const TOAST_MIN_WIDTH: f64 = 200.0;
+const TOAST_MIN_HEIGHT: f64 = 80.0;
+
 #[tauri::command]
-async fn toast_show(app: AppHandle, data: serde_json::Value) -> Result<(), String> {
+async fn toast_show(app: AppHandle, data: serde_json::Value) -> Result<(), CommandError> {
+    if !data.is_object() {
+        return Err(CommandError::invalid_input(
+            "Toast data must be a JSON object",
+        ));
+    }
+
     if let Some(state) = app.try_state::<ToastState>() {
         if let Ok(mut pending) = state.pending_data.lock() {
             *pending = Some(data.clone());
@@ -106,7 +91,7 @@ async fn toast_show(app: AppHandle, data: serde_json::Value) -> Result<(), Strin
             let _ = window.set_focus();
         }
         app.emit("toast:show:event", data)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| CommandError::unknown(format!("Emit failed: {}", e)))?;
         return Ok(());
     }
 
@@ -114,8 +99,8 @@ async fn toast_show(app: AppHandle, data: serde_json::Value) -> Result<(), Strin
         .get("config")
         .and_then(|c| c.get("maxWidth"))
         .and_then(|v| v.as_u64())
-        .map(|w| w.clamp(260, 800) as f64)
-        .unwrap_or(380.0);
+        .map(|w| w.clamp(MIN_TOAST_WIDTH, MAX_TOAST_WIDTH) as f64)
+        .unwrap_or(DEFAULT_TOAST_WIDTH);
 
     let builder = tauri::WebviewWindowBuilder::new(
         &app,
@@ -123,8 +108,8 @@ async fn toast_show(app: AppHandle, data: serde_json::Value) -> Result<(), Strin
         tauri::WebviewUrl::App("toast.html".into()),
     )
     .title("")
-    .inner_size(width, 150.0)
-    .min_inner_size(200.0, 80.0)
+    .inner_size(width, TOAST_INNER_HEIGHT)
+    .min_inner_size(TOAST_MIN_WIDTH, TOAST_MIN_HEIGHT)
     .always_on_top(true)
     .decorations(false)
     .transparent(true)
@@ -134,12 +119,14 @@ async fn toast_show(app: AppHandle, data: serde_json::Value) -> Result<(), Strin
 
     let window = builder
         .build()
-        .map_err(|e| format!("Failed to create toast window: {}", e))?;
+        .map_err(|e| CommandError::unknown(format!("Failed to create toast window: {}", e)))?;
 
     let _ = window.set_always_on_top(true);
 
-    // Position at top-right
-    if let Some(monitor) = window.current_monitor().map_err(|e| e.to_string())? {
+    if let Some(monitor) = window
+        .current_monitor()
+        .map_err(|e| CommandError::unknown(format!("Monitor error: {}", e)))?
+    {
         let size = monitor.size();
         let scale = monitor.scale_factor();
         let wa_w = size.width as f64 / scale;
@@ -156,7 +143,7 @@ async fn toast_show(app: AppHandle, data: serde_json::Value) -> Result<(), Strin
 }
 
 #[tauri::command]
-async fn toast_hide(app: AppHandle) -> Result<(), String> {
+async fn toast_hide(app: AppHandle) -> Result<(), CommandError> {
     if let Some(window) = app.get_webview_window("toast") {
         let _ = window.hide();
     }
@@ -164,19 +151,21 @@ async fn toast_hide(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn toast_set_position(app: AppHandle, x: i32, y: i32) -> Result<(), String> {
+async fn toast_set_position(app: AppHandle, x: i32, y: i32) -> Result<(), CommandError> {
     if let Some(window) = app.get_webview_window("toast") {
         window
             .set_position(tauri::PhysicalPosition::new(x, y))
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| CommandError::unknown(format!("Position error: {}", e)))?;
     }
     Ok(())
 }
 
 #[tauri::command]
-async fn toast_get_position(app: AppHandle) -> Result<Option<(i32, i32)>, String> {
+async fn toast_get_position(app: AppHandle) -> Result<Option<(i32, i32)>, CommandError> {
     if let Some(window) = app.get_webview_window("toast") {
-        let pos = window.outer_position().map_err(|e| e.to_string())?;
+        let pos = window
+            .outer_position()
+            .map_err(|e| CommandError::unknown(format!("Position error: {}", e)))?;
         Ok(Some((pos.x, pos.y)))
     } else {
         Ok(None)
@@ -184,7 +173,7 @@ async fn toast_get_position(app: AppHandle) -> Result<Option<(i32, i32)>, String
 }
 
 #[tauri::command]
-async fn toast_get_initial(app: AppHandle) -> Result<Option<serde_json::Value>, String> {
+async fn toast_get_initial(app: AppHandle) -> Result<Option<serde_json::Value>, CommandError> {
     if let Some(state) = app.try_state::<ToastState>() {
         if let Ok(mut pending) = state.pending_data.lock() {
             let data = pending.take();
@@ -197,29 +186,47 @@ async fn toast_get_initial(app: AppHandle) -> Result<Option<serde_json::Value>, 
 // ── App lifecycle ──────────────────────────────────────────────────
 
 #[tauri::command]
-fn app_set_start_with_windows(enabled: bool) {
+fn app_set_start_with_windows(enabled: bool) -> Result<(), CommandError> {
     let key_path = r"Software\Microsoft\Windows\CurrentVersion\Run";
     let value_name = "CallerFlash";
 
     if enabled {
-        if let Ok(exe) = std::env::current_exe() {
-            let exe_str = exe.to_string_lossy().to_string();
-            let _ = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER)
-                .open_subkey_with_flags(key_path, winreg::enums::KEY_SET_VALUE)
-                .and_then(|key| key.set_value(value_name, &exe_str));
-        }
+        let exe = std::env::current_exe()
+            .map_err(|e| CommandError::io(format!("Cannot get exe path: {}", e)))?;
+        let exe_str = exe.to_string_lossy().to_string();
+        use winreg::enums::KEY_SET_VALUE;
+        use winreg::RegKey;
+        RegKey::predef(winreg::enums::HKEY_CURRENT_USER)
+            .open_subkey_with_flags(key_path, KEY_SET_VALUE)
+            .and_then(|key| key.set_value(value_name, &exe_str))
+            .map_err(|e| CommandError::io(format!("Failed to set startup registry: {}", e)))?;
     } else {
-        let _ = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER)
-            .open_subkey_with_flags(key_path, winreg::enums::KEY_SET_VALUE)
-            .and_then(|key| key.delete_value(value_name));
+        use winreg::enums::KEY_SET_VALUE;
+        use winreg::RegKey;
+        RegKey::predef(winreg::enums::HKEY_CURRENT_USER)
+            .open_subkey_with_flags(key_path, KEY_SET_VALUE)
+            .and_then(|key| key.delete_value(value_name))
+            .map_err(|e| CommandError::io(format!("Failed to remove startup registry: {}", e)))?;
     }
+    Ok(())
+}
+
+// ── Startup check command ──────────────────────────────────────────
+
+#[tauri::command]
+fn run_startup_checks(app: AppHandle) -> error::StartupReport {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+    startup::run_self_check(data_dir)
 }
 
 // ── App entry point ────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::default().build())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
@@ -231,7 +238,6 @@ pub fn run() {
             });
             tray::setup_tray(app.handle())?;
 
-            // Intercept close to hide to tray instead of quitting
             if let Some(main_window) = app.get_webview_window("main") {
                 let app_handle = app.handle().clone();
                 main_window.on_window_event(move |event| {
@@ -243,7 +249,6 @@ pub fn run() {
                 });
             }
 
-            // Wire up window events from tauri-bridge.ts
             let app_handle = app.handle().clone();
             let _ = app.listen("window:minimize", move |_| {
                 if let Some(w) = app_handle.get_webview_window("main") {
@@ -272,6 +277,24 @@ pub fn run() {
                     let _ = w.hide();
                 }
             });
+
+            let data_dir = app
+                .path()
+                .app_data_dir()
+                .unwrap_or_else(|_| std::path::PathBuf::from("."));
+            let report = startup::run_self_check(data_dir);
+            if !report.all_ok {
+                log::warn!("[startup] Some self-checks failed — see report for details");
+            }
+            if report.os_name == "windows"
+                && !report.is_windows_11
+            {
+                log::warn!(
+                    "[startup] Running on pre-Windows 11 build {} (edition: {}) — some features may behave differently",
+                    report.os_version, report.edition
+                );
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -291,7 +314,11 @@ pub fn run() {
             toast_get_position,
             toast_get_initial,
             app_set_start_with_windows,
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+            run_startup_checks,
+        ]);
+
+    builder.run(tauri::generate_context!()).unwrap_or_else(|e| {
+        log::error!("Failed to run application: {}", e);
+        eprintln!("CallerFlash: Fatal error — {}", e);
+    });
 }

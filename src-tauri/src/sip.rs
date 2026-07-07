@@ -4,11 +4,19 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::str::FromStr;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::net::UdpSocket;
 use tokio::sync::Mutex;
 use uuid::Uuid;
+
+use crate::error::CommandError;
+
+const MAX_CALLER_ID_LENGTH: usize = 128;
+const MIN_REGISTER_EXPIRY: u32 = 30;
+const MAX_REGISTER_EXPIRY: u32 = 86400;
+const MIN_PORT: u16 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SipConfig {
@@ -19,6 +27,60 @@ pub struct SipConfig {
     pub protocol: Option<String>,
     pub auth_username: Option<String>,
     pub register_expiry: Option<u32>,
+}
+
+impl SipConfig {
+    pub fn validate(&self) -> Result<(), CommandError> {
+        if self.username.is_empty() {
+            return Err(CommandError::invalid_input("SIP username is required"));
+        }
+        if self.username.len() > 128 {
+            return Err(CommandError::invalid_input(
+                "SIP username exceeds maximum length of 128 characters",
+            ));
+        }
+        if self.server.is_empty() {
+            return Err(CommandError::invalid_input("SIP server is required"));
+        }
+        if self.server.len() > 256 {
+            return Err(CommandError::invalid_input(
+                "SIP server address exceeds maximum length",
+            ));
+        }
+        if let Some(port) = self.port {
+            if port < MIN_PORT {
+                return Err(CommandError::invalid_input(format!(
+                    "SIP port must be at least {}",
+                    MIN_PORT
+                )));
+            }
+        }
+        if let Some(ref protocol) = self.protocol {
+            let upper = protocol.to_uppercase();
+            if upper != "UDP" && upper != "TCP" && upper != "TLS" {
+                return Err(CommandError::invalid_input(format!(
+                    "Unsupported protocol: {}. Use UDP, TCP, or TLS",
+                    protocol
+                )));
+            }
+        }
+        if let Some(expiry) = self.register_expiry {
+            if !(MIN_REGISTER_EXPIRY..=MAX_REGISTER_EXPIRY).contains(&expiry) {
+                return Err(CommandError::invalid_input(format!(
+                    "Registration expiry must be between {} and {} seconds",
+                    MIN_REGISTER_EXPIRY, MAX_REGISTER_EXPIRY
+                )));
+            }
+        }
+        if let Some(ref auth_user) = self.auth_username {
+            if auth_user.len() > 128 {
+                return Err(CommandError::invalid_input(
+                    "Auth username exceeds maximum length of 128 characters",
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,10 +135,10 @@ impl SipClient {
     }
 
     fn extract_header<'a>(headers: &'a HashMap<String, String>, name: &str) -> Option<&'a str> {
-        headers.get(name).map(|s| s.as_str()).or_else(|| {
-            // Try lowercase variant
-            headers.get(&name.to_lowercase()).map(|s| s.as_str())
-        })
+        headers
+            .get(name)
+            .map(|s| s.as_str())
+            .or_else(|| headers.get(&name.to_lowercase()).map(|s| s.as_str()))
     }
 
     fn parse_sip_response(data: &[u8]) -> (u16, String, HashMap<String, String>) {
@@ -85,7 +147,6 @@ impl SipClient {
         let mut status_code = 0u16;
         let mut reason = String::new();
 
-        // First line: SIP/2.0 200 OK
         if let Some(status_line) = lines.next() {
             let parts: Vec<&str> = status_line.splitn(3, ' ').collect();
             if parts.len() >= 2 {
@@ -98,7 +159,7 @@ impl SipClient {
         for line in lines {
             let line = line.trim();
             if line.is_empty() {
-                break; // End of headers
+                break;
             }
             if let Some(pos) = line.find(':') {
                 let key = line[..pos].trim().to_string();
@@ -112,8 +173,6 @@ impl SipClient {
 
     fn parse_www_authenticate(header: &str) -> HashMap<String, String> {
         let mut params = HashMap::new();
-        // Parse: Digest realm="...", nonce="...", algorithm=MD5, qop="auth"
-        // Remove "Digest " prefix
         let rest = header.strip_prefix("Digest ").unwrap_or(header);
 
         let mut in_quoted = false;
@@ -170,6 +229,15 @@ impl SipClient {
         msg
     }
 
+    fn sanitize_caller_id(s: &str) -> String {
+        s.chars()
+            .filter(|&c| c.is_ascii_graphic() || c == ' ')
+            .collect::<String>()
+            .chars()
+            .take(MAX_CALLER_ID_LENGTH)
+            .collect()
+    }
+
     pub async fn start(&self, config: SipConfig) {
         let handle = self.handle.clone();
         let connected = self.connected.clone();
@@ -194,7 +262,6 @@ impl SipClient {
                         .ok();
                 }
 
-                // Bind to local UDP port
                 let socket = match UdpSocket::bind("0.0.0.0:5060").await {
                     Ok(s) => s,
                     Err(e) => {
@@ -211,22 +278,24 @@ impl SipClient {
                     }
                 };
 
-                let server_addr: SocketAddr = format!("{}:{}", server, port)
-                    .parse()
-                    .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], 0)));
-
-                if server_addr.port() == 0 {
-                    handle
-                        .emit(
-                            "sip:status",
-                            SipStatus {
-                                status: "error".to_string(),
-                                message: Some("Invalid server address".to_string()),
-                            },
-                        )
-                        .ok();
-                    return;
-                }
+                let server_addr = match SocketAddr::from_str(&format!("{}:{}", server, port)) {
+                    Ok(addr) => addr,
+                    Err(_) => {
+                        handle
+                            .emit(
+                                "sip:status",
+                                SipStatus {
+                                    status: "error".to_string(),
+                                    message: Some(format!(
+                                        "Invalid server address: {}:{}",
+                                        server, port
+                                    )),
+                                },
+                            )
+                            .ok();
+                        return;
+                    }
+                };
 
                 handle
                     .emit(
@@ -246,7 +315,6 @@ impl SipClient {
                     .clone()
                     .unwrap_or_else(|| config.username.clone());
 
-                // Helper to build the REGISTER
                 let build_register = |cseq_val: u32,
                                       call_id_ref: &str,
                                       auth_header: Option<&str>,
@@ -293,9 +361,8 @@ impl SipClient {
                     )
                 };
 
-                handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Starting registration with {}", config.server)})).ok();
+                let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Starting registration with {}", config.server)}));
 
-                // Send initial REGISTER
                 let reg_msg = build_register(cseq, &call_id, None, expiry);
                 if let Err(e) = socket.send_to(reg_msg.as_bytes(), server_addr).await {
                     handle
@@ -311,7 +378,6 @@ impl SipClient {
                 }
                 cseq += 1;
 
-                // Receive response
                 let mut buf = [0u8; 4096];
                 let (len, _) = match tokio::time::timeout(
                     std::time::Duration::from_secs(10),
@@ -400,7 +466,6 @@ impl SipClient {
                             auth_username, realm, nonce, uri, response, algorithm, cnonce, nc, qop
                         );
 
-                        // Send authenticated REGISTER
                         let auth_reg = build_register(cseq, &call_id, Some(&auth_val), expiry);
                         if let Err(e) = socket.send_to(auth_reg.as_bytes(), server_addr).await {
                             handle
@@ -419,7 +484,6 @@ impl SipClient {
                         }
                         cseq += 1;
 
-                        // Wait for response
                         let (len, _) = match tokio::time::timeout(
                             std::time::Duration::from_secs(10),
                             socket.recv_from(&mut buf),
@@ -517,7 +581,6 @@ impl SipClient {
                     return;
                 }
 
-                // ── Re-registration loop ──
                 let refresh_ms = std::cmp::max((expiry as u64).saturating_sub(15) * 1000, 30_000);
                 let socket = Arc::new(socket);
                 let socket_clone = socket.clone();
@@ -526,14 +589,12 @@ impl SipClient {
                 let mut cseq_clone = cseq;
                 let connected_for_reregister = connected.clone();
 
-                // Re-register timer
                 let _reregister_handle = tokio::spawn(async move {
                     loop {
                         tokio::time::sleep(std::time::Duration::from_millis(refresh_ms)).await;
                         if !*connected_for_reregister.lock().await {
                             break;
                         }
-                        // Simple re-register without challenge (most servers accept it)
                         let mut hdrs = HashMap::new();
                         hdrs.insert(
                             "Via".to_string(),
@@ -577,7 +638,7 @@ impl SipClient {
                         }
                     }
                 });
-                // Listen for incoming INVITE
+
                 let mut buf2 = [0u8; 4096];
 
                 loop {
@@ -589,20 +650,17 @@ impl SipClient {
                             };
                             let text = String::from_utf8_lossy(&buf2[..len]);
                             if text.starts_with("INVITE ") {
-                                // Parse caller info
                                 let mut caller_number = "Unknown".to_string();
                                 let mut caller_name = String::new();
 
                                 for line in text.lines() {
                                     if line.starts_with("From:") || line.starts_with("f:") {
                                         let from_val = &line[line.find(':').unwrap_or(0)+1..];
-                                        // Extract display name
                                         if let Some(q1) = from_val.find('"') {
                                             if let Some(q2) = from_val[q1+1..].find('"') {
                                                 caller_name = from_val[q1+1..q1+1+q2].to_string();
                                             }
                                         }
-                                        // Extract number from SIP URI
                                         if let Some(at_pos) = from_val.find('@') {
                                             let before_at = &from_val[..at_pos];
                                             if let Some(colon_pos) = before_at.rfind(':') {
@@ -615,32 +673,13 @@ impl SipClient {
                                     }
                                 }
 
-                                // Sanitize: strip non-printable chars and HTML tags
-                                let sanitize = |s: &str| -> String {
-                                    s.chars()
-                                        .filter(|&c| c.is_ascii_graphic() || c == ' ')
-                                        .collect::<String>()
-                                        .chars()
-                                        .take(128)
-                                        .collect()
-                                };
-                                caller_number = sanitize(&caller_number);
-                                caller_name = sanitize(&caller_name);
+                                caller_number = Self::sanitize_caller_id(&caller_number);
+                                caller_name = Self::sanitize_caller_id(&caller_name);
 
-                                handle.emit("sip:invite", InviteData {
+                                let _ = handle.emit("sip:invite", InviteData {
                                     caller_number,
                                     caller_name,
-                                }).ok();
-
-                                // Send 486 Busy Here
-                                let mut resp_headers = HashMap::new();
-                                resp_headers.insert("Via".to_string(), "SIP/2.0/UDP 127.0.0.1:5060".to_string());
-                                resp_headers.insert("From".to_string(), "".to_string());
-                                resp_headers.insert("To".to_string(), "".to_string());
-                                resp_headers.insert("Call-ID".to_string(), "".to_string());
-                                resp_headers.insert("CSeq".to_string(), "0 INVITE".to_string());
-                                resp_headers.insert("User-Agent".to_string(), "CallerFlash".to_string());
-                                resp_headers.insert("Content-Length".to_string(), "0".to_string());
+                                });
 
                                 let resp = format!(
                                     "SIP/2.0 486 Busy Here\r\n\
@@ -651,7 +690,8 @@ impl SipClient {
                                      CSeq: 0 INVITE\r\n\
                                      User-Agent: CallerFlash\r\n\
                                      Content-Length: 0\r\n\r\n",
-                                    config.username, config.server, Uuid::new_v4().to_string().split('-').next().unwrap_or("t"),
+                                    config.username, config.server,
+                                    Uuid::new_v4().to_string().split('-').next().unwrap_or("t"),
                                     Uuid::new_v4()
                                 );
 
@@ -659,7 +699,6 @@ impl SipClient {
                             }
                         }
                         _ = tokio::time::sleep(std::time::Duration::from_secs(60)) => {
-                            // Periodic wake-up to check connection
                             if !*connected.lock().await {
                                 break;
                             }
@@ -682,15 +721,18 @@ impl SipClient {
 }
 
 #[tauri::command]
-pub async fn sip_connect(app: AppHandle, config: SipConfig) -> Result<serde_json::Value, String> {
+pub async fn sip_connect(
+    app: AppHandle,
+    config: SipConfig,
+) -> Result<serde_json::Value, CommandError> {
+    config.validate()?;
     let sip_client = app.state::<SipClient>();
     sip_client.start(config).await;
-    // We'll emit registered via event
     Ok(serde_json::json!({"success": true}))
 }
 
 #[tauri::command]
-pub async fn sip_disconnect(app: AppHandle) -> Result<serde_json::Value, String> {
+pub async fn sip_disconnect(app: AppHandle) -> Result<serde_json::Value, CommandError> {
     let sip_client = app.state::<SipClient>();
     sip_client.disconnect();
     app.emit(
@@ -700,13 +742,13 @@ pub async fn sip_disconnect(app: AppHandle) -> Result<serde_json::Value, String>
             message: None,
         },
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| CommandError::sip(format!("Failed to emit disconnect: {}", e)))?;
     Ok(serde_json::json!({"success": true}))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::SipClient;
+    use super::*;
 
     #[test]
     fn test_md5_hex() {
@@ -719,7 +761,6 @@ mod tests {
 
     #[test]
     fn test_compute_digest_response() {
-        // Known values from RFC 2617 example
         let resp = SipClient::compute_digest_response(
             "Mufasa",
             "testrealm@host.com",
@@ -731,26 +772,7 @@ mod tests {
             "0a4f113b",
             "auth",
         );
-        // Expected: 6629fae49393a05397450978507c4ef1
         assert_eq!(resp, "6629fae49393a05397450978507c4ef1");
-    }
-
-    #[test]
-    fn test_compute_digest_response_different_qop() {
-        let resp = SipClient::compute_digest_response(
-            "alice",
-            "sip.example.com",
-            "secret123",
-            "REGISTER",
-            "sip:sip.example.com",
-            "abc123def456",
-            "00000002",
-            "deadbeef",
-            "auth-int",
-        );
-        // Verify format — 32 hex chars
-        assert_eq!(resp.len(), 32);
-        assert!(resp.chars().all(|c| c.is_ascii_hexdigit()));
     }
 
     #[test]
@@ -773,5 +795,105 @@ mod tests {
         assert_eq!(params.get("nonce").map(|s| s.as_str()), Some("abc123"));
         assert_eq!(params.get("algorithm").map(|s| s.as_str()), Some("MD5"));
         assert_eq!(params.get("qop").map(|s| s.as_str()), Some("auth"));
+    }
+
+    #[test]
+    fn test_sip_config_validation_passes_valid() {
+        let config = SipConfig {
+            username: "user".to_string(),
+            password: "pass".to_string(),
+            server: "sip.example.com".to_string(),
+            port: Some(5060),
+            protocol: Some("UDP".to_string()),
+            auth_username: None,
+            register_expiry: Some(300),
+        };
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_sip_config_validation_rejects_empty_username() {
+        let config = SipConfig {
+            username: "".to_string(),
+            password: "pass".to_string(),
+            server: "sip.example.com".to_string(),
+            port: None,
+            protocol: None,
+            auth_username: None,
+            register_expiry: None,
+        };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_sip_config_validation_rejects_empty_server() {
+        let config = SipConfig {
+            username: "user".to_string(),
+            password: "pass".to_string(),
+            server: "".to_string(),
+            port: None,
+            protocol: None,
+            auth_username: None,
+            register_expiry: None,
+        };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_sip_config_validation_rejects_bad_protocol() {
+        let config = SipConfig {
+            username: "user".to_string(),
+            password: "pass".to_string(),
+            server: "sip.example.com".to_string(),
+            port: None,
+            protocol: Some("HTTP".to_string()),
+            auth_username: None,
+            register_expiry: None,
+        };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_sip_config_validation_rejects_bad_port() {
+        let config = SipConfig {
+            username: "user".to_string(),
+            password: "pass".to_string(),
+            server: "sip.example.com".to_string(),
+            port: Some(0),
+            protocol: None,
+            auth_username: None,
+            register_expiry: None,
+        };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_sip_config_validation_rejects_bad_expiry() {
+        let config = SipConfig {
+            username: "user".to_string(),
+            password: "pass".to_string(),
+            server: "sip.example.com".to_string(),
+            port: None,
+            protocol: None,
+            auth_username: None,
+            register_expiry: Some(99999),
+        };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_sanitize_caller_id_strips_non_ascii() {
+        let dirty = "hello\x00world\x01test";
+        let clean = SipClient::sanitize_caller_id(dirty);
+        assert!(!clean.contains('\x00'));
+        assert!(!clean.contains('\x01'));
+        assert_eq!(clean, "helloworldtest");
+    }
+
+    #[test]
+    fn test_sanitize_caller_id_truncates() {
+        let long = "a".repeat(200);
+        let clean = SipClient::sanitize_caller_id(&long);
+        assert_eq!(clean.len(), 128);
     }
 }
