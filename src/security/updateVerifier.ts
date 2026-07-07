@@ -19,11 +19,9 @@
  * runtime — that would itself be a hijack vector.
  */
 
-// Public key in raw 32-byte Ed25519 form, base64-encoded.
-// Generated once and pinned here. Rotate ONLY by shipping a new app
-// version that contains the new key — never fetch the key from network.
-export const RELEASE_SIGNING_PUBLIC_KEY_B64 =
-  '/JxOdXdU5qZLF7xHZDLD/fnXJV814KqTB3DVx7WWiKg=';
+// Public key is pinned in Rust (update.rs). Frontend delegates to
+// cmd_verify_update; the constant here is unused — retained for
+// channel-policy UI messages that reference the key fingerprint.
 
 // Allow-listed GitHub owner/repo. Hard-coded so a compromised
 // settings/config cannot redirect updates to an attacker repo.
@@ -184,7 +182,7 @@ export async function verifyUpdateArtifact(
       name: 'Ed25519 signature',
       passed: sigOk,
       detail: sigOk
-        ? `Verified against pinned key (${RELEASE_SIGNING_PUBLIC_KEY_B64.slice(0, 12)}…)`
+        ? 'Verified against pinned key'
         : 'Signature verification failed',
     });
     if (!sigOk) return { approved: false, steps };

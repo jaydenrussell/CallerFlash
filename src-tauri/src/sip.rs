@@ -19,7 +19,6 @@ const MAX_REGISTER_EXPIRY: u32 = 86400;
 const MIN_PORT: u16 = 1;
 const SIP_INVITE_CHANNEL_SIZE: usize = 50;
 
-
 #[derive(Debug, Clone)]
 pub struct SipConfig {
     pub username: String,
@@ -778,7 +777,11 @@ impl SipClient {
 
                         if let Err(e) = socket_clone.send_to(msg.as_bytes(), server_addr).await {
                             consecutive_failures += 1;
-                            log::error!("[sip] Re-register send error: {} (failure #{})", e, consecutive_failures);
+                            log::error!(
+                                "[sip] Re-register send error: {} (failure #{})",
+                                e,
+                                consecutive_failures
+                            );
                         } else {
                             consecutive_failures = 0;
                         }
