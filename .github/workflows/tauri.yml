@@ -98,6 +98,10 @@ jobs:
         shell: bash
         run: cargo fmt --check --manifest-path src-tauri/Cargo.toml
 
+      - name: Lock file check
+        shell: bash
+        run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+
       - name: Rust lint
         shell: bash
         run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
