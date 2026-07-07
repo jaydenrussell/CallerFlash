@@ -17,6 +17,7 @@ const MAX_CALLER_ID_LENGTH: usize = 128;
 const MIN_REGISTER_EXPIRY: u32 = 30;
 const MAX_REGISTER_EXPIRY: u32 = 86400;
 const MIN_PORT: u16 = 1;
+const SIP_INVITE_CHANNEL_SIZE: usize = 50;
 
 
 #[derive(Debug, Clone)]
@@ -480,7 +481,7 @@ impl SipClient {
                     )
                 };
 
-                let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Starting registration — server: {}:{}, username: {}, auth_username: {}, expiry: {}, protocol: {}", server, port, config.username, auth_username, expiry, config.protocol.as_deref().unwrap_or("UDP"))}));
+                let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Starting registration — server: {}:{}, expiry: {}, protocol: {}", server, port, expiry, config.protocol.as_deref().unwrap_or("UDP"))}));
 
                 let reg_msg = build_register(cseq, &call_id, None, expiry);
                 if let Err(e) = socket.send_to(reg_msg.as_bytes(), server_addr).await {
@@ -539,7 +540,7 @@ impl SipClient {
                             .cloned()
                             .unwrap_or_else(|| "MD5".to_string());
 
-                        let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Digest challenge params — realm: {}, algorithm: {}, qop: {:?}, nonce: {} (first 8 chars: {})", realm, algorithm, qop, nonce, &nonce[..nonce.len().min(8)])}));
+                        let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Digest challenge params — algorithm: {}, qop: {:?}", algorithm, qop)}));
 
                         if algorithm.to_uppercase() != "MD5" {
                             Self::safe_emit(
@@ -564,7 +565,7 @@ impl SipClient {
                             .collect();
 
                         let uri = format!("sip:{}:{}", config.server, port);
-                        let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Computed digest — username: {}, auth_username: {}, realm: {}, uri: {}, algorithm: {}, qop: {:?}", config.username, auth_username, realm, uri, algorithm, qop)}));
+                        let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Computed digest — algorithm: {}, qop: {:?}", algorithm, qop)}));
                         let response = Self::compute_digest_response(
                             &auth_username,
                             &realm,
@@ -596,7 +597,7 @@ impl SipClient {
                             ),
                         };
 
-                        let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Sending authenticated REGISTER to {}:{} (username: {}, realm: {})", server, port, auth_username, realm)}));
+                        let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Sending authenticated REGISTER to {}:{}", server, port)}));
                         let auth_reg = build_register(cseq, &call_id, Some(&auth_val), expiry);
                         if let Err(e) = socket.send_to(auth_reg.as_bytes(), server_addr).await {
                             Self::safe_emit(
@@ -724,8 +725,12 @@ impl SipClient {
                 let connected_for_reregister = connected.clone();
 
                 let _reregister_handle = tokio::spawn(async move {
+                    let mut consecutive_failures = 0u32;
                     loop {
-                        tokio::time::sleep(std::time::Duration::from_millis(refresh_ms)).await;
+                        let base_ms = refresh_ms;
+                        let backoff_ms = base_ms * 2u64.pow(consecutive_failures.min(6));
+                        let delay_ms = backoff_ms.min(3_600_000);
+                        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
                         if !*connected_for_reregister.lock().await {
                             break;
                         }
@@ -772,8 +777,20 @@ impl SipClient {
                         cseq_clone += 1;
 
                         if let Err(e) = socket_clone.send_to(msg.as_bytes(), server_addr).await {
-                            log::error!("[sip] Re-register send error: {}", e);
+                            consecutive_failures += 1;
+                            log::error!("[sip] Re-register send error: {} (failure #{})", e, consecutive_failures);
+                        } else {
+                            consecutive_failures = 0;
                         }
+                    }
+                });
+
+                let (invite_tx, mut invite_rx) =
+                    tokio::sync::mpsc::channel::<InviteData>(SIP_INVITE_CHANNEL_SIZE);
+                let handle_for_dispatch = handle.clone();
+                let _dispatch_task = tokio::spawn(async move {
+                    while let Some(invite) = invite_rx.recv().await {
+                        Self::safe_emit(&handle_for_dispatch, "sip:invite", invite);
                     }
                 });
 
@@ -814,10 +831,12 @@ impl SipClient {
                                 caller_number = Self::sanitize_caller_id(&caller_number);
                                 caller_name = Self::sanitize_caller_id(&caller_name);
 
-                                Self::safe_emit(&handle, "sip:invite", InviteData {
+                                if invite_tx.try_send(InviteData {
                                     caller_number,
                                     caller_name,
-                                });
+                                }).is_err() {
+                                    log::warn!("[sip] Dropping INVITE — event channel full");
+                                }
 
                                 let resp = format!(
                                     "SIP/2.0 486 Busy Here\r\n\
@@ -837,7 +856,7 @@ impl SipClient {
                                 let _ = socket.send_to(resp.as_bytes(), server_addr).await;
                             }
                         }
-                        _ = tokio::time::sleep(std::time::Duration::from_secs(60)) => {
+                        _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {
                             if !*connected.lock().await {
                                 break;
                             }
