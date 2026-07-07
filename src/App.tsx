@@ -59,7 +59,8 @@ export default function App() {
 
   useEffect(() => {
     if (appPreferences.startWithWindows) {
-      addDiagnosticLog({ level: 'info', category: 'SYSTEM', message: 'Start with Windows preference loaded' });
+      addDiagnosticLog({ level: 'info', category: 'SYSTEM', message: 'Ensuring Start with Windows registry key…' });
+      window.callerflash?.app?.setStartWithWindows(true);
     }
   }, []);
 

@@ -211,23 +211,29 @@ fn app_set_start_with_windows(enabled: bool) -> Result<(), CommandError> {
     let key_path = r"Software\Microsoft\Windows\CurrentVersion\Run";
     let value_name = "CallerFlash";
 
+    use winreg::enums::KEY_SET_VALUE;
+    use winreg::RegKey;
+    let key = RegKey::predef(winreg::enums::HKEY_CURRENT_USER)
+        .open_subkey_with_flags(key_path, KEY_SET_VALUE)
+        .map_err(|e| CommandError::io(format!("Failed to open Run registry key: {}", e)))?;
+
     if enabled {
         let exe = std::env::current_exe()
             .map_err(|e| CommandError::io(format!("Cannot get exe path: {}", e)))?;
         let exe_str = exe.to_string_lossy().to_string();
-        use winreg::enums::KEY_SET_VALUE;
-        use winreg::RegKey;
-        RegKey::predef(winreg::enums::HKEY_CURRENT_USER)
-            .open_subkey_with_flags(key_path, KEY_SET_VALUE)
-            .and_then(|key| key.set_value(value_name, &exe_str))
+        // Quote the path if it contains spaces so Windows Run dialog parses it correctly
+        let quoted = if exe_str.contains(' ') {
+            format!("\"{}\"", exe_str)
+        } else {
+            exe_str
+        };
+        key.set_value(value_name, &quoted)
             .map_err(|e| CommandError::io(format!("Failed to set startup registry: {}", e)))?;
+        log::info!("[startup] Set Start with Windows registry: {}", quoted);
     } else {
-        use winreg::enums::KEY_SET_VALUE;
-        use winreg::RegKey;
-        RegKey::predef(winreg::enums::HKEY_CURRENT_USER)
-            .open_subkey_with_flags(key_path, KEY_SET_VALUE)
-            .and_then(|key| key.delete_value(value_name))
+        key.delete_value(value_name)
             .map_err(|e| CommandError::io(format!("Failed to remove startup registry: {}", e)))?;
+        log::info!("[startup] Removed Start with Windows registry");
     }
     Ok(())
 }
