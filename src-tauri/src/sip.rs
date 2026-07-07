@@ -1,7 +1,8 @@
 use futures_util::FutureExt;
 use md5::{Digest, Md5};
 use rand::Rng;
-use serde::{Deserialize, Serialize};
+use secrecy::{ExposeSecret, SecretString};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
@@ -18,15 +19,55 @@ const MAX_REGISTER_EXPIRY: u32 = 86400;
 const MIN_PORT: u16 = 1;
 
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct SipConfig {
     pub username: String,
-    pub password: String,
+    pub password: SecretString,
     pub server: String,
     pub port: Option<u16>,
     pub protocol: Option<String>,
     pub auth_username: Option<String>,
     pub register_expiry: Option<u32>,
+}
+
+impl Serialize for SipConfig {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut st = s.serialize_struct("SipConfig", 7)?;
+        st.serialize_field("username", &self.username)?;
+        st.serialize_field("password", self.password.expose_secret())?;
+        st.serialize_field("server", &self.server)?;
+        st.serialize_field("port", &self.port)?;
+        st.serialize_field("protocol", &self.protocol)?;
+        st.serialize_field("auth_username", &self.auth_username)?;
+        st.serialize_field("register_expiry", &self.register_expiry)?;
+        st.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for SipConfig {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct Raw {
+            username: String,
+            password: String,
+            server: String,
+            port: Option<u16>,
+            protocol: Option<String>,
+            auth_username: Option<String>,
+            register_expiry: Option<u32>,
+        }
+        let raw = Raw::deserialize(d)?;
+        Ok(Self {
+            username: raw.username,
+            password: SecretString::from(raw.password),
+            server: raw.server,
+            port: raw.port,
+            protocol: raw.protocol,
+            auth_username: raw.auth_username,
+            register_expiry: raw.register_expiry,
+        })
+    }
 }
 
 impl SipConfig {
@@ -91,7 +132,7 @@ impl SipConfig {
                 )));
             }
         }
-        if self.password.len() > 512 {
+        if self.password.expose_secret().len() > 512 {
             return Err(CommandError::invalid_input(
                 "SIP password exceeds maximum length of 512 characters",
             ));
@@ -527,7 +568,7 @@ impl SipClient {
                         let response = Self::compute_digest_response(
                             &auth_username,
                             &realm,
-                            &config.password,
+                            config.password.expose_secret(),
                             "REGISTER",
                             &uri,
                             &nonce,
@@ -931,23 +972,25 @@ mod tests {
 
     #[test]
     fn test_sip_config_validation_passes_valid() {
-        let config = SipConfig {
-            username: "user".to_string(),
-            password: "pass".to_string(),
-            server: "sip.example.com".to_string(),
-            port: Some(5060),
-            protocol: Some("UDP".to_string()),
-            auth_username: None,
-            register_expiry: Some(300),
-        };
-        assert!(config.validate().is_ok());
+        fn test_config(pw: &str) -> SipConfig {
+            SipConfig {
+                username: "user".to_string(),
+                password: SecretString::from(pw),
+                server: "sip.example.com".to_string(),
+                port: Some(5060),
+                protocol: Some("UDP".to_string()),
+                auth_username: None,
+                register_expiry: Some(300),
+            }
+        }
+        assert!(test_config("pass").validate().is_ok());
     }
 
     #[test]
     fn test_sip_config_validation_rejects_empty_username() {
         let config = SipConfig {
             username: "".to_string(),
-            password: "pass".to_string(),
+            password: SecretString::from("pass"),
             server: "sip.example.com".to_string(),
             port: None,
             protocol: None,
@@ -961,7 +1004,7 @@ mod tests {
     fn test_sip_config_validation_rejects_empty_server() {
         let config = SipConfig {
             username: "user".to_string(),
-            password: "pass".to_string(),
+            password: SecretString::from("pass"),
             server: "".to_string(),
             port: None,
             protocol: None,
@@ -975,7 +1018,7 @@ mod tests {
     fn test_sip_config_validation_rejects_bad_protocol() {
         let config = SipConfig {
             username: "user".to_string(),
-            password: "pass".to_string(),
+            password: SecretString::from("pass"),
             server: "sip.example.com".to_string(),
             port: None,
             protocol: Some("HTTP".to_string()),
@@ -989,7 +1032,7 @@ mod tests {
     fn test_sip_config_validation_rejects_bad_port() {
         let config = SipConfig {
             username: "user".to_string(),
-            password: "pass".to_string(),
+            password: SecretString::from("pass"),
             server: "sip.example.com".to_string(),
             port: Some(0),
             protocol: None,
@@ -1003,7 +1046,7 @@ mod tests {
     fn test_sip_config_validation_rejects_bad_expiry() {
         let config = SipConfig {
             username: "user".to_string(),
-            password: "pass".to_string(),
+            password: SecretString::from("pass"),
             server: "sip.example.com".to_string(),
             port: None,
             protocol: None,

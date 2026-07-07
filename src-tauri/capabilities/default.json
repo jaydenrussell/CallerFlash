@@ -16,7 +16,10 @@
     "core:event:default",
     "core:event:allow-listen",
     "core:event:allow-emit",
-    "shell:allow-open",
+    {
+      "identifier": "shell:allow-open",
+      "allow": [{ "url": "https://*" }]
+    },
     "notification:default",
     "notification:allow-notify",
     "notification:allow-is-permission-granted",

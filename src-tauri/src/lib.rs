@@ -240,6 +240,7 @@ async fn toast_get_initial(app: AppHandle) -> Result<Option<serde_json::Value>, 
 // ── App lifecycle ──────────────────────────────────────────────────
 
 #[tauri::command]
+#[cfg(target_os = "windows")]
 fn app_set_start_with_windows(enabled: bool) -> Result<(), CommandError> {
     let key_path = r"Software\Microsoft\Windows\CurrentVersion\Run";
     let value_name = "CallerFlash";
@@ -268,6 +269,13 @@ fn app_set_start_with_windows(enabled: bool) -> Result<(), CommandError> {
             .map_err(|e| CommandError::io(format!("Failed to remove startup registry: {}", e)))?;
         log::info!("[startup] Removed Start with Windows registry");
     }
+    Ok(())
+}
+
+#[tauri::command]
+#[cfg(not(target_os = "windows"))]
+fn app_set_start_with_windows(_enabled: bool) -> Result<(), CommandError> {
+    log::info!("[startup] Start with Windows not supported on this platform");
     Ok(())
 }
 
