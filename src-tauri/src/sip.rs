@@ -377,7 +377,7 @@ impl SipClient {
                     )
                 };
 
-                let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Starting registration with {}", config.server)}));
+                let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Starting registration — server: {}:{}, username: {}, auth_username: {}, expiry: {}, protocol: {}", server, port, config.username, auth_username, expiry, config.protocol.as_deref().unwrap_or("UDP"))}));
 
                 let reg_msg = build_register(cseq, &call_id, None, expiry);
                 if let Err(e) = socket.send_to(reg_msg.as_bytes(), server_addr).await {
@@ -418,7 +418,8 @@ impl SipClient {
                     }
                 };
 
-                let (status_code, _, headers) = Self::parse_sip_response(&buf[..len]);
+                let (status_code, ref reason, headers) = Self::parse_sip_response(&buf[..len]);
+                let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Initial REGISTER response — {} {} ({} headers)", status_code, reason.trim(), headers.len())}));
 
                 if status_code == 401 || status_code == 407 {
                     let auth_type = if status_code == 401 {
@@ -427,6 +428,8 @@ impl SipClient {
                         "Proxy-Authenticate"
                     };
                     let auth_header = Self::extract_header(&headers, auth_type);
+
+                    let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Received {} challenge — raw header: {:?}", status_code, auth_header)}));
 
                     if let Some(www_auth) = auth_header {
                         let params = Self::parse_www_authenticate(www_auth);
@@ -440,6 +443,8 @@ impl SipClient {
                             .get("algorithm")
                             .cloned()
                             .unwrap_or_else(|| "MD5".to_string());
+
+                        let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Digest challenge params — realm: {}, algorithm: {}, qop: {}, nonce: {} (first 8 chars: {})", realm, algorithm, qop, nonce, &nonce[..nonce.len().min(8)])}));
 
                         if algorithm.to_uppercase() != "MD5" {
                             handle
@@ -465,6 +470,7 @@ impl SipClient {
                             .collect();
 
                         let uri = format!("sip:{}:{}", config.server, port);
+                        let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Computed digest — username: {}, auth_username: {}, realm: {}, uri: {}, algorithm: {}", config.username, auth_username, realm, uri, algorithm)}));
                         let response = Self::compute_digest_response(
                             &auth_username,
                             &realm,
@@ -482,6 +488,7 @@ impl SipClient {
                             auth_username, realm, nonce, uri, response, algorithm, cnonce, nc, qop
                         );
 
+                        let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Sending authenticated REGISTER to {}:{} (username: {}, realm: {})", server, port, auth_username, realm)}));
                         let auth_reg = build_register(cseq, &call_id, Some(&auth_val), expiry);
                         if let Err(e) = socket.send_to(auth_reg.as_bytes(), server_addr).await {
                             handle
@@ -524,7 +531,8 @@ impl SipClient {
                             }
                         };
 
-                        let (status_code, reason, _headers) = Self::parse_sip_response(&buf[..len]);
+                        let (status_code, ref reason, _headers) = Self::parse_sip_response(&buf[..len]);
+                        let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Authenticated REGISTER response — {} {} ({} headers)", status_code, reason.trim(), _headers.len())}));
                         if (200..300).contains(&status_code) {
                             *connected.lock().await = true;
                             handle
@@ -538,6 +546,9 @@ impl SipClient {
                                 .ok();
                             log::info!("[sip] Registered successfully");
                         } else {
+                            let raw_response = String::from_utf8_lossy(&buf[..len]);
+                            let detail = raw_response.lines().take(10).collect::<Vec<_>>().join("\n");
+                            log::error!("[sip] Registration failed: {} {} — full response:\n{}", status_code, reason.trim(), detail);
                             handle
                                 .emit(
                                     "sip:status",
@@ -578,6 +589,11 @@ impl SipClient {
                         .ok();
                     log::info!("[sip] Registered successfully (no auth)");
                 } else {
+                    let raw = String::from_utf8_lossy(&buf[..len]);
+                    let first_line = raw.lines().next().unwrap_or("unknown");
+                    let detail = raw.lines().take(10).collect::<Vec<_>>().join("\n");
+                    log::error!("[sip] Initial REGISTER failed: {} — full response:\n{}", first_line, detail);
+                    let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Initial REGISTER failed: {} — response:\n{}", first_line, detail)}));
                     handle
                         .emit(
                             "sip:status",
@@ -586,10 +602,7 @@ impl SipClient {
                                 message: Some(format!(
                                     "Registration failed: {} {}",
                                     status_code,
-                                    String::from_utf8_lossy(&buf[..len])
-                                        .lines()
-                                        .next()
-                                        .unwrap_or("unknown")
+                                    first_line
                                 )),
                             },
                         )
