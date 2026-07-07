@@ -122,14 +122,22 @@ impl SipClient {
         nonce: &str,
         nc: &str,
         cnonce: &str,
-        qop: &str,
+        qop: Option<&str>,
     ) -> String {
         let ha1 = Self::md5_hex(&format!("{}:{}:{}", username, realm, password));
         let ha2 = Self::md5_hex(&format!("{}:{}", method, uri));
-        Self::md5_hex(&format!(
-            "{}:{}:{}:{}:{}:{}",
-            ha1, nonce, nc, cnonce, qop, ha2
-        ))
+        match qop {
+            Some(_) => Self::md5_hex(&format!(
+                "{}:{}:{}:{}:{}:{}",
+                ha1,
+                nonce,
+                nc,
+                cnonce,
+                qop.unwrap_or("auth"),
+                ha2
+            )),
+            None => Self::md5_hex(&format!("{}:{}:{}", ha1, nonce, ha2)),
+        }
     }
 
     fn extract_header<'a>(headers: &'a HashMap<String, String>, name: &str) -> Option<&'a str> {
@@ -435,16 +443,13 @@ impl SipClient {
                         let params = Self::parse_www_authenticate(www_auth);
                         let realm = params.get("realm").cloned().unwrap_or_default();
                         let nonce = params.get("nonce").cloned().unwrap_or_default();
-                        let qop = params
-                            .get("qop")
-                            .cloned()
-                            .unwrap_or_else(|| "auth".to_string());
+                        let qop = params.get("qop").cloned();
                         let algorithm = params
                             .get("algorithm")
                             .cloned()
                             .unwrap_or_else(|| "MD5".to_string());
 
-                        let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Digest challenge params — realm: {}, algorithm: {}, qop: {}, nonce: {} (first 8 chars: {})", realm, algorithm, qop, nonce, &nonce[..nonce.len().min(8)])}));
+                        let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Digest challenge params — realm: {}, algorithm: {}, qop: {:?}, nonce: {} (first 8 chars: {})", realm, algorithm, qop, nonce, &nonce[..nonce.len().min(8)])}));
 
                         if algorithm.to_uppercase() != "MD5" {
                             handle
@@ -470,7 +475,7 @@ impl SipClient {
                             .collect();
 
                         let uri = format!("sip:{}:{}", config.server, port);
-                        let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Computed digest — username: {}, auth_username: {}, realm: {}, uri: {}, algorithm: {}", config.username, auth_username, realm, uri, algorithm)}));
+                        let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Computed digest — username: {}, auth_username: {}, realm: {}, uri: {}, algorithm: {}, qop: {:?}", config.username, auth_username, realm, uri, algorithm, qop)}));
                         let response = Self::compute_digest_response(
                             &auth_username,
                             &realm,
@@ -480,13 +485,27 @@ impl SipClient {
                             &nonce,
                             &nc,
                             &cnonce,
-                            &qop,
+                            qop.as_deref(),
                         );
 
-                        let auth_val = format!(
-                            r#"Digest username="{}", realm="{}", nonce="{}", uri="{}", response="{}", algorithm={}, cnonce="{}", nc={}, qop={}"#,
-                            auth_username, realm, nonce, uri, response, algorithm, cnonce, nc, qop
-                        );
+                        let auth_val = match &qop {
+                            Some(q) => format!(
+                                r#"Digest username="{}", realm="{}", nonce="{}", uri="{}", response="{}", algorithm={}, cnonce="{}", nc={}, qop={}"#,
+                                auth_username,
+                                realm,
+                                nonce,
+                                uri,
+                                response,
+                                algorithm,
+                                cnonce,
+                                nc,
+                                q
+                            ),
+                            None => format!(
+                                r#"Digest username="{}", realm="{}", nonce="{}", uri="{}", response="{}", algorithm={}"#,
+                                auth_username, realm, nonce, uri, response, algorithm
+                            ),
+                        };
 
                         let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Sending authenticated REGISTER to {}:{} (username: {}, realm: {})", server, port, auth_username, realm)}));
                         let auth_reg = build_register(cseq, &call_id, Some(&auth_val), expiry);
@@ -809,9 +828,25 @@ mod tests {
             "dcd98b7102dd2f0e8b11d0f600bfb0c093",
             "00000001",
             "0a4f113b",
-            "auth",
+            Some("auth"),
         );
         assert_eq!(resp, "6629fae49393a05397450978507c4ef1");
+    }
+
+    #[test]
+    fn test_compute_digest_response_no_qop() {
+        let resp = SipClient::compute_digest_response(
+            "Mufasa",
+            "testrealm@host.com",
+            "Circle Of Life",
+            "GET",
+            "/dir/index.html",
+            "dcd98b7102dd2f0e8b11d0f600bfb0c093",
+            "00000001",
+            "0a4f113b",
+            None,
+        );
+        assert_eq!(resp, "670fd8c2df070c60b045671b8b24ff02");
     }
 
     #[test]
