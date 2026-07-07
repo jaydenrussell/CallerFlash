@@ -531,7 +531,8 @@ impl SipClient {
                             }
                         };
 
-                        let (status_code, ref reason, _headers) = Self::parse_sip_response(&buf[..len]);
+                        let (status_code, ref reason, _headers) =
+                            Self::parse_sip_response(&buf[..len]);
                         let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Authenticated REGISTER response — {} {} ({} headers)", status_code, reason.trim(), _headers.len())}));
                         if (200..300).contains(&status_code) {
                             *connected.lock().await = true;
@@ -547,8 +548,14 @@ impl SipClient {
                             log::info!("[sip] Registered successfully");
                         } else {
                             let raw_response = String::from_utf8_lossy(&buf[..len]);
-                            let detail = raw_response.lines().take(10).collect::<Vec<_>>().join("\n");
-                            log::error!("[sip] Registration failed: {} {} — full response:\n{}", status_code, reason.trim(), detail);
+                            let detail =
+                                raw_response.lines().take(10).collect::<Vec<_>>().join("\n");
+                            log::error!(
+                                "[sip] Registration failed: {} {} — full response:\n{}",
+                                status_code,
+                                reason.trim(),
+                                detail
+                            );
                             handle
                                 .emit(
                                     "sip:status",
@@ -592,7 +599,11 @@ impl SipClient {
                     let raw = String::from_utf8_lossy(&buf[..len]);
                     let first_line = raw.lines().next().unwrap_or("unknown");
                     let detail = raw.lines().take(10).collect::<Vec<_>>().join("\n");
-                    log::error!("[sip] Initial REGISTER failed: {} — full response:\n{}", first_line, detail);
+                    log::error!(
+                        "[sip] Initial REGISTER failed: {} — full response:\n{}",
+                        first_line,
+                        detail
+                    );
                     let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Initial REGISTER failed: {} — response:\n{}", first_line, detail)}));
                     handle
                         .emit(
@@ -601,8 +612,7 @@ impl SipClient {
                                 status: "error".to_string(),
                                 message: Some(format!(
                                     "Registration failed: {} {}",
-                                    status_code,
-                                    first_line
+                                    status_code, first_line
                                 )),
                             },
                         )
