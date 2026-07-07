@@ -254,7 +254,7 @@ export default function App() {
     if (!window.callerflash?.onToastDiagnostic) return;
     return window.callerflash.onToastDiagnostic((data: { level: string; message: string; details?: string }) => {
       addDiagnosticLog({
-        level: data.level as any,
+        level: data.level as 'info' | 'success' | 'warning' | 'error',
         category: 'TOAST',
         message: data.message,
         details: data.details,

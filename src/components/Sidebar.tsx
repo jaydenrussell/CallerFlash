@@ -7,7 +7,7 @@ import { cn } from '../utils/cn';
 import { formatVersion } from '../utils/formatVersion';
 import logoUrl from '../assets/icon.png';
 
-const navItems: { id: TabId; label: string; icon: React.ComponentType<any> }[] = [
+const navItems: { id: TabId; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'calls', label: 'Call History', icon: Phone },
   { id: 'settings', label: 'SIP Settings', icon: Settings },

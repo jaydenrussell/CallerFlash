@@ -11,8 +11,6 @@ import { listen, emit } from '@tauri-apps/api/event';
 import { check as updaterCheck } from '@tauri-apps/plugin-updater';
 import { sanitizeSipServer } from './security/secretRedactor';
 
-let invocations = 0;
-
 const log = (...args: unknown[]) => console.log('[tauri-bridge]', ...args);
 const logError = (...args: unknown[]) => console.error('[tauri-bridge]', ...args);
 
@@ -112,10 +110,10 @@ function setup(): void {
           if (!update) {
             return { upToDate: true };
           }
-          var rawPlatforms: unknown = update.rawJson?.platforms;
-          var platforms = (typeof rawPlatforms === 'object' && rawPlatforms !== null ? rawPlatforms : {}) as Record<string, { url?: string }>;
-          var win = platforms?.['windows-x86_64'];
-          var downloadUrl = typeof win?.url === 'string' ? win.url : '';
+          const rawPlatforms: unknown = update.rawJson?.platforms;
+          const platforms = (typeof rawPlatforms === 'object' && rawPlatforms !== null ? rawPlatforms : {}) as Record<string, { url?: string }>;
+          const win = platforms?.['windows-x86_64'];
+          let downloadUrl = typeof win?.url === 'string' ? win.url : '';
           if (downloadUrl && !/^https:\/\//.test(downloadUrl)) {
             downloadUrl = '';
           }
@@ -144,7 +142,7 @@ function setup(): void {
               case 'Progress':
                 downloadedBytes += progress.data.chunkLength;
                 if (totalContentLength > 0) {
-                  var pct = Math.round((downloadedBytes / totalContentLength) * 100);
+                  const pct = Math.round((downloadedBytes / totalContentLength) * 100);
                   emit('updater:progress', { percent: pct }).catch((e) => logError('updater progress', e));
                   emit('updater:status', { status: 'downloading', progress: pct }).catch((e) => logError('updater status', e));
                 }
@@ -182,22 +180,22 @@ function setup(): void {
         return { status: currentUpdate ? 'available' : 'idle', version: currentUpdate?.version || null, path: null, error: null };
       },
       onStatus: function (callback: (data: unknown) => void) {
-        var unlisten: Promise<() => void> = listen('updater:status', function (event) {
+        const unlisten: Promise<() => void> = listen('updater:status', function (event) {
           callback(event.payload);
         }).catch(function (e) { logError('updater.onStatus', e); return function () {}; });
-        return function () { unlisten.then(function (fn) { return fn(); }).catch(function (e) { logError('updater.onStatus cleanup', e); }); };
+        return function () { void unlisten.then(function (fn) { return fn(); }).catch(function (e) { logError('updater.onStatus cleanup', e); }); };
       },
       onProgress: function (callback: (data: unknown) => void) {
-        var unlisten: Promise<() => void> = listen('updater:progress', function (event) {
+        const unlisten: Promise<() => void> = listen('updater:progress', function (event) {
           callback(event.payload);
         }).catch(function (e) { logError('updater.onProgress', e); return function () {}; });
-        return function () { unlisten.then(function (fn) { return fn(); }).catch(function (e) { logError('updater.onProgress cleanup', e); }); };
+        return function () { void unlisten.then(function (fn) { return fn(); }).catch(function (e) { logError('updater.onProgress cleanup', e); }); };
       },
       onDiagnostic: function (callback: (data: unknown) => void) {
-        var unlisten: Promise<() => void> = listen('updater:diagnostic', function (event) {
+        const unlisten: Promise<() => void> = listen('updater:diagnostic', function (event) {
           callback(event.payload);
         }).catch(function (e) { logError('updater.onDiagnostic', e); return function () {}; });
-        return function () { unlisten.then(function (fn) { return fn(); }).catch(function (e) { logError('updater.onDiagnostic cleanup', e); }); };
+        return function () { void unlisten.then(function (fn) { return fn(); }).catch(function (e) { logError('updater.onDiagnostic cleanup', e); }); };
       },
       onBackgroundCheck: function (_callback: (data: unknown) => void) {
         return function () {};

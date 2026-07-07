@@ -309,24 +309,6 @@ export function ToastSettings() {
   );
 }
 
-function Section({ icon, title, desc, children }: {
-  icon: React.ReactNode;
-  title: string;
-  desc: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="bg-win-surface rounded-xl border border-win-border p-3">
-      <div className="flex items-center gap-2 mb-1">
-        <span className="text-win-accent">{icon}</span>
-        <h3 className="text-sm font-semibold text-win-text">{title}</h3>
-      </div>
-      <p className="text-xs text-win-text-tertiary mb-2">{desc}</p>
-      {children}
-    </div>
-  );
-}
-
 function InputField({ label, children }: {
   label: string;
   children: React.ReactNode;

@@ -43,7 +43,7 @@ const TOKEN_PATTERNS: Array<{ re: RegExp; replace: string }> = [
   // Long hex/base64 blobs (likely signatures / hashes of credentials)
   { re: /\b[a-f0-9]{48,}\b/gi, replace: '***REDACTED***' },
   // JWT-like three-segment base64
-  { re: /\beyJ[a-z0-9_\-]+\.[a-z0-9_\-]+\.[a-z0-9_\-]+\b/gi, replace: '***REDACTED-JWT***' },
+  { re: /\beyJ[a-z0-9_-]+\.[a-z0-9_-]+\.[a-z0-9_-]+\b/gi, replace: '***REDACTED-JWT***' },
 ];
 
 export function redactKeyedValue(key: string, value: string): string {
@@ -89,6 +89,7 @@ export function sanitizeCallerNumberForClipboard(raw: string): string {
  */
 export function sanitizeCallerName(raw: string): string {
   return raw
+    // eslint-disable-next-line no-control-regex
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
     .slice(0, 128);
 }

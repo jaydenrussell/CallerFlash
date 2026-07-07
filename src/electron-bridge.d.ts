@@ -99,6 +99,7 @@ declare global {
     prerelease: boolean;
   }
 
+  /* eslint-disable @typescript-eslint/no-explicit-any */
   interface CallerFlashUpdaterApi {
     check: (channel: string) => Promise<any>;
     download: (channel: string, version: string, downloadUrl: string) => Promise<any>;
@@ -119,6 +120,7 @@ declare global {
     onLog: (callback: (data: { message: string }) => void) => () => void;
     onInvite: (callback: (data: { callerNumber: string; callerName: string }) => void) => () => void;
   }
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 
   interface CallerFlashPlatformInfo {
     isElectron: true;

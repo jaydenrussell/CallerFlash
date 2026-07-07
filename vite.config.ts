@@ -27,17 +27,11 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test-setup.ts"],
   },
-  // Tauri expects the build output to work without hashes in filenames
   build: {
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, "index.html"),
         toast: path.resolve(__dirname, "toast.html"),
-      },
-      output: {
-        entryFileNames: "assets/[name].js",
-        chunkFileNames: "assets/[name].js",
-        assetFileNames: "assets/[name].[ext]",
       },
     },
   },

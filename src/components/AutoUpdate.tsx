@@ -7,10 +7,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import {
-  verifyUpdateArtifact,
-  parseGithubRelease,
   type VerificationResult,
-  type UpdateArtifact,
 } from '../security/updateVerifier';
 
 import { formatVersion } from '../utils/formatVersion';
@@ -63,8 +60,8 @@ function compareVersions(a: string, b: string): number {
   const vb = formatVersion(b);
 
   // Handle nightly date codes (with optional -N increment suffix for multiple builds per day).
-  const nightlyA = va.match(/^nightly[.\-](\d{8})(?:[.\-](\d+))?$/i);
-  const nightlyB = vb.match(/^nightly[.\-](\d{8})(?:[.\-](\d+))?$/i);
+  const nightlyA = va.match(/^nightly[.-](\d{8})(?:[.-](\d+))?$/i);
+  const nightlyB = vb.match(/^nightly[.-](\d{8})(?:[.-](\d+))?$/i);
 
   if (nightlyA && nightlyB) {
     const diff = parseInt(nightlyA[1]) - parseInt(nightlyB[1]);
@@ -80,7 +77,7 @@ function compareVersions(a: string, b: string): number {
   // Semver comparison with prerelease support.
   // Parse "1.5.0-beta.28" → { major:1, minor:5, patch:0, pre:"beta", preN:28 }
   const parseSemver = (v: string) => {
-    const m = v.match(/^(\d+)\.(\d+)\.(\d+)(?:[-.]([\w]+)(?:[.\-](\d+))?)?$/);
+    const m = v.match(/^(\d+)\.(\d+)\.(\d+)(?:[-.]([\w]+)(?:[.-](\d+))?)?$/);
     if (!m) return null;
     return { major: +m[1], minor: +m[2], patch: +m[3], pre: m[4] || null, preN: m[5] ? +m[5] : 0 };
   };
@@ -207,9 +204,6 @@ export function AutoUpdate() {
   const [outcome, setOutcome] = useState<CheckOutcome>(null);
   // Persist the verified artifact's download URL + the downloaded blob
   // URL so the install step can trigger a real file download.
-  const [artifactUrl, setArtifactUrl] = useState<string | null>(null);
-  const [verifiedArtifact, setVerifiedArtifact] = useState<UpdateArtifact | null>(null);
-  const [downloadedBlobUrl, setDownloadedBlobUrl] = useState<string | null>(null);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const channelRef = useRef(updateInfo.updateChannel);
   const checkIdRef = useRef(0);
@@ -343,7 +337,7 @@ export function AutoUpdate() {
     if (!window.callerflash?.updater?.onDiagnostic) return;
     return window.callerflash.updater.onDiagnostic((data: { level: string; message: string; details?: string }) => {
       addDiagnosticLog({
-        level: data.level as any,
+        level: data.level as 'info' | 'success' | 'warning' | 'error',
         category: 'UPDATE',
         message: data.message,
         details: data.details,
@@ -356,20 +350,21 @@ export function AutoUpdate() {
   // changes so stale downloads from a different channel don't leak through.
   useEffect(() => {
     if (!window.callerflash?.updater?.getDownloadState) return;
-    window.callerflash.updater.getDownloadState().then((state: any) => {
-      if (state?.status === 'ready' && state?.version) {
-        if (!versionMatchesChannel(state.version, updateInfo.updateChannel)) return;
+    window.callerflash.updater.getDownloadState().then((state) => {
+      const s = state as { status?: string; version?: string };
+      if (s?.status === 'ready' && s?.version) {
+        if (!versionMatchesChannel(s.version, updateInfo.updateChannel)) return;
         const currentFormatted = formatVersion(updateInfo.currentVersion);
-        const foundFormatted = formatVersion(state.version);
+        const foundFormatted = formatVersion(s.version);
         if (compareVersions(foundFormatted, currentFormatted) <= 0) {
           return;
         }
         setUpdateInfo({
-          latestVersion: state.version,
+          latestVersion: s.version,
           updateAvailable: true,
           isDownloading: false,
         });
-      } else if (state?.status === 'downloading') {
+      } else if (s?.status === 'downloading') {
         setPhase('downloading');
         setUpdateInfo({ isDownloading: true });
       }
@@ -380,14 +375,11 @@ export function AutoUpdate() {
   // last-checked time, so the user sees updates immediately when they
   // open the app. After the first check, subsequent checks respect
   // the frequency interval (daily/weekly/monthly).
-  const hasCheckedRef = useState({ current: false })[0];
+  const hasCheckedRef = useRef(false);
   useEffect(() => {
     if (phase !== 'idle') return;
-    // Respect frequency setting — even on first mount, if frequency is
-    // 'off' we skip the auto-check (manual check only via the button).
     if (!shouldAutoCheck(updateInfo.lastChecked, updateInfo.updateCheckFrequency)) return;
     if (hasCheckedRef.current) {
-      // Subsequent channel/frequency changes: respect the interval again.
       if (!shouldAutoCheck(updateInfo.lastChecked, updateInfo.updateCheckFrequency)) return;
     }
     hasCheckedRef.current = true;
@@ -403,7 +395,6 @@ export function AutoUpdate() {
     const id = ++checkIdRef.current;
     setPhase('checking');
     setVerification(null);
-    setVerifiedArtifact(null);
     setOutcome(null);
     addDiagnosticLog({
       level: 'info',
@@ -463,71 +454,6 @@ export function AutoUpdate() {
   };
 
   /**
-   * Real download with streaming progress. Fetches the verified binary
-   * from GitHub's CDN, tracks progress via ReadableStream, and stores
-   * the blob so the install step can trigger a file save.
-   */
-  const runDownload = async (artifact: { version: string; downloadUrl: string }) => {
-    setArtifactUrl(artifact.downloadUrl);
-
-    // In Electron, the main process handles the download directly when Install is clicked.
-    // We skip the in-memory Blob download here to avoid double-downloading and RAM waste.
-    if (window.callerflash?.platform?.isElectron) {
-      setPhase('idle');
-      return true;
-    }
-
-    setPhase('downloading');
-    setUpdateInfo({ isDownloading: true, downloadProgress: 0 });
-
-    // Clean up any previous blob URL.
-    if (downloadedBlobUrl) {
-      try { URL.revokeObjectURL(downloadedBlobUrl); } catch { /* noop */ }
-      setDownloadedBlobUrl(null);
-    }
-
-    try {
-      const response = await fetch(artifact.downloadUrl);
-      if (!response.ok) throw new Error(`Download failed: HTTP ${response.status}`);
-
-      const contentLength = Number(response.headers.get('content-length') || '0');
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error('ReadableStream not supported');
-
-      const chunks: Uint8Array[] = [];
-      let received = 0;
-
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        received += value.length;
-        if (contentLength > 0) {
-          setUpdateInfo({ downloadProgress: (received / contentLength) * 100 });
-        }
-      }
-
-      const blob = new Blob(chunks as BlobPart[]);
-      const url = URL.createObjectURL(blob);
-      setDownloadedBlobUrl(url);
-      setUpdateInfo({ isDownloading: false, downloadProgress: 100 });
-      setPhase('idle');
-      addDiagnosticLog({
-        level: 'success',
-        category: 'UPDATE',
-        message: `Update ${formatVersion(artifact.version)} downloaded (${(received / 1048576).toFixed(1)} MB) — ready to install`,
-      });
-      return true;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Download failed';
-      addDiagnosticLog({ level: 'error', category: 'UPDATE', message: msg });
-      setUpdateInfo({ isDownloading: false, downloadProgress: 0 });
-      setPhase('idle');
-      return false;
-    }
-  };
-
-  /**
    * Sequential update: 1) ensure URL, 2) download (await result),
    * 3) install (await result). Every step logged to Diagnostics.
    */
@@ -551,8 +477,8 @@ export function AutoUpdate() {
         } else {
           throw new Error('No download URL returned');
         }
-      } catch (err: any) {
-        const msg = err?.message || 'Unknown error';
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Unknown error';
         addDiagnosticLog({ level: 'error', category: 'UPDATE', message: 'Failed to get download URL', details: msg });
         setOutcome({ kind: 'verification-failed', message: msg });
         return;
@@ -577,14 +503,16 @@ export function AutoUpdate() {
       return;
     }
 
-    let dlResult: any;
+    let dlResult: { status?: string; error?: string } | null = null;
     try {
-      dlResult = await window.callerflash.updater.download(updateInfo.updateChannel, updateInfo.latestVersion, url);
-    } catch (err: any) {
-      addDiagnosticLog({ level: 'error', category: 'UPDATE', message: 'Download threw an exception', details: err?.message || String(err) });
+      const raw = await window.callerflash.updater.download(updateInfo.updateChannel, updateInfo.latestVersion, url);
+      dlResult = raw as { status?: string; error?: string };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Download error';
+      addDiagnosticLog({ level: 'error', category: 'UPDATE', message: 'Download threw an exception', details: msg });
       setPhase('idle');
       setUpdateInfo({ isDownloading: false, downloadProgress: 0 });
-      setOutcome({ kind: 'verification-failed', message: err?.message || 'Download error' });
+      setOutcome({ kind: 'verification-failed', message: msg });
       return;
     }
 
@@ -625,11 +553,12 @@ export function AutoUpdate() {
       }
       // installResult.status === 'installing' → app will quit shortly
       addDiagnosticLog({ level: 'info', category: 'UPDATE', message: 'Installer launched, app will restart…' });
-    } catch (err: any) {
-      addDiagnosticLog({ level: 'error', category: 'UPDATE', message: 'Install failed', details: err?.message || String(err) });
+    } catch (err: unknown) {
+      addDiagnosticLog({ level: 'error', category: 'UPDATE', message: 'Install failed', details: err instanceof Error ? err.message : String(err) });
       setPhase('idle');
       setUpdateInfo({ isInstalling: false });
-      setOutcome({ kind: 'verification-failed', message: err?.message || 'Install error' });
+      const msg = err instanceof Error ? err.message : 'Install error';
+      setOutcome({ kind: 'verification-failed', message: msg });
     }
   };
 

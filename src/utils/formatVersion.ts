@@ -19,7 +19,7 @@ export function formatVersion(version: string): string {
 
   // Strip the semver prefix that electron-builder / CI may inject for nightly.
   // Matches "0.0.0-nightly." or "0.0.0-nightly-" (dot or dash before the date).
-  cleaned = cleaned.replace(/^0\.0\.0-nightly[.\-]/i, 'nightly-');
+  cleaned = cleaned.replace(/^0\.0\.0-nightly[.-]/i, 'nightly-');
 
   // Normalise "nightly.YYYYMMDD.N" (dots as separators) to "nightly-YYYYMMDD-N"
   const dotNightly = cleaned.match(/^nightly\.(\d{8})(?:\.(\d+))?$/i);

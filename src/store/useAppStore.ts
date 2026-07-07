@@ -527,7 +527,7 @@ export const useAppStore = create<AppState>((set) => ({
   }),
 
   toastDragPosition: persistedUi.toastDragPosition ?? null,
-  setToastDragPosition: (pos) => set((s) => {
+  setToastDragPosition: (pos) => set((_s) => {
     secureStorage.save({
       ...secureStorage.cache,
       toastDragPosition: pos,
