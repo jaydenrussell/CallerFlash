@@ -12,23 +12,10 @@ pub struct TrayState {
 pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "Show CallerFlash", true, None::<&str>)?;
     let hide = MenuItem::with_id(app, "hide", "Hide to Tray", true, None::<&str>)?;
-    let sip_status_item =
-        MenuItem::with_id(app, "sip_status", "SIP: Offline", false, None::<&str>)?;
-    let separator1 = PredefinedMenuItem::separator(app)?;
-    let separator2 = PredefinedMenuItem::separator(app)?;
+    let separator = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Quit CallerFlash", true, None::<&str>)?;
 
-    let menu = Menu::with_items(
-        app,
-        &[
-            &show,
-            &hide,
-            &separator1,
-            &sip_status_item,
-            &separator2,
-            &quit,
-        ],
-    )?;
+    let menu = Menu::with_items(app, &[&show, &hide, &separator, &quit])?;
 
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png")).expect(
         "Failed to load tray icon — ensure src-tauri/icons/32x32.png exists and is a valid PNG",
@@ -38,7 +25,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         .icon(icon)
         .menu(&menu)
         .show_menu_on_left_click(false)
-        .tooltip("CallerFlash — SIP Offline")
+        .tooltip("CallerFlash")
         .on_tray_icon_event(move |tray, event| {
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
