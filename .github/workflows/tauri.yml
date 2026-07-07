@@ -110,7 +110,7 @@ jobs:
         shell: bash
         run: |
           cargo install cargo-audit --locked 2>/dev/null || true
-          cargo audit --manifest-path src-tauri/Cargo.toml
+          cd src-tauri && cargo audit
 
       - name: Install Tauri CLI
         shell: bash
