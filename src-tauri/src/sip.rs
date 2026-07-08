@@ -6,7 +6,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::net::UdpSocket;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpStream, UdpSocket};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -18,6 +19,104 @@ const MIN_REGISTER_EXPIRY: u32 = 30;
 const MAX_REGISTER_EXPIRY: u32 = 86400;
 const MIN_PORT: u16 = 1;
 const SIP_INVITE_CHANNEL_SIZE: usize = 50;
+const MAX_SIP_MESSAGE_SIZE: usize = 65536;
+
+enum SipTransport {
+    Udp(Arc<UdpSocket>),
+    Tcp(Arc<Mutex<TcpStream>>),
+    Tls(Arc<Mutex<tokio_rustls::TlsStream<TcpStream>>>),
+}
+
+impl SipTransport {
+    async fn send(&self, data: &[u8], addr: std::net::SocketAddr) -> Result<(), String> {
+        match self {
+            Self::Udp(sock) => {
+                sock.send_to(data, addr).await.map_err(|e| e.to_string())?;
+            }
+            Self::Tcp(stream) => {
+                let mut s = stream.lock().await;
+                s.write_all(data).await.map_err(|e| e.to_string())?;
+            }
+            Self::Tls(stream) => {
+                let mut s = stream.lock().await;
+                s.write_all(data).await.map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn recv_message(&self) -> Result<Vec<u8>, String> {
+        match self {
+            Self::Udp(sock) => {
+                let mut buf = vec![0u8; MAX_SIP_MESSAGE_SIZE];
+                let (len, _) = sock.recv_from(&mut buf).await.map_err(|e| e.to_string())?;
+                buf.truncate(len);
+                Ok(buf)
+            }
+            Self::Tcp(stream) => {
+                let mut s = stream.lock().await;
+                read_sip_message(&mut *s).await
+            }
+            Self::Tls(stream) => {
+                let mut s = stream.lock().await;
+                read_sip_message(&mut *s).await
+            }
+        }
+    }
+
+    async fn recv_message_timeout(
+        &self,
+        timeout: std::time::Duration,
+    ) -> Result<Vec<u8>, String> {
+        tokio::time::timeout(timeout, self.recv_message())
+            .await
+            .map_err(|_| "Response timed out".to_string())?
+    }
+}
+
+async fn read_sip_message(
+    stream: &mut (impl AsyncReadExt + Unpin),
+) -> Result<Vec<u8>, String> {
+    let mut buf = Vec::with_capacity(4096);
+    let mut header_end = None;
+
+    loop {
+        let mut tmp = [0u8; 1024];
+        let n = stream.read(&mut tmp).await.map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err("Connection closed".to_string());
+        }
+        buf.extend_from_slice(&tmp[..n]);
+
+        if header_end.is_none() {
+            if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                header_end = Some(pos + 4);
+            }
+        }
+
+        if let Some(end) = header_end {
+            let header_section = &buf[..end];
+            let header_text = std::str::from_utf8(header_section).map_err(|_| "Invalid UTF-8 in SIP headers".to_string())?;
+
+            let content_length = header_text
+                .lines()
+                .find(|l| l.to_uppercase().starts_with("CONTENT-LENGTH"))
+                .and_then(|l| l.split(':').nth(1))
+                .and_then(|v| v.trim().parse::<usize>().ok())
+                .unwrap_or(0);
+
+            let total = end + content_length;
+            if buf.len() >= total {
+                buf.truncate(total);
+                return Ok(buf);
+            }
+        }
+
+        if buf.len() > MAX_SIP_MESSAGE_SIZE {
+            return Err("SIP message exceeds maximum size".to_string());
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct SipConfig {
@@ -214,13 +313,6 @@ impl SipClient {
         }
     }
 
-    fn extract_header<'a>(headers: &'a HashMap<String, String>, name: &str) -> Option<&'a str> {
-        headers
-            .get(name)
-            .map(|s| s.as_str())
-            .or_else(|| headers.get(&name.to_lowercase()).map(|s| s.as_str()))
-    }
-
     fn parse_sip_response(data: &[u8]) -> (u16, String, HashMap<String, String>) {
         let text = String::from_utf8_lossy(data);
         let mut lines = text.lines();
@@ -291,22 +383,59 @@ impl SipClient {
         params
     }
 
-    fn build_sip_message(
-        method: &str,
-        uri: &str,
-        headers: &HashMap<String, String>,
-        body: &str,
+    fn build_register_message(
+        username: &str,
+        server: &str,
+        port: u16,
+        local_port: u16,
+        call_id: &str,
+        cseq_val: u32,
+        auth_header: Option<&str>,
+        expires_val: u32,
+        protocol: &str,
     ) -> String {
-        let mut msg = format!("{} {} SIP/2.0\r\n", method, uri);
-        for (key, value) in headers {
-            msg.push_str(&format!("{}: {}\r\n", key, value));
+        let branch = format!("z9hG4bK{}", Uuid::new_v4().to_string().split('-').next().unwrap_or("a"));
+        let tag = Uuid::new_v4().to_string().split('-').next().unwrap_or("b").to_string();
+        let transport = if protocol == "TCP" { "TCP" } else if protocol == "TLS" { "TLS" } else { "UDP" };
+
+        let mut msg = format!("REGISTER sip:{}:{} SIP/2.0\r\n", server, port);
+        msg.push_str(&format!("Via: SIP/2.0/{} 127.0.0.1:{};branch={}\r\n", transport, local_port, branch));
+        msg.push_str("Max-Forwards: 70\r\n");
+        msg.push_str(&format!("From: <sip:{}@{}>;tag={}\r\n", username, server, tag));
+        msg.push_str(&format!("To: <sip:{}@{}>\r\n", username, server));
+        msg.push_str(&format!("Call-ID: {}\r\n", call_id));
+        msg.push_str(&format!("CSeq: {} REGISTER\r\n", cseq_val));
+        msg.push_str(&format!("Contact: <sip:{}@127.0.0.1:{}>\r\n", username, local_port));
+        msg.push_str(&format!("Expires: {}\r\n", expires_val));
+        msg.push_str("User-Agent: CallerFlash\r\n");
+        if let Some(auth) = auth_header {
+            msg.push_str(&format!("Authorization: {}\r\n", auth));
         }
-        msg.push_str(&format!("Content-Length: {}\r\n", body.len()));
+        msg.push_str("Content-Length: 0\r\n");
         msg.push_str("\r\n");
-        if !body.is_empty() {
-            msg.push_str(body);
-        }
         msg
+    }
+
+    fn build_invite_busy_response(
+        local_port: u16,
+        username: &str,
+        server: &str,
+    ) -> String {
+        let tag_id = Uuid::new_v4().to_string();
+        let tag = tag_id.split('-').next().unwrap_or("t");
+        let call_id = Uuid::new_v4();
+
+        format!(
+            "SIP/2.0 486 Busy Here\r\n\
+             Via: SIP/2.0/UDP 127.0.0.1:{};received=127.0.0.1\r\n\
+             From: <sip:unknown@unknown>\r\n\
+             To: <sip:{}@{}>;tag={}\r\n\
+             Call-ID: {}\r\n\
+             CSeq: 0 INVITE\r\n\
+             User-Agent: CallerFlash\r\n\
+             Content-Length: 0\r\n\r\n",
+            local_port, username, server, tag, call_id
+        )
     }
 
     fn sanitize_caller_id(s: &str) -> String {
@@ -336,6 +465,56 @@ impl SipClient {
         }
     }
 
+    async fn connect_transport(
+        config: &SipConfig,
+        server_addr: std::net::SocketAddr,
+    ) -> Result<(SipTransport, u16), String> {
+        let protocol = config.protocol.as_deref().unwrap_or("UDP");
+        match protocol {
+            "TCP" => {
+                let stream = TcpStream::connect(server_addr)
+                    .await
+                    .map_err(|e| format!("TCP connect failed: {}", e))?;
+                let local_port = stream.local_addr().map(|a| a.port()).unwrap_or(0);
+                Ok((SipTransport::Tcp(Arc::new(Mutex::new(stream))), local_port))
+            }
+            "TLS" => {
+                let stream = TcpStream::connect(server_addr)
+                    .await
+                    .map_err(|e| format!("TLS connect failed: {}", e))?;
+                let local_port = stream.local_addr().map(|a| a.port()).unwrap_or(0);
+
+                let cert_result = rustls_native_certs::load_native_certs();
+                let mut root_store = rustls::RootCertStore::empty();
+                for cert in cert_result.certs {
+                    let _ = root_store.add(cert);
+                }
+
+                let config = rustls::ClientConfig::builder()
+                    .with_root_certificates(root_store)
+                    .with_no_client_auth();
+
+                let tls_connector = tokio_rustls::TlsConnector::from(Arc::new(config));
+                let domain = rustls_pki_types::ServerName::try_from(server_addr.ip().to_string())
+                    .map_err(|e| format!("Invalid TLS server name: {}", e))?;
+                let tls_stream = tls_connector
+                    .connect(domain, stream)
+                    .await
+                    .map_err(|e| format!("TLS handshake failed: {}", e))?;
+
+                Ok((SipTransport::Tls(Arc::new(Mutex::new(tokio_rustls::TlsStream::Client(tls_stream)))), local_port))
+            }
+            _ => {
+                let sock = UdpSocket::bind("0.0.0.0:0")
+                    .await
+                    .map_err(|e| format!("Failed to bind UDP: {}", e))?;
+                let local_port = sock.local_addr().map(|a| a.port()).unwrap_or(5060);
+                Ok((SipTransport::Udp(Arc::new(sock)), local_port))
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_lines)]
     pub async fn start(&self, config: SipConfig) {
         let handle = self.handle.clone();
         let connected = self.connected.clone();
@@ -344,34 +523,27 @@ impl SipClient {
             let future = std::panic::AssertUnwindSafe(async move {
                 let server = config.server.clone();
                 let port = config.port.unwrap_or(5060);
-                let is_tcp = config.protocol.as_deref() == Some("TCP");
+                let protocol = config.protocol.as_deref().unwrap_or("UDP").to_string();
 
-                if is_tcp {
-                    Self::safe_emit(
-                        &handle,
-                        "sip:status",
-                        SipStatus {
-                            status: "error".to_string(),
-                            message: Some("TCP not yet supported, falling back to UDP".to_string()),
-                        },
-                    );
-                }
-
-                let socket = match UdpSocket::bind("0.0.0.0:0").await {
-                    Ok(s) => {
-                        let local_addr = s.local_addr().ok();
-                        if let Some(addr) = local_addr {
+                let server_addr = match tokio::net::lookup_host(format!("{}:{}", server, port)).await
+                {
+                    Ok(mut addrs) => match addrs.next() {
+                        Some(addr) => addr,
+                        None => {
                             Self::safe_emit(
                                 &handle,
                                 "sip:status",
                                 SipStatus {
-                                    status: "connecting".to_string(),
-                                    message: Some(format!("Bound to UDP port {}", addr.port())),
+                                    status: "error".to_string(),
+                                    message: Some(Self::user_safe_sip_error(&format!(
+                                        "No addresses found for {}:{}",
+                                        server, port
+                                    ))),
                                 },
                             );
+                            return;
                         }
-                        s
-                    }
+                    },
                     Err(e) => {
                         Self::safe_emit(
                             &handle,
@@ -379,7 +551,7 @@ impl SipClient {
                             SipStatus {
                                 status: "error".to_string(),
                                 message: Some(Self::user_safe_sip_error(&format!(
-                                    "Failed to bind UDP: {}",
+                                    "DNS resolution failed: {}",
                                     e
                                 ))),
                             },
@@ -388,42 +560,31 @@ impl SipClient {
                     }
                 };
 
-                let local_port = socket.local_addr().map(|a| a.port()).unwrap_or(5060);
+                let (transport, local_port) = match Self::connect_transport(&config, server_addr).await {
+                    Ok(t) => t,
+                    Err(e) => {
+                        Self::safe_emit(
+                            &handle,
+                            "sip:status",
+                            SipStatus {
+                                status: "error".to_string(),
+                                message: Some(Self::user_safe_sip_error(&e)),
+                            },
+                        );
+                        return;
+                    }
+                };
 
-                let server_addr =
-                    match tokio::net::lookup_host(format!("{}:{}", server, port)).await {
-                        Ok(mut addrs) => match addrs.next() {
-                            Some(addr) => addr,
-                            None => {
-                                Self::safe_emit(
-                                    &handle,
-                                    "sip:status",
-                                    SipStatus {
-                                        status: "error".to_string(),
-                                        message: Some(Self::user_safe_sip_error(&format!(
-                                            "No addresses found for {}:{}",
-                                            server, port
-                                        ))),
-                                    },
-                                );
-                                return;
-                            }
-                        },
-                        Err(e) => {
-                            Self::safe_emit(
-                                &handle,
-                                "sip:status",
-                                SipStatus {
-                                    status: "error".to_string(),
-                                    message: Some(Self::user_safe_sip_error(&format!(
-                                        "DNS resolution failed: {}",
-                                        e
-                                    ))),
-                                },
-                            );
-                            return;
-                        }
-                    };
+                let transport = Arc::new(transport);
+
+                Self::safe_emit(
+                    &handle,
+                    "sip:status",
+                    SipStatus {
+                        status: "connecting".to_string(),
+                        message: Some(format!("Bound to {} port {}", protocol, local_port)),
+                    },
+                );
 
                 let call_id = format!("{}@127.0.0.1", Uuid::new_v4());
                 let mut cseq = 1u32;
@@ -433,57 +594,24 @@ impl SipClient {
                     .clone()
                     .unwrap_or_else(|| config.username.clone());
 
-                let build_register = |cseq_val: u32,
-                                      call_id_ref: &str,
-                                      auth_header: Option<&str>,
-                                      expires_val: u32|
-                 -> String {
-                    let mut headers = HashMap::new();
-                    headers.insert(
-                        "Via".to_string(),
-                        format!(
-                            "SIP/2.0/UDP 127.0.0.1:{};branch=z9hG4bK{}",
-                            local_port,
-                            Uuid::new_v4().to_string().split('-').next().unwrap_or("a")
-                        ),
-                    );
-                    headers.insert("Max-Forwards".to_string(), "70".to_string());
-                    headers.insert(
-                        "From".to_string(),
-                        format!(
-                            "<sip:{}@{}>;tag={}",
-                            config.username,
-                            config.server,
-                            Uuid::new_v4().to_string().split('-').next().unwrap_or("b")
-                        ),
-                    );
-                    headers.insert(
-                        "To".to_string(),
-                        format!("<sip:{}@{}>", config.username, config.server),
-                    );
-                    headers.insert("Call-ID".to_string(), call_id_ref.to_string());
-                    headers.insert("CSeq".to_string(), format!("{} REGISTER", cseq_val));
-                    headers.insert(
-                        "Contact".to_string(),
-                        format!("<sip:{}@127.0.0.1:{}>", config.username, local_port),
-                    );
-                    headers.insert("Expires".to_string(), expires_val.to_string());
-                    headers.insert("User-Agent".to_string(), "CallerFlash".to_string());
-                    if let Some(auth) = auth_header {
-                        headers.insert("Authorization".to_string(), auth.to_string());
-                    }
-                    Self::build_sip_message(
-                        "REGISTER",
-                        &format!("sip:{}:{}", config.server, port),
-                        &headers,
-                        "",
-                    )
-                };
+                let _ = handle.emit(
+                    "sip:log",
+                    serde_json::json!({"message": format!("[SIP] Starting registration — server: {}:{}, expiry: {}, protocol: {}", server, port, expiry, protocol)}),
+                );
 
-                let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Starting registration — server: {}:{}, expiry: {}, protocol: {}", server, port, expiry, config.protocol.as_deref().unwrap_or("UDP"))}));
-
-                let reg_msg = build_register(cseq, &call_id, None, expiry);
-                if let Err(e) = socket.send_to(reg_msg.as_bytes(), server_addr).await {
+                // Initial REGISTER (no auth)
+                let reg_msg = Self::build_register_message(
+                    &config.username,
+                    &config.server,
+                    port,
+                    local_port,
+                    &call_id,
+                    cseq,
+                    None,
+                    expiry,
+                    &protocol,
+                );
+                if let Err(e) = transport.send(reg_msg.as_bytes(), server_addr).await {
                     Self::safe_emit(
                         &handle,
                         "sip:status",
@@ -499,25 +627,23 @@ impl SipClient {
                 }
                 cseq += 1;
 
-                let mut buf = [0u8; 4096];
-                let (len, _) = match tokio::time::timeout(
-                    std::time::Duration::from_secs(10),
-                    socket.recv_from(&mut buf),
-                )
-                .await
-                {
-                    Ok(Ok((len, addr))) => (len, addr),
-                    _ => {
+                // Receive initial response
+                let response_data = match transport.recv_message_timeout(std::time::Duration::from_secs(10)).await {
+                    Ok(data) => data,
+                    Err(e) => {
                         Self::safe_emit(&handle, "sip:status", SipStatus {
                             status: "error".to_string(),
-                            message: Some("SIP server did not respond to REGISTER. Check server availability.".to_string()),
+                            message: Some(Self::user_safe_sip_error(&e)),
                         });
                         return;
                     }
                 };
 
-                let (status_code, ref reason, headers) = Self::parse_sip_response(&buf[..len]);
-                let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Initial REGISTER response — {} {} ({} headers)", status_code, reason.trim(), headers.len())}));
+                let (status_code, ref reason, headers) = Self::parse_sip_response(&response_data);
+                let _ = handle.emit(
+                    "sip:log",
+                    serde_json::json!({"message": format!("[SIP] Initial REGISTER response — {} {} ({} headers)", status_code, reason.trim(), headers.len())}),
+                );
 
                 if status_code == 401 || status_code == 407 {
                     let auth_type = if status_code == 401 {
@@ -525,9 +651,13 @@ impl SipClient {
                     } else {
                         "Proxy-Authenticate"
                     };
-                    let auth_header = Self::extract_header(&headers, auth_type);
+                    let auth_header = headers.get(auth_type)
+                        .or_else(|| headers.get(&auth_type.to_lowercase()));
 
-                    let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Received {} challenge — raw header: {:?}", status_code, auth_header)}));
+                    let _ = handle.emit(
+                        "sip:log",
+                        serde_json::json!({"message": format!("[SIP] Received {} challenge", status_code)}),
+                    );
 
                     if let Some(www_auth) = auth_header {
                         let params = Self::parse_www_authenticate(www_auth);
@@ -539,7 +669,10 @@ impl SipClient {
                             .cloned()
                             .unwrap_or_else(|| "MD5".to_string());
 
-                        let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Digest challenge params — algorithm: {}, qop: {:?}", algorithm, qop)}));
+                        let _ = handle.emit(
+                            "sip:log",
+                            serde_json::json!({"message": format!("[SIP] Digest challenge params — algorithm: {}, qop: {:?}", algorithm, qop)}),
+                        );
 
                         if algorithm.to_uppercase() != "MD5" {
                             Self::safe_emit(
@@ -564,7 +697,6 @@ impl SipClient {
                             .collect();
 
                         let uri = format!("sip:{}:{}", config.server, port);
-                        let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Computed digest — algorithm: {}, qop: {:?}", algorithm, qop)}));
                         let response = Self::compute_digest_response(
                             &auth_username,
                             &realm,
@@ -596,9 +728,23 @@ impl SipClient {
                             ),
                         };
 
-                        let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Sending authenticated REGISTER to {}:{}", server, port)}));
-                        let auth_reg = build_register(cseq, &call_id, Some(&auth_val), expiry);
-                        if let Err(e) = socket.send_to(auth_reg.as_bytes(), server_addr).await {
+                        let _ = handle.emit(
+                            "sip:log",
+                            serde_json::json!({"message": format!("[SIP] Sending authenticated REGISTER to {}:{}", server, port)}),
+                        );
+
+                        let auth_reg = Self::build_register_message(
+                            &config.username,
+                            &config.server,
+                            port,
+                            local_port,
+                            &call_id,
+                            cseq,
+                            Some(&auth_val),
+                            expiry,
+                            &protocol,
+                        );
+                        if let Err(e) = transport.send(auth_reg.as_bytes(), server_addr).await {
                             Self::safe_emit(
                                 &handle,
                                 "sip:status",
@@ -614,25 +760,22 @@ impl SipClient {
                         }
                         cseq += 1;
 
-                        let (len, _) = match tokio::time::timeout(
-                            std::time::Duration::from_secs(10),
-                            socket.recv_from(&mut buf),
-                        )
-                        .await
-                        {
-                            Ok(Ok((len, addr))) => (len, addr),
-                            _ => {
+                        let response_data = match transport.recv_message_timeout(std::time::Duration::from_secs(10)).await {
+                            Ok(data) => data,
+                            Err(e) => {
                                 Self::safe_emit(&handle, "sip:status", SipStatus {
                                     status: "error".to_string(),
-                                    message: Some("SIP server did not respond to registration. Check server availability.".to_string()),
+                                    message: Some(Self::user_safe_sip_error(&e)),
                                 });
                                 return;
                             }
                         };
 
-                        let (status_code, ref reason, _headers) =
-                            Self::parse_sip_response(&buf[..len]);
-                        let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Authenticated REGISTER response — {} {} ({} headers)", status_code, reason.trim(), _headers.len())}));
+                        let (status_code, ref reason, _headers) = Self::parse_sip_response(&response_data);
+                        let _ = handle.emit(
+                            "sip:log",
+                            serde_json::json!({"message": format!("[SIP] Authenticated REGISTER response — {} {} ({} headers)", status_code, reason.trim(), _headers.len())}),
+                        );
                         if (200..300).contains(&status_code) {
                             *connected.lock().await = true;
                             Self::safe_emit(
@@ -645,9 +788,8 @@ impl SipClient {
                             );
                             log::info!("[sip] Registered successfully");
                         } else {
-                            let raw_response = String::from_utf8_lossy(&buf[..len]);
-                            let detail =
-                                raw_response.lines().take(10).collect::<Vec<_>>().join("\n");
+                            let raw_response = String::from_utf8_lossy(&response_data);
+                            let detail = raw_response.lines().take(10).collect::<Vec<_>>().join("\n");
                             log::error!(
                                 "[sip] Registration failed: {} {} — full response:\n{}",
                                 status_code,
@@ -691,7 +833,7 @@ impl SipClient {
                     );
                     log::info!("[sip] Registered successfully (no auth)");
                 } else {
-                    let raw = String::from_utf8_lossy(&buf[..len]);
+                    let raw = String::from_utf8_lossy(&response_data);
                     let first_line = raw.lines().next().unwrap_or("unknown");
                     let detail = raw.lines().take(10).collect::<Vec<_>>().join("\n");
                     log::error!(
@@ -699,7 +841,10 @@ impl SipClient {
                         first_line,
                         detail
                     );
-                    let _ = handle.emit("sip:log", serde_json::json!({"message": format!("[SIP] Initial REGISTER failed: {} — response:\n{}", first_line, detail)}));
+                    let _ = handle.emit(
+                        "sip:log",
+                        serde_json::json!({"message": format!("[SIP] Initial REGISTER failed: {} — response:\n{}", first_line, detail)}),
+                    );
                     Self::safe_emit(
                         &handle,
                         "sip:status",
@@ -714,14 +859,13 @@ impl SipClient {
                     return;
                 }
 
+                // Re-registration loop (periodic REGISTER refresh)
                 let refresh_ms = std::cmp::max((expiry as u64).saturating_sub(15) * 1000, 30_000);
-                let socket = Arc::new(socket);
-                let local_port_copy = local_port;
-                let socket_clone = socket.clone();
+                let transport_for_reregister = transport.clone();
+                let connected_for_reregister = connected.clone();
                 let config_clone = config.clone();
                 let call_id_clone = call_id.clone();
-                let mut cseq_clone = cseq;
-                let connected_for_reregister = connected.clone();
+                let protocol_clone = protocol.clone();
 
                 let _reregister_handle = tokio::spawn(async move {
                     let mut consecutive_failures = 0u32;
@@ -733,49 +877,21 @@ impl SipClient {
                         if !*connected_for_reregister.lock().await {
                             break;
                         }
-                        let mut hdrs = HashMap::new();
-                        hdrs.insert(
-                            "Via".to_string(),
-                            format!(
-                                "SIP/2.0/UDP 127.0.0.1:{};branch=z9hG4bK{}",
-                                local_port_copy,
-                                Uuid::new_v4().to_string().split('-').next().unwrap_or("r")
-                            ),
-                        );
-                        hdrs.insert("Max-Forwards".to_string(), "70".to_string());
-                        hdrs.insert(
-                            "From".to_string(),
-                            format!(
-                                "<sip:{}@{}>;tag={}",
-                                config_clone.username,
-                                config_clone.server,
-                                Uuid::new_v4().to_string().split('-').next().unwrap_or("f")
-                            ),
-                        );
-                        hdrs.insert(
-                            "To".to_string(),
-                            format!("<sip:{}@{}>", config_clone.username, config_clone.server),
-                        );
-                        hdrs.insert("Call-ID".to_string(), call_id_clone.clone());
-                        hdrs.insert("CSeq".to_string(), format!("{} REGISTER", cseq_clone));
-                        hdrs.insert(
-                            "Contact".to_string(),
-                            format!(
-                                "<sip:{}@127.0.0.1:{}>",
-                                config_clone.username, local_port_copy
-                            ),
-                        );
-                        hdrs.insert("Expires".to_string(), expiry.to_string());
-                        hdrs.insert("User-Agent".to_string(), "CallerFlash".to_string());
-                        let msg = Self::build_sip_message(
-                            "REGISTER",
-                            &format!("sip:{}:{}", config_clone.server, port),
-                            &hdrs,
-                            "",
-                        );
-                        cseq_clone += 1;
 
-                        if let Err(e) = socket_clone.send_to(msg.as_bytes(), server_addr).await {
+                        let reg_msg = Self::build_register_message(
+                            &config_clone.username,
+                            &config_clone.server,
+                            port,
+                            local_port,
+                            &call_id_clone,
+                            cseq,
+                            None,
+                            expiry,
+                            &protocol_clone,
+                        );
+                        cseq += 1;
+
+                        if let Err(e) = transport_for_reregister.send(reg_msg.as_bytes(), server_addr).await {
                             consecutive_failures += 1;
                             log::error!(
                                 "[sip] Re-register send error: {} (failure #{})",
@@ -788,6 +904,7 @@ impl SipClient {
                     }
                 });
 
+                // INVITE listener loop
                 let (invite_tx, mut invite_rx) =
                     tokio::sync::mpsc::channel::<InviteData>(SIP_INVITE_CHANNEL_SIZE);
                 let handle_for_dispatch = handle.clone();
@@ -797,73 +914,57 @@ impl SipClient {
                     }
                 });
 
-                let mut buf2 = [0u8; 4096];
-
                 loop {
-                    tokio::select! {
-                        result = socket.recv_from(&mut buf2) => {
-                            let (len, _) = match result {
-                                Ok(r) => r,
-                                Err(_) => break,
-                            };
-                            let text = String::from_utf8_lossy(&buf2[..len]);
-                            if text.starts_with("INVITE ") {
-                                let mut caller_number = "Unknown".to_string();
-                                let mut caller_name = String::new();
-
-                                for line in text.lines() {
-                                    if line.starts_with("From:") || line.starts_with("f:") {
-                                        let from_val = &line[line.find(':').unwrap_or(0)+1..];
-                                        if let Some(q1) = from_val.find('"') {
-                                            if let Some(q2) = from_val[q1+1..].find('"') {
-                                                caller_name = from_val[q1+1..q1+1+q2].to_string();
-                                            }
-                                        }
-                                        if let Some(at_pos) = from_val.find('@') {
-                                            let before_at = &from_val[..at_pos];
-                                            if let Some(colon_pos) = before_at.rfind(':') {
-                                                caller_number = before_at[colon_pos+1..].to_string();
-                                            } else if let Some(sip_prefix) = before_at.rfind("sip:") {
-                                                caller_number = before_at[sip_prefix+4..].to_string();
-                                            }
-                                        }
-                                        break;
-                                    }
-                                }
-
-                                caller_number = Self::sanitize_caller_id(&caller_number);
-                                caller_name = Self::sanitize_caller_id(&caller_name);
-
-                                if invite_tx.try_send(InviteData {
-                                    caller_number,
-                                    caller_name,
-                                }).is_err() {
-                                    log::warn!("[sip] Dropping INVITE — event channel full");
-                                }
-
-                                let resp = format!(
-                                    "SIP/2.0 486 Busy Here\r\n\
-                                     Via: SIP/2.0/UDP 127.0.0.1:{};received=127.0.0.1\r\n\
-                                     From: <sip:unknown@unknown>\r\n\
-                                     To: <sip:{}@{}>;tag={}\r\n\
-                                     Call-ID: {}\r\n\
-                                     CSeq: 0 INVITE\r\n\
-                                     User-Agent: CallerFlash\r\n\
-                                     Content-Length: 0\r\n\r\n",
-                                    local_port,
-                                    config.username, config.server,
-                                    Uuid::new_v4().to_string().split('-').next().unwrap_or("t"),
-                                    Uuid::new_v4()
-                                );
-
-                                let _ = socket.send_to(resp.as_bytes(), server_addr).await;
-                            }
-                        }
-                        _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {
+                    let response_data = match transport.recv_message_timeout(std::time::Duration::from_secs(30)).await {
+                        Ok(data) => data,
+                        Err(_) => {
                             if !*connected.lock().await {
                                 break;
                             }
+                            continue;
                         }
+                    };
+
+                    let text = String::from_utf8_lossy(&response_data);
+                    if text.starts_with("INVITE ") {
+                        let mut caller_number = "Unknown".to_string();
+                        let mut caller_name = String::new();
+
+                        for line in text.lines() {
+                            if line.starts_with("From:") || line.starts_with("f:") {
+                                let from_val = &line[line.find(':').unwrap_or(0) + 1..];
+                                if let Some(q1) = from_val.find('"') {
+                                    if let Some(q2) = from_val[q1 + 1..].find('"') {
+                                        caller_name = from_val[q1 + 1..q1 + 1 + q2].to_string();
+                                    }
+                                }
+                                if let Some(at_pos) = from_val.find('@') {
+                                    let before_at = &from_val[..at_pos];
+                                    if let Some(colon_pos) = before_at.rfind(':') {
+                                        caller_number = before_at[colon_pos + 1..].to_string();
+                                    } else if let Some(sip_prefix) = before_at.rfind("sip:") {
+                                        caller_number = before_at[sip_prefix + 4..].to_string();
+                                    }
+                                }
+                                break;
+                            }
+                        }
+
+                        caller_number = Self::sanitize_caller_id(&caller_number);
+                        caller_name = Self::sanitize_caller_id(&caller_name);
+
+                        if invite_tx
+                            .try_send(InviteData {
+                                caller_number,
+                                caller_name,
+                            })
+                            .is_err()
+                        {
+                            log::warn!("[sip] Dropping INVITE — event channel full");
+                        }
+
+                        let resp = Self::build_invite_busy_response(local_port, &config.username, &config.server);
+                        let _ = transport.send(resp.as_bytes(), server_addr).await;
                     }
                 }
             });
@@ -873,7 +974,6 @@ impl SipClient {
         });
 
         let mut handle = self.task_handle.lock().await;
-        // Cancel any previous task first
         if let Some(prev) = handle.take() {
             prev.abort();
         }
@@ -1092,5 +1192,55 @@ mod tests {
         let long = "a".repeat(200);
         let clean = SipClient::sanitize_caller_id(&long);
         assert_eq!(clean.len(), 128);
+    }
+
+    #[test]
+    fn test_build_register_message() {
+        let msg = SipClient::build_register_message(
+            "alice",
+            "sip.example.com",
+            5060,
+            12345,
+            "abc@127.0.0.1",
+            1,
+            None,
+            300,
+            "UDP",
+        );
+        assert!(msg.starts_with("REGISTER sip:sip.example.com:5060 SIP/2.0\r\n"));
+        assert!(msg.contains("Via: SIP/2.0/UDP 127.0.0.1:12345;branch="));
+        assert!(msg.contains("From: <sip:alice@sip.example.com>;tag="));
+        assert!(msg.contains("To: <sip:alice@sip.example.com>"));
+        assert!(msg.contains("Call-ID: abc@127.0.0.1"));
+        assert!(msg.contains("CSeq: 1 REGISTER"));
+        assert!(msg.contains("Contact: <sip:alice@127.0.0.1:12345>"));
+        assert!(msg.contains("Expires: 300"));
+        assert!(msg.contains("User-Agent: CallerFlash"));
+        assert!(msg.contains("Content-Length: 0"));
+        assert!(!msg.contains("Authorization:"));
+    }
+
+    #[test]
+    fn test_build_register_message_with_auth() {
+        let msg = SipClient::build_register_message(
+            "alice",
+            "sip.example.com",
+            5060,
+            12345,
+            "abc@127.0.0.1",
+            2,
+            Some(r#"Digest username="alice", realm="sip.example.com""#),
+            300,
+            "UDP",
+        );
+        assert!(msg.contains("Authorization:"));
+        assert!(msg.contains(r#"Digest username="alice""#));
+    }
+
+    #[test]
+    fn test_build_invite_busy_response() {
+        let resp = SipClient::build_invite_busy_response(12345, "alice", "sip.example.com");
+        assert!(resp.starts_with("SIP/2.0 486 Busy Here\r\n"));
+        assert!(resp.contains("To: <sip:alice@sip.example.com>;tag="));
     }
 }
