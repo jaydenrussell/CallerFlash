@@ -13,49 +13,31 @@ within 14 days for high-severity issues.
 
 ## Threat Model
 
-CallerFlash is a Windows desktop application that maintains a persistent
-SIP registration with a third-party VoIP provider. Its threat surface is:
+CallerFlash is a Tauri 2.0 Windows desktop application that maintains a
+persistent SIP registration with a third-party VoIP provider. Its threat
+surface is:
 
 | Asset | Threat | Mitigation |
 |-------|--------|-----------|
-| Update channel | Supply-chain compromise via CDN or GitHub account takeover | Authenticode signature, SHA-256, Ed25519 detached sig, pinned public key |
-| SIP credentials | Theft from disk or memory | `safeStorage` (Windows DPAPI), never written to logs |
-| Caller ID data | Display-name injection (CRLF, control bytes) | Sanitization at parser exit |
+| Update channel | Supply-chain compromise via CDN or GitHub account takeover | Ed25519 detached sig, SHA-256 checksum, pinned public key via Tauri updater |
+| SIP credentials | Theft from disk or memory | AES-256-GCM at rest, keyring-backed key, never written to logs |
+| Caller ID data | Display-name injection (CRLF, control bytes) | Sanitization at parser exit (`sanitize_caller_id`) |
 | Clipboard contents | Cross-app injection via auto-copy | Strict digit-only sanitizer |
-| Renderer process | XSS / RCE | Strict CSP, sandboxed `BrowserWindow`, `nodeIntegration: false`, `contextIsolation: true` |
-| External links | Accidental RCE via `javascript:` URIs | URL allow-list + `shell.openExternal` only |
+| WebView renderer | XSS / RCE | Strict CSP, `withGlobalTauri: false`, no `shell:allow-spawn`, input validation at IPC trust boundary |
+| External links | Accidental RCE via `javascript:` URIs | URL validated server-side (https/http only, max 2048 chars) |
 | Registration spam | Attacker-controlled SIP server | Version monotonicity + pinned Ed25519 key |
 
 ---
 
 ## Update Security
 
-Every release is signed using **three independent layers**. All three
-must pass for the update to install.
+Every release is signed using **two independent layers**. Both must pass
+for the update to install.
 
-### 1. Authenticode Code Signing (Windows)
+### 1. SHA-256 Checksum + Ed25519 Detached Signature
 
-The signed `.exe`/`.msi` carries a publisher identity tied to a
-certificate held by the project maintainer. EV (Extended Validation)
-certificates are strongly preferred because they immediately clear
-SmartScreen without a reputation-building period.
-
-### 2. SHA-256 Checksum
-
-A `SHA256SUMS` file is attached to every GitHub release. The Electron
-main process downloads this file alongside the binary and verifies
-`hash(actualBinary) === expectedHash`.
-
-### 3. Ed25519 Detached Signature
-
-The `SHA256SUMS` file is signed with an Ed25519 private key held
-**offline** by the maintainer. The detached `.sig` file is attached to
-the release.
-
-The Electron main process verifies the signature against a **public
-key hard-coded in the app binary** (`RELEASE_SIGNING_PUBLIC_KEY_B64` in
-`src/security/updateVerifier.ts`). The key is never fetched from the
-network — that would itself be a hijack vector.
+The Tauri updater plugin verifies the installer checksum and Ed25519
+signature before applying the update.
 
 ```
 # Generate the keypair (once, offline)
@@ -63,7 +45,7 @@ openssl genpkey -algorithm Ed25519 -out release-signing.key
 openssl pkey -in release-signing.key -pubout -out release-signing.pub
 
 # Sign a release
-sha256sum CallerFlash-Setup-X.Y.Z.exe > SHA256SUMS
+shasum -a 256 CallerFlash-Setup-X.Y.Z.exe > SHA256SUMS
 openssl pkeyutl -sign -rawin -in SHA256SUMS -inkey release-signing.key \
     -out CallerFlash-Setup-X.Y.Z.exe.sig
 
@@ -76,66 +58,73 @@ openssl pkeyutl -verify -rawin -pubin \
 
 ### Additional Gates
 
-* **HTTPS only** + **host allow-list** (`github.com`,
-  `api.github.com`, `objects.githubusercontent.com`,
-  `raw.githubusercontent.com`).
+* **HTTPS only** + **host allow-list** — updater endpoint is pinned to
+  `https://releases.callerflash.app/{{target}}/{{current_version}}`.
 * **Version monotonicity** — never installs a release older than the
   currently running version. Defeats roll-back attacks.
-* **Minimum supported version** — ancient versions cannot skip updates.
-* **No redirects** — the GitHub API host is pinned in code, and the
-  download URL is validated against the host allow-list before fetch.
 
 ---
 
-## Cryptographic Storage (Production)
+## Cryptographic Storage
 
-In the Electron build, SIP credentials are encrypted at rest using
-**Electron's `safeStorage`** API, which delegates to **Windows DPAPI**
-on Windows and the Keychain on macOS. The encryption key is bound to
-the user's login session — even an attacker with raw disk access
-cannot decrypt the secrets without also compromising the user account.
+SIP credentials are encrypted at rest using **AES-256-GCM**:
 
-The web demo cannot use DPAPI. In the demo, credentials live in
-React state and are never persisted to `localStorage`.
+- Encryption key is stored in the Windows Credential Manager via the
+  `keyring` crate.
+- Key is generated once on first use (OS-level RNG).
+- Settings file uses a versioned envelope format (`_version: 3`,
+  `_encrypted: true`).
+- Decryption failures produce user-safe messages.
+- Fallback: if keyring is unavailable, the app continues with
+  in-memory-only operation.
 
 ---
 
-## Renderer Hardening
+## WebView Hardening
 
-The `BrowserWindow` is configured as follows in the Electron build:
+The Tauri webview is configured with least privilege:
 
-```ts
-new BrowserWindow({
-  webPreferences: {
-    nodeIntegration: false,
-    contextIsolation: true,
-    sandbox: true,
-    preload: path.join(__dirname, 'preload.cjs'),
-  },
-});
+- `withGlobalTauri: false` — no `window.__TAURI__` exposed to scripts.
+- Strict CSP in `tauri.conf.json`:
+  ```
+  script-src 'self'
+  style-src 'self' 'unsafe-inline'
+  connect-src 'self' ws: wss:
+  img-src 'self' data:
+  form-action 'none'
+  object-src 'none'
+  frame-ancestors 'none'
+  ```
+- Capabilities in `src-tauri/capabilities/default.json` request only
+  the minimum permissions needed. No `fs:*`, no `shell:default`, no
+  `dialog:*`, no `clipboard:*`.
+- The toast window (`toast.html`) has a separate, permissive CSP with
+  `'unsafe-inline'` for its inline script — isolated webview with no
+  user input surface.
+
+---
+
+## IPC Trust Boundary
+
+```
+[Frontend (React)] --IPC (invoke)--> [Tauri Backend (Rust)]
+       ^                                    |
+       |  Events (listen/emit)              |
+       +------------------------------------+
 ```
 
-The renderer runs under a strict CSP defined in `index.html`:
+The **trust boundary** sits at the IPC layer. The frontend is treated as
+untrusted input:
 
-```
-default-src 'self';
-script-src 'self' 'wasm-unsafe-eval';
-style-src 'self' https://fonts.googleapis.com 'unsafe-inline';
-font-src 'self' https://fonts.gstatic.com data:;
-img-src 'self' data:;
-connect-src 'self' https://api.github.com
-                 https://github.com
-                 https://objects.githubusercontent.com;
-form-action 'none';
-object-src 'none';
-base-uri 'self';
-frame-ancestors 'none';
-upgrade-insecure-requests;
-```
-
-All `window.open` and `<a target="_blank">` calls go through
-`shell.openExternal` in the main process, which is gated by a URL
-allow-list to prevent accidental `javascript:` execution.
+- Every IPC command validates and sanitizes parameters on the Rust side.
+- `serde_json::Value` parameters are schema-validated with field-level
+  length and type checks.
+- Notification titles/bodies have length limits (256/1024 bytes).
+- SIP config is validated (username, server required; port, protocol,
+  expiry range-checked).
+- Storage data is size-limited (5MB max) and must be a JSON object.
+- URLs for shell open are restricted to `http://` and `https://` only,
+  max 2048 chars.
 
 ---
 
@@ -160,15 +149,12 @@ buffer to disk — there is no path from SIP password to exported file.
 
 ## Dependency Hygiene
 
-* `npm audit --omit=dev` is run on every CI build. Failures block merge.
-* All dependencies are pinned to exact versions in `package-lock.json`.
-* Renovate Bot (or equivalent) opens PRs for security updates within
-  24 hours of disclosure.
-* The build pipeline runs `npm ci --ignore-scripts` to prevent
-  postinstall scripts from executing on developer or CI machines.
-* The release workflow uses GitHub Actions with
-  `permissions: read-all` and explicit `permissions:` blocks per job.
-  No workflow has `write` access to the repository by default.
+* `cargo audit` is run on every CI build with an allowlist for
+  known-accepted advisories (see `.audit.toml`).
+* Rust dependencies are pinned to exact versions in `Cargo.lock`.
+* `npm audit --omit=dev` is run on every CI build.
+* All JS dependencies are pinned to exact versions in
+  `package-lock.json`.
 
 ---
 
@@ -190,4 +176,4 @@ or an unverified checksum, **do not run the binary**. Email
 
 We thank the security researchers who have helped harden CallerFlash.
 Past disclosures are listed in the
-[Security Advisories](../../security/advisories) tab.
+[Security Advisories](../../security/Advisories) tab.

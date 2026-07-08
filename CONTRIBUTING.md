@@ -6,20 +6,26 @@ Thanks for contributing! Please read this before opening a PR.
 
 ```bash
 # Clone
-git clone https://github.com/callerflash/callerflash-sip-client.git
-cd callerflash-sip-client
+git clone https://github.com/jaydenrussell/CallerFlash.git
+cd CallerFlash
 
-# Install
+# Install frontend dependencies
 npm install
 
 # Dev server (hot reload)
 npm run dev
 
-# Build production bundle
+# Build frontend for production
 npm run build
 
-# Build Windows 64-bit installer (requires local Node 20 + Windows)
-npm run electron:build
+# Build Windows installer (requires Windows + Rust toolchain)
+npm run tauri:build
+
+# Run Rust tests
+cd src-tauri && cargo test
+
+# Run all Rust checks
+cd src-tauri && cargo fmt --check && cargo clippy -- -D warnings && cargo test
 ```
 
 ## Branch Workflow
@@ -30,14 +36,13 @@ npm run electron:build
 | `beta` | Feature-freeze — bug fixes only |
 | `stable` | Production — tagged releases |
 
-See [`docs/BRANCHES.md`](docs/BRANCHES.md) for the full branching strategy.
-
 ## PR Checklist
 
 - [ ] `npm run build` passes locally
-- [ ] All diagnostic log calls use the sanitized `addDiagnosticLog` (no raw credential logging)
-- [ ] Any new dependency is pinned to an exact version in `package.json`
-- [ ] The PR targets the `main` branch (not `stable` or `beta`)
+- [ ] All diagnostic log calls use the sanitized output (no raw credential logging)
+- [ ] Any new Rust dependency is pinned to an exact version in `src-tauri/Cargo.toml`
+- [ ] Any new JS dependency is pinned to an exact version in `package.json`
+- [ ] The PR targets the `refactor/tauri` branch (not `stable` or `beta`)
 
 ## Security
 
