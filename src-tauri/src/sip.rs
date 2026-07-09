@@ -242,7 +242,12 @@ async fn create_transport(
             let tcp = TcpConnection::connect(&target, Some(cancel_token))
                 .await
                 .map_err(|e| format!("TCP connect failed: {}", e))?;
-            let local_port = tcp.get_addr().addr.port.map(|p| p.value()).unwrap_or(0);
+            let local_port = tcp
+                .get_addr()
+                .addr
+                .port
+                .map(|p| p.value())
+                .unwrap_or(0);
             Ok((SipConnection::Tcp(tcp), local_port))
         }
         "TLS" => {
@@ -257,7 +262,10 @@ async fn create_transport(
             let mut ca_pem = String::new();
             for cert in &cert_result.certs {
                 let der = cert.as_ref();
-                let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, der);
+                let b64 = base64::Engine::encode(
+                    &base64::engine::general_purpose::STANDARD,
+                    der,
+                );
                 ca_pem.push_str("-----BEGIN CERTIFICATE-----\n");
                 for chunk in b64.as_bytes().chunks(64) {
                     ca_pem.push_str(&String::from_utf8_lossy(chunk));
@@ -273,7 +281,12 @@ async fn create_transport(
             let tls = TlsConnection::connect(&target, Some(&tls_config), None, Some(cancel_token))
                 .await
                 .map_err(|e| format!("TLS connect failed: {}", e))?;
-            let local_port = tls.get_addr().addr.port.map(|p| p.value()).unwrap_or(0);
+            let local_port = tls
+                .get_addr()
+                .addr
+                .port
+                .map(|p| p.value())
+                .unwrap_or(0);
             Ok((SipConnection::Tls(tls), local_port))
         }
         _ => {
@@ -286,7 +299,12 @@ async fn create_transport(
             )
             .await
             .map_err(|e| format!("Failed to bind UDP: {}", e))?;
-            let local_port = udp.get_addr().addr.port.map(|p| p.value()).unwrap_or(5060);
+            let local_port = udp
+                .get_addr()
+                .addr
+                .port
+                .map(|p| p.value())
+                .unwrap_or(5060);
             Ok((SipConnection::Udp(udp), local_port))
         }
     }
@@ -317,40 +335,39 @@ impl SipClient {
                 let port = config.port.unwrap_or(5060);
                 let protocol = config.protocol.as_deref().unwrap_or("UDP").to_string();
 
-                let server_addr =
-                    match tokio::net::lookup_host(format!("{}:{}", server, port)).await {
-                        Ok(mut addrs) => match addrs.next() {
-                            Some(addr) => addr,
-                            None => {
-                                safe_emit(
-                                    &handle,
-                                    "sip:status",
-                                    SipStatus {
-                                        status: "error".to_string(),
-                                        message: Some(user_safe_sip_error(&format!(
-                                            "No addresses found for {}:{}",
-                                            server, port
-                                        ))),
-                                    },
-                                );
-                                return;
-                            }
-                        },
-                        Err(e) => {
+                let server_addr = match tokio::net::lookup_host(format!("{}:{}", server, port)).await {
+                    Ok(mut addrs) => match addrs.next() {
+                        Some(addr) => addr,
+                        None => {
                             safe_emit(
                                 &handle,
                                 "sip:status",
                                 SipStatus {
                                     status: "error".to_string(),
                                     message: Some(user_safe_sip_error(&format!(
-                                        "DNS resolution failed: {}",
-                                        e
+                                        "No addresses found for {}:{}",
+                                        server, port
                                     ))),
                                 },
                             );
                             return;
                         }
-                    };
+                    },
+                    Err(e) => {
+                        safe_emit(
+                            &handle,
+                            "sip:status",
+                            SipStatus {
+                                status: "error".to_string(),
+                                message: Some(user_safe_sip_error(&format!(
+                                    "DNS resolution failed: {}",
+                                    e
+                                ))),
+                            },
+                        );
+                        return;
+                    }
+                };
 
                 let cancel_token = CancellationToken::new();
                 let (transport, local_port) = match create_transport(
@@ -384,7 +401,6 @@ impl SipClient {
                     },
                 );
 
-                // Build TransportLayer and Endpoint for transaction handling
                 let transport_layer = TransportLayer::new(cancel_token.child_token());
                 transport_layer.add_connection(transport.clone());
 
@@ -420,22 +436,21 @@ impl SipClient {
                     }
                 });
 
-                let server_uri =
-                    match Uri::try_from(format!("sip:{}:{}", config.server, port).as_str()) {
-                        Ok(u) => u,
-                        Err(e) => {
-                            log::error!("[sip] Invalid server URI: {}", e);
-                            safe_emit(
-                                &handle,
-                                "sip:status",
-                                SipStatus {
-                                    status: "error".to_string(),
-                                    message: Some("Invalid server address".to_string()),
-                                },
-                            );
-                            return;
-                        }
-                    };
+                let server_uri = match Uri::try_from(format!("sip:{}:{}", config.server, port).as_str()) {
+                    Ok(u) => u,
+                    Err(e) => {
+                        log::error!("[sip] Invalid server URI: {}", e);
+                        safe_emit(
+                            &handle,
+                            "sip:status",
+                            SipStatus {
+                                status: "error".to_string(),
+                                message: Some("Invalid server address".to_string()),
+                            },
+                        );
+                        return;
+                    }
+                };
 
                 let auth_username = config
                     .auth_username
@@ -451,7 +466,6 @@ impl SipClient {
                 let refresh_ms = std::cmp::max((expiry as u64).saturating_sub(15) * 1000, 30_000);
                 let mut consecutive_failures = 0u32;
 
-                // Build initial REGISTER request
                 let call_id = rsipstack::transaction::make_call_id(Some("127.0.0.1"));
                 let from_to_uri = match Uri::try_from(
                     format!("sip:{}@{}", config.username, config.server).as_str(),
@@ -551,8 +565,7 @@ impl SipClient {
                         .headers
                         .unique_push(sip::headers::UserAgent::new("CallerFlash").into());
 
-                    let key = match TransactionKey::from_request(&request, TransactionRole::Client)
-                    {
+                    let key = match TransactionKey::from_request(&request, TransactionRole::Client) {
                         Ok(k) => k,
                         Err(e) => {
                             log::error!("[sip] Failed to create transaction key: {}", e);
@@ -572,12 +585,12 @@ impl SipClient {
                     let mut auth_sent = false;
 
                     loop {
-                        // Bound each REGISTER response wait so a server that never
-                        // replies cannot leave the client stuck "connecting" forever.
-                        let recv =
-                            tokio::time::timeout(std::time::Duration::from_secs(15), tx.receive())
-                                .await;
-                        let msg = match recv {
+                        let recv = match tokio::time::timeout(
+                            std::time::Duration::from_secs(15),
+                            tx.receive(),
+                        )
+                        .await
+                        {
                             Ok(Some(m)) => m,
                             Ok(None) => break,
                             Err(_) => {
@@ -595,6 +608,14 @@ impl SipClient {
                                         ),
                                     },
                                 );
+                                *consecutive_failures += 1;
+                                return false;
+                            }
+                        };
+                        let msg = match recv {
+                            Ok(m) => m,
+                            Err(_) => {
+                                log::error!("[sip] Transaction receive error");
                                 *consecutive_failures += 1;
                                 return false;
                             }
@@ -675,7 +696,6 @@ impl SipClient {
                     false
                 }
 
-                // Initial registration
                 do_register(
                     &endpoint_inner,
                     &server_uri,
@@ -691,7 +711,6 @@ impl SipClient {
                 )
                 .await;
 
-                // Main loop: re-registration + INVITE listener
                 loop {
                     let base_ms = refresh_ms;
                     let backoff_ms = base_ms * 2u64.pow(consecutive_failures.min(6));
@@ -702,7 +721,6 @@ impl SipClient {
                             if tx.original.method == Method::Invite {
                                 let (caller_number, caller_name) =
                                     extract_invite_caller(&SipMessage::Request(tx.original.clone()));
-
                                 let invite_data = InviteData {
                                     caller_number,
                                     caller_name,
@@ -731,7 +749,8 @@ impl SipClient {
                                 &handle,
                                 &connected,
                                 &mut consecutive_failures,
-                            ).await;
+                            )
+                            .await;
 
                             if !still_registered {
                                 safe_emit(
@@ -751,7 +770,6 @@ impl SipClient {
                 cancel_token.cancel();
                 endpoint_serve.abort();
             });
-
             if let Err(panic) = future.catch_unwind().await {
                 log::error!("[sip] connection task panicked: {:?}", panic);
             }
@@ -810,7 +828,9 @@ pub async fn sip_disconnect(app: AppHandle) -> Result<serde_json::Value, Command
 }
 
 #[tauri::command]
-pub async fn sip_test_connection(config: SipConfig) -> Result<serde_json::Value, CommandError> {
+pub async fn sip_test_connection(
+    config: SipConfig,
+) -> Result<serde_json::Value, CommandError> {
     if !SIP_RATE_LIMITER.check("sip_test_connection") {
         return Err(CommandError::rate_limited());
     }
@@ -859,7 +879,6 @@ pub async fn sip_test_connection(config: SipConfig) -> Result<serde_json::Value,
                     }),
                 }
             } else {
-                // UDP is connectionless — verify we can open a local socket to send from.
                 match tokio::net::UdpSocket::bind("0.0.0.0:0").await {
                     Ok(_) => serde_json::json!({
                         "reachable": "local-ok",
@@ -871,13 +890,94 @@ pub async fn sip_test_connection(config: SipConfig) -> Result<serde_json::Value,
                     }),
                 }
             };
+
+            let sip_test = if protocol == "TCP" || protocol == "UDP" {
+                let rand_call = format!("{:016x}", rand::random::<u64>());
+
+                let opts_branch = format!("{:016x}", rand::random::<u64>());
+                let options_msg = format!(
+                    "OPTIONS sip:{}:{} SIP/2.0\r\n\
+                     Via: SIP/2.0/{} 0.0.0.0:0;branch=z9hG4bK.{}\r\n\
+                     From: <sip:tester@{}>;tag={}\r\n\
+                     To: <sip:tester@{}>\r\n\
+                     Call-ID: {}@tester\r\n\
+                     CSeq: 1 OPTIONS\r\n\
+                     Max-Forwards: 70\r\n\
+                     Content-Length: 0\r\n\
+                     \r\n",
+                    server, port, protocol, opts_branch, server, opts_branch, server, rand_call
+                );
+
+                let opts_start = std::time::Instant::now();
+                let options_result = match sip_send_recv(&protocol, addr, &options_msg).await {
+                    Ok((code, reason)) => serde_json::json!({
+                        "success": true,
+                        "statusCode": code,
+                        "reason": reason,
+                        "roundTripMs": opts_start.elapsed().as_millis() as u64
+                    }),
+                    Err(e) => serde_json::json!({
+                        "success": false,
+                        "error": e
+                    }),
+                };
+
+                let reg_branch = format!("{:016x}", rand::random::<u64>());
+                let register_msg = format!(
+                    "REGISTER sip:{}:{} SIP/2.0\r\n\
+                     Via: SIP/2.0/{} 0.0.0.0:0;branch=z9hG4bK.{}\r\n\
+                     From: <sip:{}@{}>;tag={}\r\n\
+                     To: <sip:{}@{}>\r\n\
+                     Call-ID: {}@tester\r\n\
+                     CSeq: 1 REGISTER\r\n\
+                     Max-Forwards: 70\r\n\
+                     Contact: <sip:{}@0.0.0.0:0>\r\n\
+                     Expires: 60\r\n\
+                     Content-Length: 0\r\n\
+                     \r\n",
+                    server, port, protocol, reg_branch,
+                    config.username, server, reg_branch,
+                    config.username, server,
+                    rand_call,
+                    config.username
+                );
+
+                let reg_start = std::time::Instant::now();
+                let register_result = match sip_send_recv(&protocol, addr, &register_msg).await {
+                    Ok((code, reason)) => {
+                        let auth_required = code == "401" || code == "407";
+                        let auth_info = serde_json::Map::new();
+                        serde_json::json!({
+                            "success": true,
+                            "statusCode": code,
+                            "reason": reason,
+                            "roundTripMs": reg_start.elapsed().as_millis() as u64,
+                            "authRequired": auth_required,
+                            "authDetails": auth_info
+                        })
+                    }
+                    Err(e) => serde_json::json!({
+                        "success": false,
+                        "error": e
+                    }),
+                };
+
+                serde_json::json!({
+                    "options": options_result,
+                    "register": register_result
+                })
+            } else {
+                serde_json::json!({"note": "SIP test requires TCP or UDP"})
+            };
+
             Ok(serde_json::json!({
                 "success": true,
                 "server": server,
                 "port": port,
                 "protocol": protocol,
                 "dns": { "resolved": true, "ip": addr.ip().to_string(), "family": family, "timeMs": dns_ms },
-                "portCheck": port_check
+                "portCheck": port_check,
+                "sip": sip_test
             }))
         }
         Err(err_msg) => Ok(serde_json::json!({
@@ -886,9 +986,69 @@ pub async fn sip_test_connection(config: SipConfig) -> Result<serde_json::Value,
             "port": port,
             "protocol": protocol,
             "dns": { "resolved": false, "error": err_msg },
-            "portCheck": null
+            "portCheck": null,
+            "sip": null
         })),
     }
+}
+
+async fn sip_send_recv(
+    protocol: &str,
+    addr: std::net::SocketAddr,
+    message: &str,
+) -> Result<(String, String), String> {
+    use tokio::io::{AsyncWriteExt, AsyncReadExt};
+
+    let raw = if protocol == "TCP" {
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            async {
+                let mut stream = tokio::net::TcpStream::connect(addr).await?;
+                stream.write_all(message.as_bytes()).await?;
+                let mut buf = vec![0u8; 8192];
+                let n = stream.read(&mut buf).await?;
+                Ok::<_, std::io::Error>(String::from_utf8_lossy(&buf[..n]).to_string())
+            },
+        )
+        .await
+        {
+            Ok(Ok(data)) => data,
+            Ok(Err(e)) => return Err(format!("TCP IO error: {}", e)),
+            Err(_) => return Err("TCP timeout after 5s".to_string()),
+        }
+    } else {
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            async {
+                let socket = tokio::net::UdpSocket::bind("0.0.0.0:0").await?;
+                socket.connect(addr).await?;
+                socket.send(message.as_bytes()).await?;
+                let mut buf = vec![0u8; 8192];
+                let n = socket.recv(&mut buf).await?;
+                Ok::<_, std::io::Error>(String::from_utf8_lossy(&buf[..n]).to_string())
+            },
+        )
+        .await
+        {
+            Ok(Ok(data)) => data,
+            Ok(Err(e)) => return Err(format!("UDP IO error: {}", e)),
+            Err(_) => return Err("UDP timeout after 5s".to_string()),
+        }
+    };
+
+    let status_line = raw.lines().next().unwrap_or("").to_string();
+    let code = status_line
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or("0")
+        .to_string();
+    let reason = status_line
+        .splitn(3, ' ')
+        .nth(2)
+        .unwrap_or("")
+        .to_string();
+
+    Ok((code, reason))
 }
 
 #[cfg(test)]
