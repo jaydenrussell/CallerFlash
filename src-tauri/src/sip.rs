@@ -24,6 +24,7 @@ const MAX_CALLER_ID_LENGTH: usize = 128;
 const MIN_REGISTER_EXPIRY: u32 = 30;
 const MAX_REGISTER_EXPIRY: u32 = 86400;
 const MIN_PORT: u16 = 1;
+const MAX_PORT: u16 = 65535;
 
 #[derive(Debug, Clone)]
 pub struct SipConfig {
@@ -114,10 +115,10 @@ impl SipConfig {
             ));
         }
         if let Some(port) = self.port {
-            if port < MIN_PORT {
+            if !(MIN_PORT..=MAX_PORT).contains(&port) {
                 return Err(CommandError::invalid_input(format!(
-                    "SIP port must be at least {}",
-                    MIN_PORT
+                    "SIP port must be between {} and {}",
+                    MIN_PORT, MAX_PORT
                 )));
             }
         }
@@ -385,7 +386,7 @@ impl SipClient {
 
                 // Build TransportLayer and Endpoint for transaction handling
                 let transport_layer = TransportLayer::new(cancel_token.child_token());
-                transport_layer.add_transport(transport.clone());
+                transport_layer.add_connection(transport.clone());
 
                 let endpoint = RsEndpointBuilder::new()
                     .with_user_agent("CallerFlash")
@@ -461,9 +462,18 @@ impl SipClient {
                         return;
                     }
                 };
-                let contact_uri = match Uri::try_from(
-                    format!("sip:{}@127.0.0.1:{}", config.username, local_port).as_str(),
-                ) {
+                let contact_uri = match Uri::try_from({
+                    let transport_param = match protocol.as_str() {
+                        "TCP" => ";transport=tcp",
+                        "TLS" => ";transport=tls",
+                        _ => "",
+                    };
+                    format!(
+                        "sip:{}@{}:{}{}",
+                        config.username, config.server, local_port, transport_param
+                    )
+                    .as_str()
+                }) {
                     Ok(u) => u,
                     Err(e) => {
                         log::error!("[sip] Invalid Contact URI: {}", e);
