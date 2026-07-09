@@ -205,12 +205,12 @@ jobs:
           SIG="${{ steps.bundles.outputs.sig }}"
           UPDATE_BUNDLE="${{ steps.bundles.outputs.update_bundle }}"
 
-          # Create release (not latest — coexists with Electron releases)
+          # Create release (latest — Tauri builds use semver, so mark as latest)
           gh release create "$TAG" \
             --title "CallerFlash $VERSION" \
             --notes "Tauri build $VERSION — automatic release." \
             --target refactor/tauri \
-            --latest=false
+            --latest=true
 
           # Upload NSIS installer
           gh release upload "$TAG" "$INSTALLER" --clobber
