@@ -478,6 +478,7 @@ impl SipClient {
                     serde_json::json!({"message": format!("[SIP] Starting registration — server: {}:{}, expiry: {}, protocol: {}", config.server, port, expiry, protocol)}),
                 );
 
+                #[allow(clippy::too_many_arguments)]
                 async fn do_register(
                     endpoint_inner: &Arc<rsipstack::transaction::endpoint::EndpointInner>,
                     server_uri: &Uri,
@@ -561,8 +562,8 @@ impl SipClient {
                     let mut auth_sent = false;
 
                     while let Some(msg) = tx.receive().await {
-                        match msg {
-                            SipMessage::Response(resp) => match resp.status_code {
+                        if let SipMessage::Response(resp) = msg {
+                            match resp.status_code {
                                 StatusCode::Unauthorized
                                 | StatusCode::ProxyAuthenticationRequired => {
                                     if auth_sent {
@@ -629,8 +630,7 @@ impl SipClient {
                                     *consecutive_failures += 1;
                                     return false;
                                 }
-                            },
-                            _ => {}
+                            }
                         }
                     }
 
