@@ -810,79 +810,8 @@ pub async fn sip_disconnect(app: AppHandle) -> Result<serde_json::Value, Command
 }
 
 #[tauri::command]
-async fn send_sip_and_recv(
-    protocol: &str,
-    addr: std::net::SocketAddr,
-    sip_message: &str,
-) -> Result<(String, String, std::collections::HashMap<String, Vec<String>>), String> {
-    use tokio::io::AsyncWriteExt;
-    use tokio::io::AsyncReadExt;
 
-    let raw = if protocol == "TCP" {
-        match tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            async {
-                let mut stream = tokio::net::TcpStream::connect(addr).await?;
-                stream.write_all(sip_message.as_bytes()).await?;
-                let mut buf = vec![0u8; 8192];
-                let n = stream.read(&mut buf).await?;
-                Ok::<Vec<u8>, std::io::Error>(buf[..n].to_vec())
-            },
-        )
-        .await
-        {
-            Ok(Ok(data)) => String::from_utf8_lossy(&data).to_string(),
-            Ok(Err(e)) => return Err(format!("TCP send/recv failed: {}", e)),
-            Err(_) => return Err("SIP request timed out (TCP, 5s)".to_string()),
-        }
-    } else {
-        match tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            async {
-                let socket = tokio::net::UdpSocket::bind("0.0.0.0:0").await?;
-                socket.connect(addr).await?;
-                socket.send(sip_message.as_bytes()).await?;
-                let mut buf = vec![0u8; 8192];
-                let n = socket.recv(&mut buf).await?;
-                Ok::<Vec<u8>, std::io::Error>(buf[..n].to_vec())
-            },
-        )
-        .await
-        {
-            Ok(Ok(data)) => String::from_utf8_lossy(&data).to_string(),
-            Ok(Err(e)) => return Err(format!("UDP send/recv failed: {}", e)),
-            Err(_) => return Err("SIP request timed out (UDP, 5s)".to_string()),
-        }
-    };
 
-    let status_line = raw.lines().next().unwrap_or("").to_string();
-    let status_code = status_line
-        .split_whitespace()
-        .nth(1)
-        .unwrap_or("0")
-        .to_string();
-    let reason = status_line
-        .splitn(3, ' ')
-        .nth(2)
-        .unwrap_or("")
-        .to_string();
-
-    let mut headers: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
-    for line in raw.lines().skip(1) {
-        if line.is_empty() || line.starts_with(' ') || line.starts_with('\t') {
-            continue;
-        }
-        if let Some(idx) = line.find(':') {
-            let key = line[..idx].trim().to_lowercase();
-            let val = line[idx + 1..].trim().to_string();
-            headers.entry(key).or_default().push(val);
-        }
-    }
-
-    Ok((status_code, reason, headers))
-}
-
-#[tauri::command]
 pub async fn sip_test_connection(config: SipConfig) -> Result<serde_json::Value, CommandError> {
     if !SIP_RATE_LIMITER.check("sip_test_connection") {
         return Err(CommandError::rate_limited());
@@ -945,7 +874,7 @@ pub async fn sip_test_connection(config: SipConfig) -> Result<serde_json::Value,
             };
 
             let sip_test = if protocol == "TCP" || protocol == "UDP" {
-                use tokio::io::{AsyncWriteExt, AsyncReadExt};
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
                 let rand_call = format!("{:016x}", rand::random::<u64>());
 
                 // --- OPTIONS probe ---
@@ -1166,7 +1095,8 @@ pub async fn sip_test_connection(config: SipConfig) -> Result<serde_json::Value,
             "portCheck": null, "sip": null
         })),
     }
-}#[cfg(test)]
+}
+#[cfg(test)]
 mod tests {
     use super::*;
 
