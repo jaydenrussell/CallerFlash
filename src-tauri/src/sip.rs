@@ -612,15 +612,7 @@ impl SipClient {
                                 return false;
                             }
                         };
-                        let recv = match recv {
-                            Ok(m) => m,
-                            Err(_) => {
-                                log::error!("[sip] Transaction receive error");
-                                *consecutive_failures += 1;
-                                return false;
-                            }
-                        };
-                        if let SipMessage::Response(resp) = msg {
+                                                if let SipMessage::Response(resp) = recv {if let SipMessage::Response(resp) = msg {
                             match resp.status_code {
                                 StatusCode::Unauthorized
                                 | StatusCode::ProxyAuthenticationRequired => {
