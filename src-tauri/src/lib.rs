@@ -1,4 +1,4 @@
-mod diagnostics;
+﻿mod diagnostics;
 mod error;
 mod migrate;
 mod ratelimit;
@@ -8,7 +8,7 @@ mod storage;
 mod tray;
 mod update;
 
-use diagnostics::{diagnostics_append, diagnostics_load};
+use diagnostics::{diagnostics_append, diagnostics_load, diagnostics_export};
 use error::CommandError;
 use ratelimit::RATE_LIMITER;
 use sip::SipClient;
@@ -432,6 +432,7 @@ pub fn run() {
             storage_decrypt_value,
             diagnostics_append,
             diagnostics_load,
+            diagnostics_export,
             shell_open_external,
             notify_show,
             sip_connect,

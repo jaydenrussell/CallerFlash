@@ -1,9 +1,10 @@
-use serde::{Deserialize, Serialize};
+﻿use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use tauri::Manager;
 
 use crate::error::CommandError;
+use rfd::FileDialog;
 use crate::ratelimit::RATE_LIMITER;
 
 const MAX_LINES: usize = 10000;
@@ -130,4 +131,21 @@ pub fn diagnostics_load(app: tauri::AppHandle) -> Vec<LogEntry> {
         .unwrap_or_else(|_| PathBuf::from("."));
     let diag = Diagnostics::new(data_dir);
     diag.load(1000)
+}
+
+
+
+#[tauri::command]
+pub fn diagnostics_export(content: String) -> Result<(), CommandError> {
+    let file = FileDialog::new()
+        .set_title("Export Diagnostics")
+        .add_filter("Log File", &["log"])
+        .add_filter("Text File", &["txt"])
+        .set_file_name("callerflash-diagnostics.log")
+        .save_file();
+    if let Some(path) = file {
+        std::fs::write(&path, &content)
+            .map_err(|e| CommandError::io(format!("Failed to write diagnostics: {}", e)))?;
+    }
+    Ok(())
 }

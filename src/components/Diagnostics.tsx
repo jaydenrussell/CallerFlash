@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+﻿import { useState, useEffect, useRef } from 'react';
 import {
   Activity, Trash2, Download, Search,
   AlertCircle, CheckCircle, Info, AlertTriangle,
@@ -72,17 +72,26 @@ export function Diagnostics() {
     });
   };
 
-  const exportLogs = () => {
+    const exportLogs = async () => {
     const text = diagnosticLogs.map((log) =>
       `[${log.timestamp.toISOString()}] [${log.level.toUpperCase()}] [${log.category}] ${log.message}${log.details ? '\n  ' + log.details : ''}`
     ).join('\n');
+    if (window.callerflash?.diagnostics?.export) {
+      try {
+        await window.callerflash.diagnostics.export(text);
+        addDiagnosticLog({ level: 'success', category: 'SYSTEM', message: 'Diagnostics exported successfully' });
+        return;
+      } catch (e) {
+        addDiagnosticLog({ level: 'warning', category: 'SYSTEM', message: 'Export via bridge failed, using fallback', details: String(e) });
+      }
+    }
     const blob = new Blob([text], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `callerflash-diagnostics-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.log`;
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
   };
 
   const logCounts = {

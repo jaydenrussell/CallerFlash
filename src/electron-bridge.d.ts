@@ -1,4 +1,4 @@
-// Type declarations for the Electron preload bridge exposed via contextBridge.
+﻿// Type declarations for the Electron preload bridge exposed via contextBridge.
 // Mirrors the surface defined in `electron/preload.cjs`. Keeping this in sync
 // with that file gives the renderer full type safety on `window.callerflash`.
 
@@ -143,6 +143,7 @@ declare global {
     diagnostics: {
       append: (entry: { id: string; timestamp: Date | string; level: string; category: string; message: string; details?: string | null }) => void;
       load: () => Promise<Array<{ id: string; timestamp: Date; level: string; category: string; message: string; details?: string | null }>>;
+      export: (content: string) => Promise<{ success: boolean; error?: string }>;
     };
     app: {
       setStartWithWindows: (enabled: boolean) => void;

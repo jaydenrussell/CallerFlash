@@ -1,4 +1,4 @@
-/// <reference types="./electron-bridge.d.ts" />
+﻿/// <reference types="./electron-bridge.d.ts" />
 
 /**
  * Tauri backend bridge — wraps Tauri invoke/listen/emit into the
@@ -292,6 +292,15 @@ function setup(): void {
           message: string;
           details?: string | null;
         }>;
+      },
+      export: async (content: string) => {
+        try {
+          await invoke('diagnostics_export', { content });
+          return { success: true };
+        } catch (e) {
+          logError('diagnostics.export', e);
+          return { success: false, error: String(e) };
+        }
       },
     },
 
