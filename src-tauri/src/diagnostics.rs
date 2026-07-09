@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use tauri::Manager;
 
 use crate::error::CommandError;
-use rfd::FileDialog;
 use crate::ratelimit::RATE_LIMITER;
 
 const MAX_LINES: usize = 10000;
@@ -137,15 +136,13 @@ pub fn diagnostics_load(app: tauri::AppHandle) -> Vec<LogEntry> {
 
 #[tauri::command]
 pub fn diagnostics_export(content: String) -> Result<(), CommandError> {
-    let file = FileDialog::new()
-        .set_title("Export Diagnostics")
-        .add_filter("Log File", &["log"])
-        .add_filter("Text File", &["txt"])
-        .set_file_name("callerflash-diagnostics.log")
-        .save_file();
-    if let Some(path) = file {
-        std::fs::write(&path, &content)
-            .map_err(|e| CommandError::io(format!("Failed to write diagnostics: {}", e)))?;
-    }
+    let temp_dir = std::env::temp_dir();
+    let filename = format!("callerflash-diagnostics-{}.log",
+        chrono::Local::now().format("%Y-%m-%d_%H-%M-%S"));
+    let path = temp_dir.join(&filename);
+    std::fs::write(&path, &content)
+        .map_err(|e| CommandError::io(format!("Failed to write diagnostics: {}", e)))?;
+    open::that(&path)
+        .map_err(|e| CommandError::io(format!("Failed to open diagnostics file: {}", e)))?;
     Ok(())
 }
