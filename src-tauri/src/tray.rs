@@ -44,7 +44,7 @@ fn apply_sip_status(app: &AppHandle, status: &str) {
     let tip = format!("CallerFlash - SIP {}", status);
     if let Some(tray) = app.tray_by_id("main") {
         if let Some(icon) = build_status_icon(color) {
-            let _ = tray.set_icon(icon);
+            let _ = tray.set_icon(Some(icon));
         }
         let _ = tray.set_tooltip(Some(&tip));
     }
