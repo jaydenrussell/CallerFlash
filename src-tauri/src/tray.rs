@@ -1,8 +1,60 @@
+use serde_json::Value;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager,
 };
+
+/// Map a SIP status string (backend `sip:status` or frontend label) to an icon tint.
+fn status_color(status: &str) -> (u8, u8, u8) {
+    match status.to_lowercase().as_str() {
+        "registered" => (22, 163, 74),          // green
+        "error" => (220, 38, 38),               // red
+        "connecting" => (234, 179, 8),          // amber
+        "disconnected" | "offline" => (37, 99, 235), // blue
+        _ => (37, 99, 235),                     // blue (default/idle)
+    }
+}
+
+/// Build a 32x32 RGBA tray icon tinted with the given color (transparent corners).
+fn build_status_icon(rgb: (u8, u8, u8)) -> Option<tauri::image::Image> {
+    let size: u32 = 32;
+    let mut rgba: Vec<u8> = Vec::with_capacity((size * size * 4) as usize);
+    let cx = size as f32 / 2.0;
+    let cy = size as f32 / 2.0;
+    let radius: f32 = 13.0;
+    for y in 0..size {
+        for x in 0..size {
+            let dx = x as f32 - cx;
+            let dy = y as f32 - cy;
+            let dist = (dx * dx + dy * dy).sqrt();
+            if dist <= radius {
+                rgba.extend_from_slice(&[rgb.0, rgb.1, rgb.2, 255]);
+            } else {
+                rgba.extend_from_slice(&[0, 0, 0, 0]);
+            }
+        }
+    }
+    match tauri::image::Image::from_rgba(size, size, rgba) {
+        Ok(img) => Some(img),
+        Err(e) => {
+            log::error!("[tray] failed to build status icon: {}", e);
+            None
+        }
+    }
+}
+
+/// Update the tray icon + tooltip to reflect the current SIP status.
+fn apply_sip_status(app: &AppHandle, status: &str) {
+    let color = status_color(status);
+    let tip = format!("CallerFlash — SIP {}", status);
+    if let Some(tray) = app.tray_by_id("main") {
+        if let Some(icon) = build_status_icon(color) {
+            let _ = tray.set_icon(icon);
+        }
+        let _ = tray.set_tooltip(Some(&tip));
+    }
+}
 
 pub struct TrayState {
     pub sip_status: std::sync::Mutex<String>,
@@ -59,6 +111,19 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
             _ => {}
         })
         .build(app)?;
+
+    // Reflect real backend SIP state in the tray icon/tooltip. This is the
+    // authoritative source (includes the "error" state, which the frontend
+    // label alone does not surface).
+    let tray_app = app.clone();
+    app.listen("sip:status", move |event| {
+        let payload = event.payload();
+        if let Ok(value) = serde_json::from_str::<Value>(payload) {
+            if let Some(status) = value.get("status").and_then(|v| v.as_str()) {
+                apply_sip_status(&tray_app, status);
+            }
+        }
+    });
 
     app.manage(TrayState {
         sip_status: std::sync::Mutex::new("Offline".to_string()),
