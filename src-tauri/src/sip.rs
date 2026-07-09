@@ -785,7 +785,6 @@ impl SipClient {
             }
         });
     }
-}
 
 #[tauri::command]
 pub async fn sip_connect(
