@@ -612,7 +612,7 @@ impl SipClient {
                                 return false;
                             }
                         };
-                        let msg = match recv {
+                        let recv = match recv {
                             Ok(m) => m,
                             Err(_) => {
                                 log::error!("[sip] Transaction receive error");
