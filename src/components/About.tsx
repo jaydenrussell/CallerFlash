@@ -81,6 +81,7 @@ export function About() {
             { name: 'Tailwind CSS', desc: 'Styling' },
             { name: 'Zustand', desc: 'State' },
             { name: 'lucide-react', desc: 'Icons' },
+            { name: 'rsipstack', desc: 'SIP stack' },
           ].map((tech) => (
             <div key={tech.name} className="px-2.5 py-1.5 bg-win-card rounded-lg border border-win-border/50">
               <p className="text-xs font-medium text-win-text">{tech.name}</p>
