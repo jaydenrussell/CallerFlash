@@ -35,7 +35,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDczNzE3NUJDQ0M1MjQyREMKUldUY1FsTE12SFZ4YzJ2UFdBdGlWeWdscEJ0RGw2THFSa0d1d1EwQVdQVmd2OTcyQVBQRURjOUMK",
       "endpoints": [
-        "https://github.com/jaydenrussell/CallerFlash/releases/download/latest-tauri/update.json"
+        "https://github.com/jaydenrussell/CallerFlash/releases/latest/download/update.json"
       ],
       "dangerousInsecureTransportProtocol": false
     }

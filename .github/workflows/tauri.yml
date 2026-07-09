@@ -234,21 +234,6 @@ jobs:
 
             # Upload update.json to this release
             gh release upload "$TAG" update.json --clobber
-
-            # Push a floating latest-tauri tag so the updater endpoint stays fixed
-            git config user.email "ci@callerflash.app"
-            git config user.name "CI"
-            git tag -f latest-tauri HEAD
-            git push origin latest-tauri --force
-
-            # Upload update.json to the floating tag too
-            gh release upload latest-tauri update.json --clobber 2>/dev/null || \
-              (gh release create latest-tauri \
-                --title "Latest Tauri Build" \
-                --notes "Floating tag pointing to the latest Tauri release." \
-                --target refactor/tauri \
-                --latest=false && \
-               gh release upload latest-tauri update.json --clobber)
           else
             echo "No updater artifacts found — skipping update.json generation"
           fi
