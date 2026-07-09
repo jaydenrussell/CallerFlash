@@ -15,7 +15,7 @@ use sip::SipClient;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Listener, Manager};
 
-pub use sip::{sip_connect, sip_disconnect};
+pub use sip::{sip_connect, sip_disconnect, sip_test_connection};
 pub use storage::{storage_decrypt_value, storage_encrypt_value, storage_load, storage_save};
 pub use tray::{tray_set_sip_status, tray_set_update_available};
 pub use update::cmd_verify_update;
@@ -436,6 +436,7 @@ pub fn run() {
             notify_show,
             sip_connect,
             sip_disconnect,
+            sip_test_connection,
             tray_set_sip_status,
             tray_set_update_available,
             toast_show,
