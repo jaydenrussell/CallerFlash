@@ -882,6 +882,7 @@ async fn send_sip_and_recv(
     Ok((status_code, reason, headers))
 }
 
+#[tauri::command]
 pub async fn sip_test_connection(config: SipConfig) -> Result<serde_json::Value, CommandError> {
     if !SIP_RATE_LIMITER.check("sip_test_connection") {
         return Err(CommandError::rate_limited());
