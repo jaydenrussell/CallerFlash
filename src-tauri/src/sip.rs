@@ -574,11 +574,9 @@ impl SipClient {
                     loop {
                         // Bound each REGISTER response wait so a server that never
                         // replies cannot leave the client stuck "connecting" forever.
-                        let recv = tokio::time::timeout(
-                            std::time::Duration::from_secs(15),
-                            tx.receive(),
-                        )
-                        .await;
+                        let recv =
+                            tokio::time::timeout(std::time::Duration::from_secs(15), tx.receive())
+                                .await;
                         let msg = match recv {
                             Ok(Some(m)) => m,
                             Ok(None) => break,
@@ -812,9 +810,7 @@ pub async fn sip_disconnect(app: AppHandle) -> Result<serde_json::Value, Command
 }
 
 #[tauri::command]
-pub async fn sip_test_connection(
-    config: SipConfig,
-) -> Result<serde_json::Value, CommandError> {
+pub async fn sip_test_connection(config: SipConfig) -> Result<serde_json::Value, CommandError> {
     if !SIP_RATE_LIMITER.check("sip_test_connection") {
         return Err(CommandError::rate_limited());
     }

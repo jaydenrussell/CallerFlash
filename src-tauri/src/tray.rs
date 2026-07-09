@@ -8,11 +8,11 @@ use tauri::{
 /// Map a SIP status string (backend `sip:status` or frontend label) to an icon tint.
 fn status_color(status: &str) -> (u8, u8, u8) {
     match status.to_lowercase().as_str() {
-        "registered" => (22, 163, 74),          // green
-        "error" => (220, 38, 38),               // red
-        "connecting" => (234, 179, 8),          // amber
+        "registered" => (22, 163, 74),               // green
+        "error" => (220, 38, 38),                    // red
+        "connecting" => (234, 179, 8),               // amber
         "disconnected" | "offline" => (37, 99, 235), // blue
-        _ => (37, 99, 235),                     // blue (default/idle)
+        _ => (37, 99, 235),                          // blue (default/idle)
     }
 }
 
