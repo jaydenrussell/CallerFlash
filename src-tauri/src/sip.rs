@@ -810,6 +810,78 @@ pub async fn sip_disconnect(app: AppHandle) -> Result<serde_json::Value, Command
 }
 
 #[tauri::command]
+async fn send_sip_and_recv(
+    protocol: &str,
+    addr: std::net::SocketAddr,
+    sip_message: &str,
+) -> Result<(String, String, std::collections::HashMap<String, Vec<String>>), String> {
+    use tokio::io::AsyncWriteExt;
+    use tokio::io::AsyncReadExt;
+
+    let raw = if protocol == "TCP" {
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            async {
+                let mut stream = tokio::net::TcpStream::connect(addr).await?;
+                stream.write_all(sip_message.as_bytes()).await?;
+                let mut buf = vec![0u8; 8192];
+                let n = stream.read(&mut buf).await?;
+                Ok::<Vec<u8>, std::io::Error>(buf[..n].to_vec())
+            },
+        )
+        .await
+        {
+            Ok(Ok(data)) => String::from_utf8_lossy(&data).to_string(),
+            Ok(Err(e)) => return Err(format!("TCP send/recv failed: {}", e)),
+            Err(_) => return Err("SIP request timed out (TCP, 5s)".to_string()),
+        }
+    } else {
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            async {
+                let socket = tokio::net::UdpSocket::bind("0.0.0.0:0").await?;
+                socket.connect(addr).await?;
+                socket.send(sip_message.as_bytes()).await?;
+                let mut buf = vec![0u8; 8192];
+                let n = socket.recv(&mut buf).await?;
+                Ok::<Vec<u8>, std::io::Error>(buf[..n].to_vec())
+            },
+        )
+        .await
+        {
+            Ok(Ok(data)) => String::from_utf8_lossy(&data).to_string(),
+            Ok(Err(e)) => return Err(format!("UDP send/recv failed: {}", e)),
+            Err(_) => return Err("SIP request timed out (UDP, 5s)".to_string()),
+        }
+    };
+
+    let status_line = raw.lines().next().unwrap_or("").to_string();
+    let status_code = status_line
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or("0")
+        .to_string();
+    let reason = status_line
+        .splitn(3, ' ')
+        .nth(2)
+        .unwrap_or("")
+        .to_string();
+
+    let mut headers: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    for line in raw.lines().skip(1) {
+        if line.is_empty() || line.starts_with(' ') || line.starts_with('\t') {
+            continue;
+        }
+        if let Some(idx) = line.find(':') {
+            let key = line[..idx].trim().to_lowercase();
+            let val = line[idx + 1..].trim().to_string();
+            headers.entry(key).or_default().push(val);
+        }
+    }
+
+    Ok((status_code, reason, headers))
+}
+
 pub async fn sip_test_connection(config: SipConfig) -> Result<serde_json::Value, CommandError> {
     if !SIP_RATE_LIMITER.check("sip_test_connection") {
         return Err(CommandError::rate_limited());
@@ -859,7 +931,6 @@ pub async fn sip_test_connection(config: SipConfig) -> Result<serde_json::Value,
                     }),
                 }
             } else {
-                // UDP is connectionless — verify we can open a local socket to send from.
                 match tokio::net::UdpSocket::bind("0.0.0.0:0").await {
                     Ok(_) => serde_json::json!({
                         "reachable": "local-ok",
@@ -871,13 +942,128 @@ pub async fn sip_test_connection(config: SipConfig) -> Result<serde_json::Value,
                     }),
                 }
             };
+
+            let sip_test = if protocol == "TCP" || protocol == "UDP" {
+                let rand_call = format!("{:016x}", rand::random::<u64>());
+                let rand_branch = format!("{:016x}", rand::random::<u64>());
+
+                // OPTIONS probe
+                let options_msg = format!(
+                    "OPTIONS sip:{}:{} SIP/2.0\r\n\
+                     Via: SIP/2.0/{} 0.0.0.0:0;branch=z9hG4bK.{}\r\n\
+                     From: <sip:tester@{}>;tag={}\r\n\
+                     To: <sip:tester@{}>\r\n\
+                     Call-ID: {}@tester\r\n\
+                     CSeq: 1 OPTIONS\r\n\
+                     Max-Forwards: 70\r\n\
+                     Content-Length: 0\r\n\
+                     \r\n",
+                    server, port, protocol, rand_branch, server, rand_branch, server, rand_call
+                );
+
+                let opts_start = std::time::Instant::now();
+                let options_result = match send_sip_and_recv(&protocol, addr, &options_msg).await {
+                    Ok((code, reason, _headers)) => {
+                        serde_json::json!({
+                            "success": true,
+                            "statusCode": code,
+                            "reason": reason,
+                            "roundTripMs": opts_start.elapsed().as_millis() as u64
+                        })
+                    }
+                    Err(e) => serde_json::json!({
+                        "success": false,
+                        "error": e
+                    }),
+                };
+
+                // REGISTER probe (no credentials - expect 401/407)
+                let rand_branch2 = format!("{:016x}", rand::random::<u64>());
+                let register_msg = format!(
+                    "REGISTER sip:{}:{} SIP/2.0\r\n\
+                     Via: SIP/2.0/{} 0.0.0.0:0;branch=z9hG4bK.{}\r\n\
+                     From: <sip:{}@{}>;tag={}\r\n\
+                     To: <sip:{}@{}>\r\n\
+                     Call-ID: {}@tester\r\n\
+                     CSeq: 1 REGISTER\r\n\
+                     Max-Forwards: 70\r\n\
+                     Contact: <sip:{}@0.0.0.0:0>\r\n\
+                     Expires: 60\r\n\
+                     Content-Length: 0\r\n\
+                     \r\n",
+                    server, port, protocol, rand_branch2,
+                    config.username, server, rand_branch2,
+                    config.username, server,
+                    rand_call,
+                    config.username
+                );
+
+                let reg_start = std::time::Instant::now();
+                let register_result = match send_sip_and_recv(&protocol, addr, &register_msg).await {
+                    Ok((code, reason, headers)) => {
+                        let mut auth_info = serde_json::json::Object::new();
+                        for (key, vals) in &headers {
+                            if key == "www-authenticate" || key == "proxy-authenticate" {
+                                if let Some(val) = vals.first() {
+                                    auth_info.insert(key.clone(), serde_json::Value::String(val.clone()));
+                                    // Extract realm
+                                    if let Some(pos) = val.find("realm=") {
+                                        let after = &val[pos + 6..];
+                                        let realm_val = if after.starts_with('"') {
+                                            after[1..].split('"').next().unwrap_or("")
+                                        } else {
+                                            after.split(|c: char| c == ',' || c == ' ').next().unwrap_or("")
+                                        };
+                                        auth_info.insert(
+                                            "realm".to_string(),
+                                            serde_json::Value::String(realm_val.to_string()),
+                                        );
+                                    }
+                                    // Extract algorithm
+                                    if let Some(pos) = val.find("algorithm=") {
+                                        let after = &val[pos + 10..];
+                                        let alg_val = after.split(',').next().unwrap_or("").trim();
+                                        auth_info.insert(
+                                            "algorithm".to_string(),
+                                            serde_json::Value::String(alg_val.to_string()),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        serde_json::json!({
+                            "success": true,
+                            "statusCode": code,
+                            "reason": reason,
+                            "roundTripMs": reg_start.elapsed().as_millis() as u64,
+                            "authRequired": code == "401" || code == "407",
+                            "authDetails": auth_info
+                        })
+                    }
+                    Err(e) => serde_json::json!({
+                        "success": false,
+                        "error": e
+                    }),
+                };
+
+                serde_json::json!({
+                    "options": options_result,
+                    "register": register_result
+                })
+            } else {
+                serde_json::json!({
+                    "note": "SIP-level test requires TCP or UDP"
+                })
+            };
+
             Ok(serde_json::json!({
                 "success": true,
                 "server": server,
                 "port": port,
                 "protocol": protocol,
                 "dns": { "resolved": true, "ip": addr.ip().to_string(), "family": family, "timeMs": dns_ms },
-                "portCheck": port_check
+                "portCheck": port_check,
+                "sip": sip_test
             }))
         }
         Err(err_msg) => Ok(serde_json::json!({
@@ -886,12 +1072,11 @@ pub async fn sip_test_connection(config: SipConfig) -> Result<serde_json::Value,
             "port": port,
             "protocol": protocol,
             "dns": { "resolved": false, "error": err_msg },
-            "portCheck": null
+            "portCheck": null,
+            "sip": null
         })),
     }
-}
-
-#[cfg(test)]
+}#[cfg(test)]
 mod tests {
     use super::*;
 
