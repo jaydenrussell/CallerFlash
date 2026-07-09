@@ -243,6 +243,15 @@ function setup(): void {
           return { success: false };
         }
       },
+      testConnection: async (config: unknown) => {
+        try {
+          const result = safeJsonResponse(await invoke('sip_test_connection', { config }));
+          return result;
+        } catch (e) {
+          logError('sip.testConnection', e);
+          return { success: false, error: String(e) };
+        }
+      },
       onStatus: (callback: (data: { status: string; message?: string }) => void) => {
         const unlisten: Promise<() => void> = listen('sip:status', (event) => {
           callback(event.payload as { status: string; message?: string });
