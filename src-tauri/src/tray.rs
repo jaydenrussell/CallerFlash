@@ -2,7 +2,7 @@ use serde_json::Value;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager,
+    AppHandle, Emitter, Listener, Manager,
 };
 
 /// Map a SIP status string (backend `sip:status` or frontend label) to an icon tint.
@@ -17,7 +17,7 @@ fn status_color(status: &str) -> (u8, u8, u8) {
 }
 
 /// Build a 32x32 RGBA tray icon tinted with the given color (transparent corners).
-fn build_status_icon(rgb: (u8, u8, u8)) -> Option<tauri::image::Image> {
+fn build_status_icon(rgb: (u8, u8, u8)) -> Option<tauri::image::Image<'static>> {
     let size: u32 = 32;
     let mut rgba: Vec<u8> = Vec::with_capacity((size * size * 4) as usize);
     let cx = size as f32 / 2.0;
@@ -35,19 +35,13 @@ fn build_status_icon(rgb: (u8, u8, u8)) -> Option<tauri::image::Image> {
             }
         }
     }
-    match tauri::image::Image::from_rgba(size, size, rgba) {
-        Ok(img) => Some(img),
-        Err(e) => {
-            log::error!("[tray] failed to build status icon: {}", e);
-            None
-        }
-    }
+    Some(tauri::image::Image::new_owned(rgba, size, size))
 }
 
 /// Update the tray icon + tooltip to reflect the current SIP status.
 fn apply_sip_status(app: &AppHandle, status: &str) {
     let color = status_color(status);
-    let tip = format!("CallerFlash — SIP {}", status);
+    let tip = format!("CallerFlash - SIP {}", status);
     if let Some(tray) = app.tray_by_id("main") {
         if let Some(icon) = build_status_icon(color) {
             let _ = tray.set_icon(icon);
@@ -70,7 +64,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let menu = Menu::with_items(app, &[&show, &hide, &separator, &quit])?;
 
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png")).expect(
-        "Failed to load tray icon — ensure src-tauri/icons/32x32.png exists and is a valid PNG",
+        "Failed to load tray icon - ensure src-tauri/icons/32x32.png exists and is a valid PNG",
     );
 
     TrayIconBuilder::new()
@@ -140,7 +134,7 @@ pub fn tray_set_sip_status(app: AppHandle, status: String) {
             *s = status.clone();
         }
     }
-    let tip = format!("CallerFlash — SIP {}", status);
+    let tip = format!("CallerFlash - SIP {}", status);
     if let Some(tray) = app.tray_by_id("main") {
         let _ = tray.set_tooltip(Some(&tip));
     }
@@ -155,7 +149,7 @@ pub fn tray_set_update_available(app: AppHandle, version: Option<String>) {
     }
     let tip = if let Some(ref ver) = version {
         format!(
-            "CallerFlash — Update {} available",
+            "CallerFlash - Update {} available",
             ver.trim_start_matches('v')
         )
     } else {
