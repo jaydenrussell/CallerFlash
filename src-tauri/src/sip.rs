@@ -1,4 +1,4 @@
-﻿use futures_util::FutureExt;
+use futures_util::FutureExt;
 use rsipstack::dialog::authenticate::{handle_client_authenticate, Credential};
 use rsipstack::sip::prelude::*;
 use rsipstack::sip::{self, typed, Header, Method, SipMessage, StatusCode, Uri};
@@ -499,7 +499,7 @@ impl SipClient {
 
                 let _ = handle.emit(
                     "sip:log",
-                    serde_json::json!({"message": format!("[SIP] Starting registration — server: {}:{}, expiry: {}, protocol: {}", config.server, port, expiry, protocol)}),
+                    serde_json::json!({"message": format!("[SIP] Starting registration ? server: {}:{}, expiry: {}, protocol: {}", config.server, port, expiry, protocol)}),
                 );
 
                 #[allow(clippy::too_many_arguments)]
@@ -595,7 +595,7 @@ impl SipClient {
                             Ok(None) => break,
                             Err(_) => {
                                 log::error!(
-                                    "[sip] REGISTER timed out after 15s — no response from server"
+                                    "[sip] REGISTER timed out after 15s ? no response from server"
                                 );
                                 safe_emit(
                                     handle,
@@ -603,7 +603,7 @@ impl SipClient {
                                     SipStatus {
                                         status: "error".to_string(),
                                         message: Some(
-                                            "Registration timed out — no response from server"
+                                            "Registration timed out ? no response from server"
                                                 .to_string(),
                                         ),
                                     },
@@ -612,14 +612,7 @@ impl SipClient {
                                 return false;
                             }
                         };
-                        let msg = match recv {
-                            Ok(m) => m,
-                            Err(_) => {
-                                log::error!("[sip] Transaction receive error");
-                                *consecutive_failures += 1;
-                                return false;
-                            }
-                        };
+                        let msg = recv;
                         if let SipMessage::Response(resp) = msg {
                             match resp.status_code {
                                 StatusCode::Unauthorized
