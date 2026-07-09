@@ -944,10 +944,11 @@ pub async fn sip_test_connection(config: SipConfig) -> Result<serde_json::Value,
             };
 
             let sip_test = if protocol == "TCP" || protocol == "UDP" {
+                use tokio::io::{AsyncWriteExt, AsyncReadExt};
                 let rand_call = format!("{:016x}", rand::random::<u64>());
-                let rand_branch = format!("{:016x}", rand::random::<u64>());
 
-                // OPTIONS probe
+                // --- OPTIONS probe ---
+                let opts_branch = format!("{:016x}", rand::random::<u64>());
                 let options_msg = format!(
                     "OPTIONS sip:{}:{} SIP/2.0\r\n\
                      Via: SIP/2.0/{} 0.0.0.0:0;branch=z9hG4bK.{}\r\n\
@@ -958,27 +959,69 @@ pub async fn sip_test_connection(config: SipConfig) -> Result<serde_json::Value,
                      Max-Forwards: 70\r\n\
                      Content-Length: 0\r\n\
                      \r\n",
-                    server, port, protocol, rand_branch, server, rand_branch, server, rand_call
+                    server, port, protocol, opts_branch, server, opts_branch, server, rand_call
                 );
 
                 let opts_start = std::time::Instant::now();
-                let options_result = match send_sip_and_recv(&protocol, addr, &options_msg).await {
-                    Ok((code, reason, _headers)) => {
-                        serde_json::json!({
-                            "success": true,
-                            "statusCode": code,
-                            "reason": reason,
-                            "roundTripMs": opts_start.elapsed().as_millis() as u64
-                        })
+                let options_result = if protocol == "TCP" {
+                    match tokio::time::timeout(
+                        std::time::Duration::from_secs(5),
+                        async {
+                            let mut stream = tokio::net::TcpStream::connect(addr).await?;
+                            stream.write_all(options_msg.as_bytes()).await?;
+                            let mut buf = vec![0u8; 8192];
+                            let n = stream.read(&mut buf).await?;
+                            Ok::<_, std::io::Error>(String::from_utf8_lossy(&buf[..n]).to_string())
+                        },
+                    )
+                    .await
+                    {
+                        Ok(Ok(raw)) => {
+                            let code = raw.lines().next().unwrap_or("")
+                                .split_whitespace().nth(1).unwrap_or("0").to_string();
+                            let reason = raw.lines().next().unwrap_or("")
+                                .splitn(3, ' ').nth(2).unwrap_or("").to_string();
+                            serde_json::json!({
+                                "success": true,
+                                "statusCode": code, "reason": reason,
+                                "roundTripMs": opts_start.elapsed().as_millis() as u64
+                            })
+                        }
+                        Ok(Err(e)) => serde_json::json!({"success": false, "error": format!("TCP: {}", e)}),
+                        Err(_) => serde_json::json!({"success": false, "error": "TCP timeout (5s)".to_string()}),
                     }
-                    Err(e) => serde_json::json!({
-                        "success": false,
-                        "error": e
-                    }),
+                } else {
+                    match tokio::time::timeout(
+                        std::time::Duration::from_secs(5),
+                        async {
+                            let socket = tokio::net::UdpSocket::bind("0.0.0.0:0").await?;
+                            socket.connect(addr).await?;
+                            socket.send(options_msg.as_bytes()).await?;
+                            let mut buf = vec![0u8; 8192];
+                            let n = socket.recv(&mut buf).await?;
+                            Ok::<_, std::io::Error>(String::from_utf8_lossy(&buf[..n]).to_string())
+                        },
+                    )
+                    .await
+                    {
+                        Ok(Ok(raw)) => {
+                            let code = raw.lines().next().unwrap_or("")
+                                .split_whitespace().nth(1).unwrap_or("0").to_string();
+                            let reason = raw.lines().next().unwrap_or("")
+                                .splitn(3, ' ').nth(2).unwrap_or("").to_string();
+                            serde_json::json!({
+                                "success": true,
+                                "statusCode": code, "reason": reason,
+                                "roundTripMs": opts_start.elapsed().as_millis() as u64
+                            })
+                        }
+                        Ok(Err(e)) => serde_json::json!({"success": false, "error": format!("UDP: {}", e)}),
+                        Err(_) => serde_json::json!({"success": false, "error": "UDP timeout (5s)".to_string()}),
+                    }
                 };
 
-                // REGISTER probe (no credentials - expect 401/407)
-                let rand_branch2 = format!("{:016x}", rand::random::<u64>());
+                // --- REGISTER probe (no credentials) ---
+                let reg_branch = format!("{:016x}", rand::random::<u64>());
                 let register_msg = format!(
                     "REGISTER sip:{}:{} SIP/2.0\r\n\
                      Via: SIP/2.0/{} 0.0.0.0:0;branch=z9hG4bK.{}\r\n\
@@ -991,59 +1034,113 @@ pub async fn sip_test_connection(config: SipConfig) -> Result<serde_json::Value,
                      Expires: 60\r\n\
                      Content-Length: 0\r\n\
                      \r\n",
-                    server, port, protocol, rand_branch2,
-                    config.username, server, rand_branch2,
+                    server, port, protocol, reg_branch,
+                    config.username, server, reg_branch,
                     config.username, server,
                     rand_call,
                     config.username
                 );
 
                 let reg_start = std::time::Instant::now();
-                let register_result = match send_sip_and_recv(&protocol, addr, &register_msg).await {
-                    Ok((code, reason, headers)) => {
-                        let mut auth_info = serde_json::Map::new();
-                        for (key, vals) in &headers {
-                            if key == "www-authenticate" || key == "proxy-authenticate" {
-                                if let Some(val) = vals.first() {
-                                    auth_info.insert(key.clone(), serde_json::Value::String(val.clone()));
-                                    // Extract realm
-                                    if let Some(pos) = val.find("realm=") {
-                                        let after = &val[pos + 6..];
-                                        let realm_val = if after.starts_with('"') {
-                                            after[1..].split('"').next().unwrap_or("")
-                                        } else {
-                                            after.split(|c: char| c == ',' || c == ' ').next().unwrap_or("")
-                                        };
-                                        auth_info.insert(
-                                            "realm".to_string(),
-                                            serde_json::Value::String(realm_val.to_string()),
-                                        );
+                let register_result = if protocol == "TCP" {
+                    match tokio::time::timeout(
+                        std::time::Duration::from_secs(5),
+                        async {
+                            let mut stream = tokio::net::TcpStream::connect(addr).await?;
+                            stream.write_all(register_msg.as_bytes()).await?;
+                            let mut buf = vec![0u8; 8192];
+                            let n = stream.read(&mut buf).await?;
+                            Ok::<_, std::io::Error>(String::from_utf8_lossy(&buf[..n]).to_string())
+                        },
+                    )
+                    .await
+                    {
+                        Ok(Ok(raw)) => {
+                            let code = raw.lines().next().unwrap_or("")
+                                .split_whitespace().nth(1).unwrap_or("0").to_string();
+                            let reason = raw.lines().next().unwrap_or("")
+                                .splitn(3, ' ').nth(2).unwrap_or("").to_string();
+                            let auth_required = code == "401" || code == "407";
+                            let mut auth_info = serde_json::Map::new();
+                            for line in raw.lines().skip(1) {
+                                let l = line.trim();
+                                if l.starts_with("WWW-Authenticate:") || l.starts_with("Proxy-Authenticate:") {
+                                    let colon = l.find(':').unwrap_or(0);
+                                    let val = l[colon + 1..].trim();
+                                    auth_info.insert(l[..colon].to_lowercase(), serde_json::Value::String(val.to_string()));
+                                    if let Some(p) = val.find("realm=") {
+                                        let after = &val[p + 6..];
+                                        let r = if after.starts_with('"') { after[1..].split('"').next().unwrap_or("") } else { after.split(|c: char| c == ',' || c == ' ').next().unwrap_or("") };
+                                        auth_info.insert("realm".to_string(), serde_json::Value::String(r.to_string()));
                                     }
-                                    // Extract algorithm
-                                    if let Some(pos) = val.find("algorithm=") {
-                                        let after = &val[pos + 10..];
-                                        let alg_val = after.split(',').next().unwrap_or("").trim();
-                                        auth_info.insert(
-                                            "algorithm".to_string(),
-                                            serde_json::Value::String(alg_val.to_string()),
-                                        );
+                                    if let Some(p) = val.find("algorithm=") {
+                                        let after = &val[p + 10..];
+                                        let a = after.split(',').next().unwrap_or("").trim();
+                                        auth_info.insert("algorithm".to_string(), serde_json::Value::String(a.to_string()));
                                     }
                                 }
                             }
+                            serde_json::json!({
+                                "success": true,
+                                "statusCode": code, "reason": reason,
+                                "roundTripMs": reg_start.elapsed().as_millis() as u64,
+                                "authRequired": auth_required,
+                                "authDetails": auth_info
+                            })
                         }
-                        serde_json::json!({
-                            "success": true,
-                            "statusCode": code,
-                            "reason": reason,
-                            "roundTripMs": reg_start.elapsed().as_millis() as u64,
-                            "authRequired": code == "401" || code == "407",
-                            "authDetails": auth_info
-                        })
+                        Ok(Err(e)) => serde_json::json!({"success": false, "error": format!("TCP: {}", e)}),
+                        Err(_) => serde_json::json!({"success": false, "error": "TCP timeout (5s)".to_string()}),
                     }
-                    Err(e) => serde_json::json!({
-                        "success": false,
-                        "error": e
-                    }),
+                } else {
+                    match tokio::time::timeout(
+                        std::time::Duration::from_secs(5),
+                        async {
+                            let socket = tokio::net::UdpSocket::bind("0.0.0.0:0").await?;
+                            socket.connect(addr).await?;
+                            socket.send(register_msg.as_bytes()).await?;
+                            let mut buf = vec![0u8; 8192];
+                            let n = socket.recv(&mut buf).await?;
+                            Ok::<_, std::io::Error>(String::from_utf8_lossy(&buf[..n]).to_string())
+                        },
+                    )
+                    .await
+                    {
+                        Ok(Ok(raw)) => {
+                            let code = raw.lines().next().unwrap_or("")
+                                .split_whitespace().nth(1).unwrap_or("0").to_string();
+                            let reason = raw.lines().next().unwrap_or("")
+                                .splitn(3, ' ').nth(2).unwrap_or("").to_string();
+                            let auth_required = code == "401" || code == "407";
+                            let mut auth_info = serde_json::Map::new();
+                            for line in raw.lines().skip(1) {
+                                let l = line.trim();
+                                if l.starts_with("WWW-Authenticate:") || l.starts_with("Proxy-Authenticate:") {
+                                    let colon = l.find(':').unwrap_or(0);
+                                    let val = l[colon + 1..].trim();
+                                    auth_info.insert(l[..colon].to_lowercase(), serde_json::Value::String(val.to_string()));
+                                    if let Some(p) = val.find("realm=") {
+                                        let after = &val[p + 6..];
+                                        let r = if after.starts_with('"') { after[1..].split('"').next().unwrap_or("") } else { after.split(|c: char| c == ',' || c == ' ').next().unwrap_or("") };
+                                        auth_info.insert("realm".to_string(), serde_json::Value::String(r.to_string()));
+                                    }
+                                    if let Some(p) = val.find("algorithm=") {
+                                        let after = &val[p + 10..];
+                                        let a = after.split(',').next().unwrap_or("").trim();
+                                        auth_info.insert("algorithm".to_string(), serde_json::Value::String(a.to_string()));
+                                    }
+                                }
+                            }
+                            serde_json::json!({
+                                "success": true,
+                                "statusCode": code, "reason": reason,
+                                "roundTripMs": reg_start.elapsed().as_millis() as u64,
+                                "authRequired": auth_required,
+                                "authDetails": auth_info
+                            })
+                        }
+                        Ok(Err(e)) => serde_json::json!({"success": false, "error": format!("UDP: {}", e)}),
+                        Err(_) => serde_json::json!({"success": false, "error": "UDP timeout (5s)".to_string()}),
+                    }
                 };
 
                 serde_json::json!({
@@ -1051,29 +1148,21 @@ pub async fn sip_test_connection(config: SipConfig) -> Result<serde_json::Value,
                     "register": register_result
                 })
             } else {
-                serde_json::json!({
-                    "note": "SIP-level test requires TCP or UDP"
-                })
+                serde_json::json!({"note": "SIP test requires TCP or UDP"})
             };
 
             Ok(serde_json::json!({
                 "success": true,
-                "server": server,
-                "port": port,
-                "protocol": protocol,
+                "server": server, "port": port, "protocol": protocol,
                 "dns": { "resolved": true, "ip": addr.ip().to_string(), "family": family, "timeMs": dns_ms },
                 "portCheck": port_check,
                 "sip": sip_test
             }))
         }
         Err(err_msg) => Ok(serde_json::json!({
-            "success": false,
-            "server": server,
-            "port": port,
-            "protocol": protocol,
+            "success": false, "server": server, "port": port, "protocol": protocol,
             "dns": { "resolved": false, "error": err_msg },
-            "portCheck": null,
-            "sip": null
+            "portCheck": null, "sip": null
         })),
     }
 }#[cfg(test)]
