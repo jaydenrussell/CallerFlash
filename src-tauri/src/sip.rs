@@ -1001,7 +1001,7 @@ pub async fn sip_test_connection(config: SipConfig) -> Result<serde_json::Value,
                 let reg_start = std::time::Instant::now();
                 let register_result = match send_sip_and_recv(&protocol, addr, &register_msg).await {
                     Ok((code, reason, headers)) => {
-                        let mut auth_info = serde_json::json::Object::new();
+                        let mut auth_info = serde_json::Map::new();
                         for (key, vals) in &headers {
                             if key == "www-authenticate" || key == "proxy-authenticate" {
                                 if let Some(val) = vals.first() {
