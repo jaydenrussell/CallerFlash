@@ -571,7 +571,36 @@ impl SipClient {
 
                     let mut auth_sent = false;
 
-                    while let Some(msg) = tx.receive().await {
+                    loop {
+                        // Bound each REGISTER response wait so a server that never
+                        // replies cannot leave the client stuck "connecting" forever.
+                        let recv = tokio::time::timeout(
+                            std::time::Duration::from_secs(15),
+                            tx.receive(),
+                        )
+                        .await;
+                        let msg = match recv {
+                            Ok(Some(m)) => m,
+                            Ok(None) => break,
+                            Err(_) => {
+                                log::error!(
+                                    "[sip] REGISTER timed out after 15s — no response from server"
+                                );
+                                safe_emit(
+                                    handle,
+                                    "sip:status",
+                                    SipStatus {
+                                        status: "error".to_string(),
+                                        message: Some(
+                                            "Registration timed out — no response from server"
+                                                .to_string(),
+                                        ),
+                                    },
+                                );
+                                *consecutive_failures += 1;
+                                return false;
+                            }
+                        };
                         if let SipMessage::Response(resp) = msg {
                             match resp.status_code {
                                 StatusCode::Unauthorized
@@ -780,6 +809,90 @@ pub async fn sip_disconnect(app: AppHandle) -> Result<serde_json::Value, Command
     )
     .map_err(|e| CommandError::sip(format!("Failed to emit disconnect: {}", e)))?;
     Ok(serde_json::json!({"success": true}))
+}
+
+#[tauri::command]
+pub async fn sip_test_connection(
+    config: SipConfig,
+) -> Result<serde_json::Value, CommandError> {
+    if !SIP_RATE_LIMITER.check("sip_test_connection") {
+        return Err(CommandError::rate_limited());
+    }
+    if config.server.trim().is_empty() {
+        return Err(CommandError::invalid_input("SIP server is required"));
+    }
+    let server = config.server.clone();
+    let port = config.port.unwrap_or(5060);
+    let protocol = config.protocol.as_deref().unwrap_or("UDP").to_uppercase();
+
+    let dns_start = std::time::Instant::now();
+    let dns_result = match tokio::net::lookup_host(format!("{}:{}", server, port)).await {
+        Ok(mut addrs) => match addrs.next() {
+            Some(addr) => {
+                let elapsed = dns_start.elapsed();
+                let family = if addr.is_ipv4() { "IPv4" } else { "IPv6" };
+                Ok((addr, family.to_string(), elapsed.as_millis() as u64))
+            }
+            None => Err(format!("No addresses found for {}:{}", server, port)),
+        },
+        Err(e) => Err(format!("DNS resolution failed: {}", e)),
+    };
+
+    match dns_result {
+        Ok((addr, family, dns_ms)) => {
+            let port_check = if protocol == "TCP" || protocol == "TLS" {
+                let probe_start = std::time::Instant::now();
+                match tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    tokio::net::TcpStream::connect(addr),
+                )
+                .await
+                {
+                    Ok(Ok(_)) => serde_json::json!({
+                        "reachable": true,
+                        "latencyMs": probe_start.elapsed().as_millis(),
+                        "detail": "TCP connect succeeded"
+                    }),
+                    Ok(Err(e)) => serde_json::json!({
+                        "reachable": false,
+                        "detail": format!("{}", e)
+                    }),
+                    Err(_) => serde_json::json!({
+                        "reachable": false,
+                        "detail": "TCP connect timed out after 5s"
+                    }),
+                }
+            } else {
+                // UDP is connectionless — verify we can open a local socket to send from.
+                match tokio::net::UdpSocket::bind("0.0.0.0:0").await {
+                    Ok(_) => serde_json::json!({
+                        "reachable": "local-ok",
+                        "detail": "Local UDP socket bind OK"
+                    }),
+                    Err(e) => serde_json::json!({
+                        "reachable": false,
+                        "detail": format!("UDP bind failed: {}", e)
+                    }),
+                }
+            };
+            Ok(serde_json::json!({
+                "success": true,
+                "server": server,
+                "port": port,
+                "protocol": protocol,
+                "dns": { "resolved": true, "ip": addr.ip().to_string(), "family": family, "timeMs": dns_ms },
+                "portCheck": port_check
+            }))
+        }
+        Err(err_msg) => Ok(serde_json::json!({
+            "success": false,
+            "server": server,
+            "port": port,
+            "protocol": protocol,
+            "dns": { "resolved": false, "error": err_msg },
+            "portCheck": null
+        })),
+    }
 }
 
 #[cfg(test)]
