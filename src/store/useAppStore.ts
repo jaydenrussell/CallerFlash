@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { redactMessage, redactKeyedValue } from '../security/secretRedactor';
+import { redactMessage, redactKeyedValue, sanitizeCallerNumberForClipboard, sanitizeCallerName } from '../security/secretRedactor';
 
 // ── Storage security ─────────────────────────────────────────────────
 // We use a two-layer approach:
@@ -321,6 +321,8 @@ interface AppState {
   clipboardText: string;
   setClipboardText: (text: string) => void;
 
+  handleIncomingCall: (callerNumber: string, callerName: string) => void;
+
   simulationMode: boolean;
   setSimulationMode: (mode: boolean) => void;
 }
@@ -598,6 +600,52 @@ export const useAppStore = create<AppState>((set) => ({
 
   clipboardText: '',
   setClipboardText: (text) => set({ clipboardText: text }),
+
+  handleIncomingCall: (callerNumber, callerName) => {
+    const { toastConfig } = get();
+    const safeNumber = sanitizeCallerNumberForClipboard(callerNumber);
+    const safeName = sanitizeCallerName(callerName || '');
+    const record = {
+      id: crypto.randomUUID(),
+      callerNumber: safeNumber,
+      callerName: safeName,
+      timestamp: new Date(),
+      duration: 0,
+      direction: 'inbound' as const,
+      status: 'answered' as const,
+    };
+    set((s) => ({ callHistory: [record, ...s.callHistory].slice(0, 500) }));
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(safeNumber).catch(() => {});
+    }
+    set({ clipboardText: safeNumber });
+    if (toastConfig.style === 'custom' && window.callerflash?.toast?.show) {
+      window.callerflash.toast.show({
+        id: record.id,
+        callerNumber: safeNumber,
+        callerName: safeName,
+        timestamp: record.timestamp.toISOString(),
+        config: {
+          duration: toastConfig.duration,
+          backgroundColor: toastConfig.backgroundColor,
+          accentColor: toastConfig.accentColor,
+          textColor: toastConfig.textColor,
+          borderRadius: toastConfig.borderRadius,
+          opacity: toastConfig.opacity,
+          fontFamily: toastConfig.fontFamily,
+          fontSize: toastConfig.fontSize,
+          autoCopyToClipboard: toastConfig.autoCopyToClipboard,
+          showCallerName: toastConfig.showCallerName,
+          showTimestamp: toastConfig.showTimestamp,
+          maxWidth: toastConfig.maxWidth,
+          soundEnabled: toastConfig.soundEnabled,
+          soundName: toastConfig.soundName,
+        },
+      });
+    } else if (toastConfig.style === 'native' && window.callerflash?.notify?.show) {
+      window.callerflash.notify.show({ title: 'Incoming Call', body: `${safeNumber}${safeName ? ` - ${safeName}` : ''}`, urgency: 'critical', timeoutType: 'never', soundEnabled: toastConfig.soundEnabled });
+    }
+  },
 
   simulationMode: false,
   setSimulationMode: (mode) => set({ simulationMode: mode }),

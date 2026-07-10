@@ -218,57 +218,13 @@ export default function App() {
   useEffect(() => {
     if (!window.callerflash?.sip?.onInvite) return;
     return window.callerflash.sip.onInvite((callerData) => {
-      const { toastConfig } = useAppStore.getState();
-      const safeNumber = sanitizeCallerNumberForClipboard(callerData.callerNumber);
-      const safeName = sanitizeCallerName(callerData.callerName || '');
-
-      const record = {
-        id: crypto.randomUUID(),
-        callerNumber: safeNumber,
-        callerName: safeName,
-        timestamp: new Date(),
-        duration: 0,
-        direction: 'inbound' as const,
-        status: 'answered' as const,
-      };
-
-      useAppStore.getState().addCallRecord(record);
-
+      useAppStore.getState().handleIncomingCall(callerData.callerNumber, callerData.callerName || '');
       addDiagnosticLog({
         level: 'info',
         category: 'SIP',
-        message: `INVITE received from ${safeNumber} (${safeName})`,
+        message: `INVITE received from ${sanitizeCallerNumberForClipboard(callerData.callerNumber)} (${sanitizeCallerName(callerData.callerName || '')})`,
         details: `Source: SIP Backend Network Engine`,
       });
-
-      // Show notification based on user's style preference
-      console.log('[App] SIP invite handler, toastConfig.style:', toastConfig.style, 'toast.show:', typeof window.callerflash?.toast?.show);
-      if (toastConfig.style === 'custom' && window.callerflash?.toast?.show) {
-        window.callerflash.toast.show({
-          id: record.id,
-          callerNumber: record.callerNumber,
-          callerName: record.callerName,
-          timestamp: record.timestamp.toISOString(),
-          config: {
-            duration: toastConfig.duration,
-            backgroundColor: toastConfig.backgroundColor,
-            accentColor: toastConfig.accentColor,
-            textColor: toastConfig.textColor,
-            borderRadius: toastConfig.borderRadius,
-            opacity: toastConfig.opacity,
-            fontFamily: toastConfig.fontFamily,
-            fontSize: toastConfig.fontSize,
-            autoCopyToClipboard: toastConfig.autoCopyToClipboard,
-            showCallerName: toastConfig.showCallerName,
-            showTimestamp: toastConfig.showTimestamp,
-            maxWidth: toastConfig.maxWidth,
-            soundEnabled: toastConfig.soundEnabled,
-            soundName: toastConfig.soundName,
-          },
-        });
-      } else if (toastConfig.style === 'native' && window.callerflash?.notify?.show) {
-        window.callerflash.notify.show({ title: 'Incoming Call', body: `${safeNumber}${safeName ? ` - ${safeName}` : ''}`, urgency: 'critical', timeoutType: 'never', soundEnabled: toastConfig.soundEnabled });
-      }
     });
   }, [addDiagnosticLog]);
 

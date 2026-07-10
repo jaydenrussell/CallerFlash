@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   Server, Lock, Save, RotateCcw, Activity,
-  ChevronDown, Eye, EyeOff, ShieldCheck, Wifi, WifiOff, Bug
+  ChevronDown, Eye, EyeOff, ShieldCheck, Wifi, WifiOff
 } from 'lucide-react';
 import { useAppStore, type SipConfig } from '../store/useAppStore';
 import { sanitizeSipServer } from '../security/secretRedactor';
@@ -134,8 +134,6 @@ export function SipSettings() {
     sipRegistration,
     connectSip,
     disconnectSip,
-    simulationMode,
-    setSimulationMode,
   } = useAppStore();
   const [localConfig, setLocalConfig] = useState<SipConfig>({ ...sipConfig });
   const [showPassword, setShowPassword] = useState(false);
@@ -171,7 +169,6 @@ export function SipSettings() {
       disconnectSip();
       return;
     }
-    setSimulationMode(false);
     connectSip();
   };
 
@@ -213,19 +210,6 @@ export function SipSettings() {
       });
     } finally {
       setTesting(false);
-    }
-  };
-
-  const handleSimulate = () => {
-    if (sipStatus === 'registered' || sipStatus === 'connecting') {
-      disconnectSip();
-      setTimeout(() => {
-        setSimulationMode(true);
-        connectSip();
-      }, 300);
-    } else {
-      setSimulationMode(true);
-      connectSip();
     }
   };
 
@@ -344,17 +328,6 @@ export function SipSettings() {
                 Test
               </>
             )}
-          </button>
-          <button
-            onClick={handleSimulate}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
-              simulationMode
-                ? 'bg-win-accent/15 text-win-accent border-win-accent/30'
-                : 'bg-win-surface hover:bg-win-surface-hover text-win-text-secondary border-win-border'
-            }`}
-          >
-            <Bug className="w-4 h-4" />
-            Simulate
           </button>
           <button
             onClick={handleReset}

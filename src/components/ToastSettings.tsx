@@ -13,7 +13,7 @@ const fontFamilies = [
 export function ToastSettings() {
   const {
     toastConfig, setToastConfig, addDiagnosticLog,
-    addCallRecord, setClipboardText,
+    handleIncomingCall,
   } = useAppStore();
 
   const update = (updates: Partial<ToastConfig>) => setToastConfig(updates);
@@ -48,37 +48,13 @@ export function ToastSettings() {
     e.stopPropagation();
     const callerNumber = '(555) 123-4567';
     const callerName = 'Preview Call';
-    const record = {
-      id: crypto.randomUUID(),
-      callerNumber,
-      callerName,
-      timestamp: new Date(),
-      duration: 0,
-      direction: 'inbound' as const,
-      status: 'answered' as const,
-    };
-    addCallRecord(record);
-    if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText(callerNumber).catch(() => {});
-    }
-    setClipboardText(callerNumber);
+    handleIncomingCall(callerNumber, callerName);
     addDiagnosticLog({
       level: 'info',
       category: 'TOAST',
       message: `Simulated incoming call from ${callerNumber} (${callerName})`,
       details: 'Source: Test Notification',
     });
-    if (toastConfig.style === 'custom' && window.callerflash?.toast?.show) {
-      window.callerflash.toast.show({
-        id: record.id,
-        callerNumber,
-        callerName,
-        timestamp: new Date().toISOString(),
-        config: toastConfig,
-      });
-    } else if (toastConfig.style === 'native' && window.callerflash?.notify?.show) {
-      window.callerflash.notify.show({ title: 'Incoming Call', body: `${callerNumber} - ${callerName}`, urgency: 'critical', timeoutType: 'never', soundEnabled: toastConfig.soundEnabled });
-    }
   };
 
   return (
