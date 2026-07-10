@@ -130,9 +130,8 @@ export function SipSettings() {
     sipConfig,
     setSipConfig,
     addDiagnosticLog,
-    sipConnected,
-    sipRegistered,
-    isConnecting,
+    sipStatus,
+    sipRegistration,
     connectSip,
     disconnectSip,
   } = useAppStore();
@@ -166,7 +165,7 @@ export function SipSettings() {
   };
 
   const handleConnectToggle = () => {
-    if (sipConnected) {
+    if (sipStatus === 'registered' || sipStatus === 'connecting') {
       disconnectSip();
       return;
     }
@@ -227,7 +226,7 @@ export function SipSettings() {
     });
     
     // If connected and config changed, reconnect with new settings
-    if (sipConnected && configChanged) {
+    if (sipStatus === 'registered' && configChanged) {
       addDiagnosticLog({
         level: 'info',
         category: 'SIP',
@@ -238,7 +237,7 @@ export function SipSettings() {
       setTimeout(() => {
         connectSip();
       }, 500);
-    } else if (!sipConnected && localConfig.server && localConfig.username && localConfig.password) {
+    } else if (sipStatus === 'disconnected' && localConfig.server && localConfig.username && localConfig.password) {
       // Auto-connect on save if not connected
       connectSip();
     }
@@ -275,31 +274,33 @@ export function SipSettings() {
           <p className="text-xs text-win-text-secondary mt-0.5">Connection parameters for your SIP provider</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {sipConnected && (
-            <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium mr-1 ${
-              sipRegistered 
-                ? 'bg-win-success/10 border-win-success/20 text-win-success'
-                : 'bg-win-warning/10 border-win-warning/20 text-win-warning'
-            }`}>
-              {sipRegistered ? <ShieldCheck className="w-3.5 h-3.5" /> : <div className="w-3.5 h-3.5 border-2 border-win-warning border-t-transparent rounded-full animate-spin" />}
-              {sipRegistered ? 'Registered' : 'Registering...'}
-            </div>
-          )}
+          {/* Connection status badge */}
+          <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium ${
+            sipStatus === 'registered'
+              ? 'bg-win-success/10 border-win-success/20 text-win-success'
+              : sipStatus === 'connecting'
+              ? 'bg-win-warning/10 border-win-warning/20 text-win-warning'
+              : 'bg-win-error/10 border-win-error/20 text-win-error'
+          }`}>
+            {sipStatus === 'registered' ? <ShieldCheck className="w-3.5 h-3.5" />
+              : sipStatus === 'connecting' ? <div className="w-3.5 h-3.5 border-2 border-win-warning border-t-transparent rounded-full animate-spin" />
+              : <WifiOff className="w-3.5 h-3.5" />
+            }
+            {sipStatus === 'registered'
+              ? `Registered (${sipRegistration ? sipRegistration.server + ':' + sipRegistration.port : sipConfig.server + ':' + sipConfig.port})`
+              : sipStatus === 'connecting' ? 'Connecting...'
+              : 'Not connected'
+            }
+          </div>
           <button
             onClick={handleConnectToggle}
-            disabled={isConnecting}
             className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
-              sipConnected
+              sipStatus === 'registered' || sipStatus === 'connecting'
                 ? 'bg-win-error/15 hover:bg-win-error/25 text-win-error border border-win-error/20'
                 : 'bg-win-success/15 hover:bg-win-success/25 text-win-success border border-win-success/20'
-            } disabled:opacity-50`}
+            }`}
           >
-            {isConnecting ? (
-              <>
-                <div className="w-3.5 h-3.5 border-2 border-win-accent border-t-transparent rounded-full animate-spin" />
-                Connecting…
-              </>
-            ) : sipConnected ? (
+            {sipStatus === 'registered' || sipStatus === 'connecting' ? (
               <>
                 <WifiOff className="w-4 h-4" />
                 Disconnect

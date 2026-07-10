@@ -1,4 +1,4 @@
-﻿/// <reference types="./electron-bridge.d.ts" />
+/// <reference types="./electron-bridge.d.ts" />
 
 /**
  * Tauri backend bridge — wraps Tauri invoke/listen/emit into the
@@ -252,9 +252,9 @@ function setup(): void {
           return { success: false, error: String(e) };
         }
       },
-      onStatus: (callback: (data: { status: string; message?: string }) => void) => {
+      onStatus: (callback: (data: { status: string; message?: string; server?: string; port?: number; expiresAt?: number }) => void) => {
         const unlisten: Promise<() => void> = listen('sip:status', (event) => {
-          callback(event.payload as { status: string; message?: string });
+          callback(event.payload as { status: string; message?: string; server?: string; port?: number; expiresAt?: number });
         }).catch((e) => { logError('sip.onStatus', e); return () => {}; });
         return () => { unlisten.then((fn) => fn()).catch((e) => logError('sip.onStatus cleanup', e)); };
       },

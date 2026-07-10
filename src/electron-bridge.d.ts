@@ -1,4 +1,4 @@
-﻿// Type declarations for the Electron preload bridge exposed via contextBridge.
+// Type declarations for the Electron preload bridge exposed via contextBridge.
 // Mirrors the surface defined in `electron/preload.cjs`. Keeping this in sync
 // with that file gives the renderer full type safety on `window.callerflash`.
 
@@ -117,7 +117,7 @@ declare global {
     connect: (config: any) => Promise<{ success: boolean; message?: string }>;
     disconnect: () => Promise<{ success: boolean }>;
     testConnection: (config: any) => Promise<any>;
-    onStatus: (callback: (data: { status: string; message?: string }) => void) => () => void;
+    onStatus: (callback: (data: { status: string; message?: string; server?: string; port?: number; expiresAt?: number }) => void) => () => void;
     onLog: (callback: (data: { message: string }) => void) => () => void;
     onInvite: (callback: (data: { callerNumber: string; callerName: string }) => void) => () => void;
   }

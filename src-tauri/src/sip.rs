@@ -161,9 +161,28 @@ impl SipConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SipStatus {
     pub status: String,
     pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<u64>,
+}
+
+impl SipStatus {
+    pub fn new(status: &str, message: Option<String>) -> Self {
+        Self {
+            status: status.to_string(),
+            message,
+            server: None,
+            port: None,
+            expires_at: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -325,13 +344,13 @@ impl SipClient {
                                 safe_emit(
                                     &handle,
                                     "sip:status",
-                                    SipStatus {
-                                        status: "error".to_string(),
-                                        message: Some(user_safe_sip_error(&format!(
+                                    SipStatus::new(
+                                        "error",
+                                        Some(user_safe_sip_error(&format!(
                                             "No addresses found for {}:{}",
                                             server, port
                                         ))),
-                                    },
+                                    ),
                                 );
                                 return;
                             }
@@ -340,13 +359,13 @@ impl SipClient {
                             safe_emit(
                                 &handle,
                                 "sip:status",
-                                SipStatus {
-                                    status: "error".to_string(),
-                                    message: Some(user_safe_sip_error(&format!(
+                                SipStatus::new(
+                                    "error",
+                                    Some(user_safe_sip_error(&format!(
                                         "DNS resolution failed: {}",
                                         e
                                     ))),
-                                },
+                                ),
                             );
                             return;
                         }
@@ -366,10 +385,7 @@ impl SipClient {
                         safe_emit(
                             &handle,
                             "sip:status",
-                            SipStatus {
-                                status: "error".to_string(),
-                                message: Some(user_safe_sip_error(&e)),
-                            },
+                            SipStatus::new("error", Some(user_safe_sip_error(&e))),
                         );
                         return;
                     }
@@ -381,6 +397,9 @@ impl SipClient {
                     SipStatus {
                         status: "connecting".to_string(),
                         message: Some(format!("Bound to {} port {}", protocol, local_port)),
+                        server: Some(config.server.clone()),
+                        port: Some(port),
+                        expires_at: None,
                     },
                 );
 
@@ -401,12 +420,10 @@ impl SipClient {
                         safe_emit(
                             &handle,
                             "sip:status",
-                            SipStatus {
-                                status: "error".to_string(),
-                                message: Some(
-                                    "Internal error: failed to initialize SIP".to_string(),
-                                ),
-                            },
+                            SipStatus::new(
+                                "error",
+                                Some("Internal error: failed to initialize SIP".to_string()),
+                            ),
                         );
                         return;
                     }
@@ -427,10 +444,10 @@ impl SipClient {
                             safe_emit(
                                 &handle,
                                 "sip:status",
-                                SipStatus {
-                                    status: "error".to_string(),
-                                    message: Some("Invalid server address".to_string()),
-                                },
+                                SipStatus::new(
+                                    "error",
+                                    Some("Invalid server address".to_string()),
+                                ),
                             );
                             return;
                         }
@@ -499,6 +516,8 @@ impl SipClient {
                     handle: &AppHandle,
                     connected: &Arc<Mutex<bool>>,
                     consecutive_failures: &mut u32,
+                    server: &str,
+                    port: u16,
                 ) -> bool {
                     *cseq += 1;
                     let via = match endpoint_inner.get_via(None, None) {
@@ -585,13 +604,13 @@ impl SipClient {
                                 safe_emit(
                                     handle,
                                     "sip:status",
-                                    SipStatus {
-                                        status: "error".to_string(),
-                                        message: Some(
+                                    SipStatus::new(
+                                        "error",
+                                        Some(
                                             "Registration timed out ? no response from server"
                                                 .to_string(),
                                         ),
-                                    },
+                                    ),
                                 );
                                 *consecutive_failures += 1;
                                 return false;
@@ -637,12 +656,19 @@ impl SipClient {
                                 StatusCode::OK => {
                                     *connected.lock().await = true;
                                     *consecutive_failures = 0;
+                                    let expires_at = std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .ok()
+                                        .map(|d| d.as_secs() + expiry as u64);
                                     safe_emit(
                                         handle,
                                         "sip:status",
                                         SipStatus {
                                             status: "registered".to_string(),
                                             message: None,
+                                            server: Some(server.to_string()),
+                                            port: Some(port),
+                                            expires_at,
                                         },
                                     );
                                     log::info!("[sip] Registered successfully");
@@ -655,13 +681,13 @@ impl SipClient {
                                     safe_emit(
                                         handle,
                                         "sip:status",
-                                        SipStatus {
-                                            status: "error".to_string(),
-                                            message: Some(format!(
+                                        SipStatus::new(
+                                            "error",
+                                            Some(format!(
                                                 "Registration failed: {} {}",
                                                 code, reason
                                             )),
-                                        },
+                                        ),
                                     );
                                     *consecutive_failures += 1;
                                     return false;
@@ -686,6 +712,8 @@ impl SipClient {
                     &handle,
                     &connected,
                     &mut consecutive_failures,
+                    &config.server,
+                    port,
                 )
                 .await;
 
@@ -727,6 +755,8 @@ impl SipClient {
                                 &handle,
                                 &connected,
                                 &mut consecutive_failures,
+                                &config.server,
+                                port,
                             )
                             .await;
 
@@ -734,10 +764,10 @@ impl SipClient {
                                 safe_emit(
                                     &handle,
                                     "sip:status",
-                                    SipStatus {
-                                        status: "error".to_string(),
-                                        message: Some("Registration refresh failed".to_string()),
-                                    },
+                                    SipStatus::new(
+                                        "error",
+                                        Some("Registration refresh failed".to_string()),
+                                    ),
                                 );
                             }
                         }
@@ -799,6 +829,9 @@ pub async fn sip_disconnect(app: AppHandle) -> Result<serde_json::Value, Command
         SipStatus {
             status: "disconnected".to_string(),
             message: None,
+            server: None,
+            port: None,
+            expires_at: None,
         },
     )
     .map_err(|e| CommandError::sip(format!("Failed to emit disconnect: {}", e)))?;

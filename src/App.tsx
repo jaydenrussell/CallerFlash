@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
 import { CallHistory } from './components/CallHistory';
@@ -53,7 +53,7 @@ function MainContent() {
 
 
 export default function App() {
-  const { setIsMinimized, addDiagnosticLog, appPreferences, sipConnected, sipRegistered, setActiveTab, sipConfig } = useAppStore();
+  const { setIsMinimized, addDiagnosticLog, appPreferences, sipConnected, sipRegistered, sipStatus, setActiveTab, sipConfig } = useAppStore();
   const width = useWindowWidth();
   const sidebarCollapsed = width < SIDEBAR_COLLAPSE_BREAKPOINT;
 
@@ -132,7 +132,7 @@ export default function App() {
 
   // Auto-connect on startup if SIP settings are fully configured
   useEffect(() => {
-    if (sipConfig.server && sipConfig.username && sipConfig.password && !sipConnected) {
+    if (sipConfig.server && sipConfig.username && sipConfig.password && sipStatus === 'disconnected') {
       // Delay slightly to let the store hydrate from safeStorage
       const t = setTimeout(() => {
         addDiagnosticLog({ level: 'info', category: 'SIP', message: 'Auto-connecting to SIP server on startup...' });
@@ -172,11 +172,27 @@ export default function App() {
     if (!window.callerflash?.sip?.onStatus) return;
     const unsubStatus = window.callerflash.sip.onStatus((data) => {
       if (data.status === 'registered') {
-        useAppStore.setState({ sipRegistered: true, isConnecting: false });
+        useAppStore.setState({
+          sipStatus: 'registered',
+          sipConnected: true,
+          sipRegistered: true,
+          isConnecting: false,
+          sipRegistration: data.server && data.port ? {
+            server: data.server,
+            port: data.port,
+            expiresAt: data.expiresAt ?? Date.now() + 60000,
+          } : useAppStore.getState().sipRegistration,
+        });
         addDiagnosticLog({ level: 'success', category: 'SIP', message: 'REGISTER 200 OK (Registration active)' });
         addDiagnosticLog({ level: 'info', category: 'SIP', message: 'Ready for incoming calls' });
+      } else if (data.status === 'connecting') {
+        useAppStore.setState({ sipStatus: 'connecting', sipConnected: false, sipRegistered: false, isConnecting: true });
+        addDiagnosticLog({ level: 'info', category: 'SIP', message: data.message || 'Connecting to SIP server…' });
+      } else if (data.status === 'disconnected') {
+        useAppStore.setState({ sipStatus: 'disconnected', sipConnected: false, sipRegistered: false, isConnecting: false, sipRegistration: null });
+        addDiagnosticLog({ level: 'warning', category: 'SIP', message: data.message || 'SIP disconnected' });
       } else if (data.status === 'error') {
-        useAppStore.setState({ sipRegistered: false, isConnecting: false });
+        useAppStore.setState({ sipStatus: 'error', sipConnected: false, sipRegistered: false, isConnecting: false, sipRegistration: null });
         addDiagnosticLog({ level: 'error', category: 'SIP', message: `SIP Error: ${data.message}` });
       }
     });
@@ -266,8 +282,9 @@ export default function App() {
   // menu item stay current. Cheap — just a string IPC send.
   useEffect(() => {
     if (!window.callerflash?.tray?.setSipStatus) return;
-    const label = sipConnected
-      ? sipRegistered ? 'Registered' : 'Connecting'
+    const { sipStatus } = useAppStore.getState();
+    const label = sipStatus === 'registered' ? 'Registered'
+      : sipStatus === 'connecting' ? 'Connecting'
       : 'Offline';
     window.callerflash.tray.setSipStatus(label);
   }, [sipConnected, sipRegistered]);

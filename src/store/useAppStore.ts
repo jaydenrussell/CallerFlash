@@ -285,10 +285,14 @@ interface AppState {
 
   sipConnected: boolean;
   sipRegistered: boolean;
+  sipStatus: 'disconnected' | 'connecting' | 'registered' | 'error';
+  sipRegistration: { server: string; port: number; expiresAt: number } | null;
   sipConfig: SipConfig;
   setSipConfig: (config: Partial<SipConfig>) => void;
   setSipConnected: (connected: boolean) => void;
   setSipRegistered: (registered: boolean) => void;
+  setSipStatus: (status: 'disconnected' | 'connecting' | 'registered' | 'error') => void;
+  setSipRegistration: (reg: { server: string; port: number; expiresAt: number } | null) => void;
   isConnecting: boolean;
   setIsConnecting: (connecting: boolean) => void;
   connectSip: () => void;
@@ -389,6 +393,8 @@ export const useAppStore = create<AppState>((set) => ({
 
   sipConnected: false,
   sipRegistered: false,
+  sipStatus: 'disconnected',
+  sipRegistration: null,
   sipConfig: defaultSipConfig,
   setSipConfig: (config) => set((s) => {
     const next = { ...s.sipConfig, ...config };
@@ -413,30 +419,33 @@ export const useAppStore = create<AppState>((set) => ({
   }),
   setSipConnected: (connected) => set({ sipConnected: connected }),
   setSipRegistered: (registered) => set({ sipRegistered: registered }),
+  setSipStatus: (status) => set({
+    sipStatus: status,
+    sipConnected: status === 'registered',
+    sipRegistered: status === 'registered',
+    isConnecting: status === 'connecting',
+  }),
+  setSipRegistration: (reg) => set({ sipRegistration: reg }),
   isConnecting: false,
   setIsConnecting: (connecting) => set({ isConnecting: connecting }),
   connectSip: () => {
     const s = useAppStore.getState();
-    if (s.sipConnected || s.isConnecting) return;
+    if (s.sipStatus === 'registered' || s.sipStatus === 'connecting') return;
 
-    s.setIsConnecting(true);
+    s.setSipStatus('connecting');
     s.addDiagnosticLog({ level: 'info', category: 'SIP', message: 'Initiating SIP connection…' });
 
     if (window.callerflash?.sip?.connect) {
       window.callerflash.sip.connect(s.sipConfig).then((res) => {
         if (!res.success) {
-          useAppStore.setState({ isConnecting: false });
-        } else {
-          useAppStore.setState({ sipConnected: true });
-          s.addDiagnosticLog({ level: 'success', category: 'SIP', message: 'Connection established to ' + s.sipConfig.server });
+          useAppStore.setState({ isConnecting: false, sipStatus: 'disconnected' });
         }
       });
     } else {
       setTimeout(() => {
-        useAppStore.setState({ sipConnected: true });
         s.addDiagnosticLog({ level: 'success', category: 'SIP', message: 'TCP connection established on port 5060' });
         setTimeout(() => {
-          useAppStore.setState({ sipRegistered: true, isConnecting: false });
+          useAppStore.setState({ sipRegistered: true, sipConnected: true, isConnecting: false, sipStatus: 'registered' });
           s.addDiagnosticLog({ level: 'success', category: 'SIP', message: 'REGISTER 200 OK (expires=300s)' });
           s.addDiagnosticLog({ level: 'info', category: 'SIP', message: 'Ready for incoming calls' });
         }, 1200);
@@ -445,7 +454,7 @@ export const useAppStore = create<AppState>((set) => ({
   },
   disconnectSip: () => {
     const s = useAppStore.getState();
-    if (!s.sipConnected) return;
+    if (s.sipStatus === 'disconnected') return;
 
     if (window.callerflash?.sip?.disconnect) {
       window.callerflash.sip.disconnect();
@@ -453,6 +462,7 @@ export const useAppStore = create<AppState>((set) => ({
     s.setSipConnected(false);
     s.setSipRegistered(false);
     s.setIsConnecting(false);
+    s.setSipStatus('disconnected');
     s.addDiagnosticLog({ level: 'warning', category: 'SIP', message: 'SIP disconnected by user' });
   },
 

@@ -7,7 +7,7 @@ import { useAppStore } from '../store/useAppStore';
 
 export function Dashboard() {
   const {
-    sipConnected, sipRegistered,
+    sipStatus, sipRegistration,
     callHistory,
     appPreferences, isMinimized, sipConfig,
   } = useAppStore();
@@ -16,10 +16,10 @@ export function Dashboard() {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      if (sipConnected) setUptime((u) => u + 1);
+      if (sipStatus === 'registered') setUptime((u) => u + 1);
     }, 1000);
     return () => clearInterval(interval);
-  }, [sipConnected]);
+  }, [sipStatus]);
 
   const formatUptime = (s: number) => {
     const h = Math.floor(s / 3600);
@@ -46,9 +46,9 @@ export function Dashboard() {
         <StatusCard
           icon={<Wifi className="w-4 h-4" />}
           label="SIP"
-          value={sipRegistered ? 'Registered' : sipConnected ? 'Connected' : 'Offline'}
-          color={sipRegistered ? '#6ccb5f' : sipConnected ? '#fcb827' : '#ff6b6b'}
-          tooltip={sipConnected ? `Uptime: ${formatUptime(uptime)}` : 'Not connected'}
+          value={sipStatus === 'registered' ? 'Registered' : sipStatus === 'connecting' ? 'Connecting' : 'Not connected'}
+          color={sipStatus === 'registered' ? '#6ccb5f' : sipStatus === 'connecting' ? '#fcb827' : '#ff6b6b'}
+          tooltip={sipStatus === 'registered' ? `Uptime: ${formatUptime(uptime)}` : 'Not connected'}
         />
         <StatusCard
           icon={<Phone className="w-4 h-4" />}
@@ -70,7 +70,7 @@ export function Dashboard() {
           <DetailRow label="Protocol" value={`${sipConfig.protocol} : ${sipConfig.port}`} />
           <DetailRow label="Codec" value={sipConfig.codec} />
           <DetailRow label="STUN" value={sipConfig.stunServer || '—'} />
-          <DetailRow label="Registration" value={sipRegistered ? `Active (${sipConfig.registerExpiry}s)` : 'Inactive'} />
+          <DetailRow label="Registration" value={sipStatus === 'registered' ? `Active (${sipConfig.registerExpiry}s)` : 'Inactive'} />
           <DetailRow label="Encryption" value={sipConfig.protocol === 'TLS' ? 'TLS' : 'Optional'} />
         </div>
         <div className="mt-2 flex items-center gap-2">

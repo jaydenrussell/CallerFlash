@@ -39,7 +39,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ collapsed }: SidebarProps) {
-  const { activeTab, setActiveTab, sipConnected, sipRegistered, updateInfo } = useAppStore();
+  const { activeTab, setActiveTab, sipStatus, sipRegistration, sipConfig, updateInfo } = useAppStore();
 
   if (collapsed) {
     return (
@@ -59,10 +59,10 @@ export function Sidebar({ collapsed }: SidebarProps) {
           <div
             className={cn(
               'w-2.5 h-2.5 rounded-full',
-              sipConnected && sipRegistered ? 'bg-win-success' :
-                sipConnected ? 'bg-win-warning' : 'bg-win-error'
+              sipStatus === 'registered' ? 'bg-win-success' :
+                sipStatus === 'connecting' ? 'bg-win-warning' : 'bg-win-error'
             )}
-            title={sipConnected && sipRegistered ? 'Registered' : sipConnected ? 'Connecting' : 'Offline'}
+            title={sipStatus === 'registered' ? 'Registered' : sipStatus === 'connecting' ? 'Connecting' : 'Offline'}
           />
         </div>
 
@@ -108,7 +108,7 @@ export function Sidebar({ collapsed }: SidebarProps) {
   }
 
   return (
-    <div className="w-44 min-w-44 bg-win-card border-r border-win-border flex flex-col h-full">
+    <div className="w-40 min-w-40 bg-win-card border-r border-win-border flex flex-col h-full">
       {/* App Header */}
       <div className="px-3 py-3 border-b border-win-border">
         <div className="flex items-center gap-2">
@@ -123,25 +123,38 @@ export function Sidebar({ collapsed }: SidebarProps) {
       </div>
 
       {/* Connection Status */}
-      <div className="px-3 py-3 border-b border-win-border">
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-win-surface">
-          {sipConnected ? (
-            <Wifi className="w-4 h-4 text-win-success flex-shrink-0" />
+      <div className="px-3 py-2.5 border-b border-win-border">
+        <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-win-surface">
+          {sipStatus === 'registered' ? (
+            <Wifi className="w-3.5 h-3.5 text-win-success flex-shrink-0" />
+          ) : sipStatus === 'connecting' ? (
+            <div className="w-3.5 h-3.5 border-2 border-win-warning border-t-transparent rounded-full animate-spin flex-shrink-0" />
           ) : (
-            <WifiOff className="w-4 h-4 text-win-error flex-shrink-0" />
+            <WifiOff className="w-3.5 h-3.5 text-win-error flex-shrink-0" />
           )}
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium text-win-text truncate">
-              {sipRegistered ? 'Registered' : sipConnected ? 'Connected' : 'Disconnected'}
+            <p className={cn(
+              'text-[11px] font-semibold truncate',
+              sipStatus === 'registered' ? 'text-win-success' :
+                sipStatus === 'connecting' ? 'text-win-warning' : 'text-win-text-secondary'
+            )}>
+              Status
             </p>
-            <p className="text-xs text-win-text-tertiary truncate">
-              {sipRegistered ? 'Active Session' : sipConnected ? 'Registering...' : 'Offline'}
+            <p className={cn(
+              'text-[11px] truncate',
+              sipStatus === 'registered' ? 'text-win-text' :
+                sipStatus === 'connecting' ? 'text-win-warning' : 'text-win-text-tertiary'
+            )}>
+              {sipStatus === 'registered'
+                ? `Registered (${sipRegistration ? sipConfig.server + ':' + sipConfig.port : 'active'})`
+                : sipStatus === 'connecting' ? 'Connecting...'
+                : 'Not connected'}
             </p>
           </div>
           <div className={cn(
-            'w-2.5 h-2.5 rounded-full flex-shrink-0',
-            sipConnected && sipRegistered ? 'bg-win-success' :
-              sipConnected ? 'bg-win-warning' : 'bg-win-error'
+            'w-2 h-2 rounded-full flex-shrink-0',
+            sipStatus === 'registered' ? 'bg-win-success' :
+              sipStatus === 'connecting' ? 'bg-win-warning' : 'bg-win-error'
           )} />
         </div>
       </div>
@@ -157,7 +170,7 @@ export function Sidebar({ collapsed }: SidebarProps) {
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
                 className={cn(
-                  'w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 relative',
+                  'w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm font-medium transition-all duration-150 relative',
                   isActive
                     ? 'bg-win-accent/15 text-win-accent border border-win-accent/20'
                     : 'text-win-text-secondary hover:bg-win-surface-hover hover:text-win-text border border-transparent'
@@ -174,7 +187,7 @@ export function Sidebar({ collapsed }: SidebarProps) {
       </nav>
 
       {/* Version + single GitHub link (the only GitHub entry in the whole app) */}
-      <div className="p-3 border-t border-win-border space-y-2">
+      <div className="p-2.5 border-t border-win-border space-y-1.5">
         <div className="text-center">
           <p className="text-xs text-win-text-tertiary truncate">{formatVersion(updateInfo.currentVersion)} • MIT</p>
         </div>
