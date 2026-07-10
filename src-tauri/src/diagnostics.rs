@@ -1,4 +1,4 @@
-﻿use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use tauri::Manager;
@@ -132,13 +132,13 @@ pub fn diagnostics_load(app: tauri::AppHandle) -> Vec<LogEntry> {
     diag.load(1000)
 }
 
-
-
 #[tauri::command]
 pub fn diagnostics_export(content: String) -> Result<(), CommandError> {
     let temp_dir = std::env::temp_dir();
-    let filename = format!("callerflash-diagnostics-{}.log",
-        chrono::Local::now().format("%Y-%m-%d_%H-%M-%S"));
+    let filename = format!(
+        "callerflash-diagnostics-{}.log",
+        chrono::Local::now().format("%Y-%m-%d_%H-%M-%S")
+    );
     let path = temp_dir.join(&filename);
     std::fs::write(&path, &content)
         .map_err(|e| CommandError::io(format!("Failed to write diagnostics: {}", e)))?;

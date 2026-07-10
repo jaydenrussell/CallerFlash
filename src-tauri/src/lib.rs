@@ -1,4 +1,4 @@
-﻿mod diagnostics;
+mod diagnostics;
 mod error;
 mod migrate;
 mod ratelimit;
@@ -8,7 +8,7 @@ mod storage;
 mod tray;
 mod update;
 
-use diagnostics::{diagnostics_append, diagnostics_load, diagnostics_export};
+use diagnostics::{diagnostics_append, diagnostics_export, diagnostics_load};
 use error::CommandError;
 use ratelimit::RATE_LIMITER;
 use sip::SipClient;
@@ -23,7 +23,7 @@ pub use update::cmd_verify_update;
 const MAX_NOTIFY_TITLE_LENGTH: usize = 256;
 const MAX_NOTIFY_BODY_LENGTH: usize = 1024;
 
-// Rate limiters are defined in ratelimit.rs — use RATE_LIMITER and SIP_RATE_LIMITER
+// Rate limiters are defined in ratelimit.rs ? use RATE_LIMITER and SIP_RATE_LIMITER
 
 #[tauri::command]
 async fn shell_open_external(url: String) -> Result<(), CommandError> {
@@ -90,7 +90,7 @@ async fn notify_show(app: AppHandle, title: String, body: String) -> Result<(), 
     Ok(())
 }
 
-// ── Toast window management ────────────────────────────────────────
+// ?? Toast window management ????????????????????????????????????????
 
 struct ToastState {
     pending_data: Mutex<Option<serde_json::Value>>,
@@ -238,7 +238,7 @@ async fn toast_get_initial(app: AppHandle) -> Result<Option<serde_json::Value>, 
     Ok(None)
 }
 
-// ── App lifecycle ──────────────────────────────────────────────────
+// ?? App lifecycle ??????????????????????????????????????????????????
 
 #[tauri::command]
 #[cfg(target_os = "windows")]
@@ -291,7 +291,7 @@ fn app_get_start_with_windows() -> Result<bool, CommandError> {
         .open_subkey_with_flags(r"Software\Microsoft\Windows\CurrentVersion\Run", KEY_READ)
         .map_err(|e| CommandError::io(format!("Failed to open Run key: {}", e)))?;
     if run_key.get_value::<String, _>("CallerFlash").is_err() {
-        log::info!("[startup] Run key entry missing — startup disabled externally");
+        log::info!("[startup] Run key entry missing ? startup disabled externally");
         return Ok(false);
     }
 
@@ -306,7 +306,7 @@ fn app_get_start_with_windows() -> Result<bool, CommandError> {
         if let Ok(raw) = approved_key.get_raw_value("CallerFlash") {
             let data = raw.bytes;
             if data.len() >= 9 && data[8] == 2 {
-                log::info!("[startup] StartupApproved shows disabled — toggling off");
+                log::info!("[startup] StartupApproved shows disabled ? toggling off");
                 return Ok(false);
             }
         }
@@ -321,7 +321,7 @@ fn app_get_start_with_windows() -> Result<bool, CommandError> {
     Ok(false)
 }
 
-// ── Startup check command ──────────────────────────────────────────
+// ?? Startup check command ??????????????????????????????????????????
 
 #[tauri::command]
 fn run_startup_checks(app: AppHandle) -> error::StartupReport {
@@ -332,7 +332,7 @@ fn run_startup_checks(app: AppHandle) -> error::StartupReport {
     startup::run_self_check(data_dir)
 }
 
-// ── App entry point ────────────────────────────────────────────────
+// ?? App entry point ????????????????????????????????????????????????
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -410,13 +410,13 @@ pub fn run() {
                 edition: String::new(),
             });
             if !report.all_ok {
-                log::warn!("[startup] Some self-checks failed — see report for details");
+                log::warn!("[startup] Some self-checks failed ? see report for details");
             }
             if report.os_name == "windows"
                 && !report.is_windows_11
             {
                 log::warn!(
-                    "[startup] Running on pre-Windows 11 build {} (edition: {}) — some features may behave differently",
+                    "[startup] Running on pre-Windows 11 build {} (edition: {}) ? some features may behave differently",
                     report.os_version, report.edition
                 );
             }
@@ -453,6 +453,6 @@ pub fn run() {
 
     builder.run(tauri::generate_context!()).unwrap_or_else(|e| {
         log::error!("Failed to run application: {}", e);
-        eprintln!("CallerFlash: Fatal error — {}", e);
+        eprintln!("CallerFlash: Fatal error ? {}", e);
     });
 }

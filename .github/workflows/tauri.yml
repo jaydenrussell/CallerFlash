@@ -136,7 +136,7 @@ jobs:
           set +e
           FULL_VER="${{ needs.tag-version.outputs.version }}"
           BASE_VER="${{ needs.tag-version.outputs.base_ver }}"
-          BUNDLE_ROOT="src-tauri/target/release/bundle"
+          BUNDLE_ROOT="target/release/bundle"
           echo "--- Bundle root contents ---"
           find "$BUNDLE_ROOT" -type f 2>/dev/null || echo "(bundle root not found)"
           echo "---"
