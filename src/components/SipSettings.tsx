@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Server, Lock, Save, RotateCcw, Activity,
   ChevronDown, Eye, EyeOff, ShieldCheck, Wifi, WifiOff

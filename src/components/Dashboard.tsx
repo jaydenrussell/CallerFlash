@@ -7,7 +7,7 @@ import { useAppStore } from '../store/useAppStore';
 
 export function Dashboard() {
   const {
-    sipStatus, sipRegistration,
+    sipStatus,
     callHistory,
     appPreferences, isMinimized, sipConfig,
   } = useAppStore();

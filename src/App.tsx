@@ -9,7 +9,7 @@ import { Diagnostics } from './components/Diagnostics';
 import { AutoUpdate } from './components/AutoUpdate';
 import { About } from './components/About';
 import { ToastContainer } from './components/ToastNotification';
-import { useAppStore } from './store/useAppStore';
+import { useAppStore, DiagnosticLog } from './store/useAppStore';
 import { sanitizeCallerNumberForClipboard, sanitizeCallerName } from './security/secretRedactor';
 
 // Threshold below which the sidebar collapses to icons only
@@ -64,6 +64,13 @@ export default function App() {
     }
   }, []);
 
+  // Disable browser right-click context menu (native app behavior)
+  useEffect(() => {
+    const handler = (e: MouseEvent) => e.preventDefault();
+    document.addEventListener('contextmenu', handler);
+    return () => document.removeEventListener('contextmenu', handler);
+  }, []);
+
   // Check if this is the first run of a new update
   const [isFirstRunAfterUpdate, setIsFirstRunAfterUpdate] = useState(false);
   
@@ -95,7 +102,7 @@ export default function App() {
     if (typeof window !== 'undefined' && window.callerflash?.diagnostics) {
       window.callerflash.diagnostics.load().then((entries) => {
         if (entries && entries.length > 0) {
-          useAppStore.getState().loadPersistedDiagnostics(entries);
+          useAppStore.getState().loadPersistedDiagnostics(entries as DiagnosticLog[]);
         }
       }).catch((e) => addDiagnosticLog({ level: 'error', category: 'SYSTEM', message: `Failed to load diagnostics: ${e}` }));
     }

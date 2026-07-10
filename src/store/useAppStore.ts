@@ -111,14 +111,14 @@ interface PersistedUiSettings {
 class SecureStorage {
   private _cache: PersistedUiSettings | null = null;
   private writeQueue: Promise<void> = Promise.resolve();
-  private isElectron: boolean;
+  private hasNativeStorage: boolean;
 
   get cache(): PersistedUiSettings | null {
     return this._cache;
   }
 
   constructor() {
-    this.isElectron = typeof window !== 'undefined' && !!window.callerflash?.platform?.isElectron;
+    this.hasNativeStorage = typeof window !== 'undefined' && !!window.callerflash?.storage;
   }
 
   /** Pre-populate cache so first save doesn't clobber unrelated fields. */
@@ -131,23 +131,19 @@ class SecureStorage {
 
     let data: PersistedUiSettings = { version: STORAGE_VERSION };
 
-    if (this.isElectron) {
-      // Use main process file-based storage (survives updates)
+    if (this.hasNativeStorage) {
       try {
         const result = await window.callerflash?.storage?.load?.();
         if (result && typeof result === 'object') {
           data = { ...data, ...result };
         }
       } catch {
-        // Fallback to localStorage if main process fails
         data = this.loadFromLocalStorage();
       }
     } else {
-      // Web dev mode: use localStorage
       data = this.loadFromLocalStorage();
     }
 
-    // Migration: ensure version is set
     if (!data.version) data.version = STORAGE_VERSION;
 
     this._cache = data;
@@ -155,7 +151,6 @@ class SecureStorage {
   }
 
   async save(settings: PersistedUiSettings): Promise<void> {
-    // Queue writes to prevent race conditions
     this.writeQueue = this.writeQueue.then(() => this.doSave(settings));
     return this.writeQueue;
   }
@@ -164,15 +159,13 @@ class SecureStorage {
     const toSave = { ...settings, version: STORAGE_VERSION };
     this._cache = toSave;
 
-    if (this.isElectron) {
+    if (this.hasNativeStorage) {
       try {
         await window.callerflash?.storage?.save?.(toSave);
       } catch {
         // Fallback to localStorage
       }
     }
-    // Always save to localStorage as write-through cache so
-    // loadSettingsSync() on next startup sees the latest data.
     this.saveToLocalStorage(toSave);
   }
 
@@ -448,6 +441,50 @@ export const useAppStore = create<AppState>((set) => ({
           useAppStore.setState({ sipRegistered: true, sipConnected: true, isConnecting: false, sipStatus: 'registered' });
           s.addDiagnosticLog({ level: 'success', category: 'SIP', message: 'REGISTER 200 OK (expires=300s)' });
           s.addDiagnosticLog({ level: 'info', category: 'SIP', message: 'Ready for incoming calls' });
+
+          setTimeout(() => {
+            const simulatedNumber = '+15551234567';
+            const simulatedName = 'John Doe';
+            s.addCallRecord({
+              id: crypto.randomUUID(),
+              callerNumber: simulatedNumber,
+              callerName: simulatedName,
+              timestamp: new Date(),
+              duration: 0,
+              direction: 'inbound',
+              status: 'answered',
+            });
+            s.addDiagnosticLog({ level: 'info', category: 'SIP', message: `INVITE received from ${simulatedNumber} (${simulatedName})`, details: `Source: Local Simulation` });
+            if (typeof navigator !== 'undefined' && navigator.clipboard) {
+              navigator.clipboard.writeText(simulatedNumber).catch(() => {});
+            }
+            s.setClipboardText(simulatedNumber);
+            if (window.callerflash?.toast?.show) {
+              const { toastConfig } = useAppStore.getState();
+              window.callerflash.toast.show({
+                id: crypto.randomUUID(),
+                callerNumber: simulatedNumber,
+                callerName: simulatedName,
+                timestamp: new Date().toISOString(),
+                config: {
+                  duration: toastConfig.duration,
+                  backgroundColor: toastConfig.backgroundColor,
+                  accentColor: toastConfig.accentColor,
+                  textColor: toastConfig.textColor,
+                  borderRadius: toastConfig.borderRadius,
+                  opacity: toastConfig.opacity,
+                  fontFamily: toastConfig.fontFamily,
+                  fontSize: toastConfig.fontSize,
+                  autoCopyToClipboard: toastConfig.autoCopyToClipboard,
+                  showCallerName: toastConfig.showCallerName,
+                  showTimestamp: toastConfig.showTimestamp,
+                  maxWidth: toastConfig.maxWidth,
+                  soundEnabled: toastConfig.soundEnabled,
+                  soundName: toastConfig.soundName,
+                },
+              });
+            }
+          }, 2000);
         }, 1200);
       }, 800);
     }
