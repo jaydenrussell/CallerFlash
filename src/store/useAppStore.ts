@@ -244,10 +244,10 @@ async function initStorageMigration() {
           toastDragPosition: fileData.toastDragPosition ?? null,
           updateInfo: mergedUpdate,
         });
-        // Decrypt SIP password from file storage (module-level decrypt used
-        // persistedUi from localStorage which may not have the encrypted blob).
-        if (fileData.sipPasswordEncrypted && window.callerflash?.safeStorage?.decrypt) {
-          window.callerflash.safeStorage.decrypt(fileData.sipPasswordEncrypted).then((decrypted) => {
+        // Decrypt SIP password — prefer file storage blob, fall back to localStorage
+        const encryptedPassword = fileData.sipPasswordEncrypted || persistedUi.sipPasswordEncrypted;
+        if (encryptedPassword && window.callerflash?.safeStorage?.decrypt) {
+          window.callerflash.safeStorage.decrypt(encryptedPassword).then((decrypted) => {
             if (decrypted) {
               useAppStore.setState((s) => ({
                 sipConfig: { ...s.sipConfig, password: decrypted }
