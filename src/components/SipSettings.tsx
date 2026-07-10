@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
-  Server, Lock, Save, RotateCcw, Activity,
+  Server, Lock, Save, RotateCcw,
   ChevronDown, Eye, EyeOff, ShieldCheck, Wifi, WifiOff
 } from 'lucide-react';
 import { useAppStore, type SipConfig } from '../store/useAppStore';
@@ -138,7 +138,6 @@ export function SipSettings() {
   const [localConfig, setLocalConfig] = useState<SipConfig>({ ...sipConfig });
   const [showPassword, setShowPassword] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [testing, setTesting] = useState(false);
   // Sync password from store after async decryption
   useEffect(() => {
     if (sipConfig.password && !localConfig.password) {
@@ -170,47 +169,6 @@ export function SipSettings() {
       return;
     }
     connectSip();
-  };
-
-  const handleTest = async () => {
-    setTesting(true);
-    try {
-      const res = await window.callerflash?.sip?.testConnection(localConfig);
-      if (res?.success && res.dns?.resolved) {
-        const port = res.portCheck ?? {};
-        const portDetail =
-          typeof port === 'object' ? port.detail ?? JSON.stringify(port) : String(port);
-        addDiagnosticLog({
-          level: 'success',
-          category: 'SIP',
-          message: `DNS resolved ${res.dns.ip} (${res.dns.family}, ${res.dns.timeMs}ms)`,
-          details: `Port check (${res.protocol}:${res.port}): ${portDetail}`,
-        });
-      } else if (res?.dns) {
-        addDiagnosticLog({
-          level: 'error',
-          category: 'SIP',
-          message: 'DNS resolution failed',
-          details: res.dns.error,
-        });
-      } else {
-        addDiagnosticLog({
-          level: 'error',
-          category: 'SIP',
-          message: 'Connection test failed',
-          details: res?.error ?? 'Unknown error',
-        });
-      }
-    } catch (e) {
-      addDiagnosticLog({
-        level: 'error',
-        category: 'SIP',
-        message: 'Connection test error',
-        details: String(e),
-      });
-    } finally {
-      setTesting(false);
-    }
   };
 
   const handleSave = () => {
@@ -309,23 +267,6 @@ export function SipSettings() {
               <>
                 <Wifi className="w-4 h-4" />
                 Connect
-              </>
-            )}
-          </button>
-          <button
-            onClick={handleTest}
-            disabled={testing}
-            className="flex items-center gap-2 px-3 py-1.5 bg-win-surface hover:bg-win-surface-hover text-win-text-secondary rounded-lg text-sm font-medium transition-colors border border-win-border disabled:opacity-50"
-          >
-            {testing ? (
-              <>
-                <div className="w-3.5 h-3.5 border-2 border-win-accent border-t-transparent rounded-full animate-spin" />
-                Testing…
-              </>
-            ) : (
-              <>
-                <Activity className="w-4 h-4" />
-                Test
               </>
             )}
           </button>
