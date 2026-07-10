@@ -320,6 +320,9 @@ interface AppState {
 
   clipboardText: string;
   setClipboardText: (text: string) => void;
+
+  simulationMode: boolean;
+  setSimulationMode: (mode: boolean) => void;
 }
 
 // ── Defaults ─────────────────────────────────────────────────────────
@@ -379,6 +382,62 @@ const defaultUpdateInfo: UpdateInfo = {
   isInstalling: false,
 };
 
+// ── Simulation (test mode without real SIP server) ────────────────────
+function runSimulation(s: AppState) {
+  setTimeout(() => {
+    s.addDiagnosticLog({ level: 'success', category: 'SIP', message: 'TCP connection established on port 5060' });
+    setTimeout(() => {
+      useAppStore.setState({ sipRegistered: true, sipConnected: true, isConnecting: false, sipStatus: 'registered' });
+      s.addDiagnosticLog({ level: 'success', category: 'SIP', message: 'REGISTER 200 OK (expires=300s)' });
+      s.addDiagnosticLog({ level: 'info', category: 'SIP', message: 'Ready for incoming calls' });
+
+      setTimeout(() => {
+        const simulatedNumber = '+15551234567';
+        const simulatedName = 'John Doe';
+        s.addCallRecord({
+          id: crypto.randomUUID(),
+          callerNumber: simulatedNumber,
+          callerName: simulatedName,
+          timestamp: new Date(),
+          duration: 0,
+          direction: 'inbound',
+          status: 'answered',
+        });
+        s.addDiagnosticLog({ level: 'info', category: 'SIP', message: `INVITE received from ${simulatedNumber} (${simulatedName})`, details: `Source: Local Simulation` });
+        if (typeof navigator !== 'undefined' && navigator.clipboard) {
+          navigator.clipboard.writeText(simulatedNumber).catch(() => {});
+        }
+        s.setClipboardText(simulatedNumber);
+        if (window.callerflash?.toast?.show) {
+          const { toastConfig } = useAppStore.getState();
+          window.callerflash.toast.show({
+            id: crypto.randomUUID(),
+            callerNumber: simulatedNumber,
+            callerName: simulatedName,
+            timestamp: new Date().toISOString(),
+            config: {
+              duration: toastConfig.duration,
+              backgroundColor: toastConfig.backgroundColor,
+              accentColor: toastConfig.accentColor,
+              textColor: toastConfig.textColor,
+              borderRadius: toastConfig.borderRadius,
+              opacity: toastConfig.opacity,
+              fontFamily: toastConfig.fontFamily,
+              fontSize: toastConfig.fontSize,
+              autoCopyToClipboard: toastConfig.autoCopyToClipboard,
+              showCallerName: toastConfig.showCallerName,
+              showTimestamp: toastConfig.showTimestamp,
+              maxWidth: toastConfig.maxWidth,
+              soundEnabled: toastConfig.soundEnabled,
+              soundName: toastConfig.soundName,
+            },
+          });
+        }
+      }, 2000);
+    }, 1200);
+  }, 800);
+}
+
 // ── Store ────────────────────────────────────────────────────────────
 export const useAppStore = create<AppState>((set) => ({
   activeTab: 'dashboard',
@@ -428,65 +487,16 @@ export const useAppStore = create<AppState>((set) => ({
     s.setSipStatus('connecting');
     s.addDiagnosticLog({ level: 'info', category: 'SIP', message: 'Initiating SIP connection…' });
 
-    if (window.callerflash?.sip?.connect) {
+    if (s.simulationMode) {
+      runSimulation(s);
+    } else if (window.callerflash?.sip?.connect) {
       window.callerflash.sip.connect(s.sipConfig).then((res) => {
         if (!res.success) {
           useAppStore.setState({ isConnecting: false, sipStatus: 'disconnected' });
         }
       });
     } else {
-      setTimeout(() => {
-        s.addDiagnosticLog({ level: 'success', category: 'SIP', message: 'TCP connection established on port 5060' });
-        setTimeout(() => {
-          useAppStore.setState({ sipRegistered: true, sipConnected: true, isConnecting: false, sipStatus: 'registered' });
-          s.addDiagnosticLog({ level: 'success', category: 'SIP', message: 'REGISTER 200 OK (expires=300s)' });
-          s.addDiagnosticLog({ level: 'info', category: 'SIP', message: 'Ready for incoming calls' });
-
-          setTimeout(() => {
-            const simulatedNumber = '+15551234567';
-            const simulatedName = 'John Doe';
-            s.addCallRecord({
-              id: crypto.randomUUID(),
-              callerNumber: simulatedNumber,
-              callerName: simulatedName,
-              timestamp: new Date(),
-              duration: 0,
-              direction: 'inbound',
-              status: 'answered',
-            });
-            s.addDiagnosticLog({ level: 'info', category: 'SIP', message: `INVITE received from ${simulatedNumber} (${simulatedName})`, details: `Source: Local Simulation` });
-            if (typeof navigator !== 'undefined' && navigator.clipboard) {
-              navigator.clipboard.writeText(simulatedNumber).catch(() => {});
-            }
-            s.setClipboardText(simulatedNumber);
-            if (window.callerflash?.toast?.show) {
-              const { toastConfig } = useAppStore.getState();
-              window.callerflash.toast.show({
-                id: crypto.randomUUID(),
-                callerNumber: simulatedNumber,
-                callerName: simulatedName,
-                timestamp: new Date().toISOString(),
-                config: {
-                  duration: toastConfig.duration,
-                  backgroundColor: toastConfig.backgroundColor,
-                  accentColor: toastConfig.accentColor,
-                  textColor: toastConfig.textColor,
-                  borderRadius: toastConfig.borderRadius,
-                  opacity: toastConfig.opacity,
-                  fontFamily: toastConfig.fontFamily,
-                  fontSize: toastConfig.fontSize,
-                  autoCopyToClipboard: toastConfig.autoCopyToClipboard,
-                  showCallerName: toastConfig.showCallerName,
-                  showTimestamp: toastConfig.showTimestamp,
-                  maxWidth: toastConfig.maxWidth,
-                  soundEnabled: toastConfig.soundEnabled,
-                  soundName: toastConfig.soundName,
-                },
-              });
-            }
-          }, 2000);
-        }, 1200);
-      }, 800);
+      runSimulation(s);
     }
   },
   disconnectSip: () => {
@@ -588,6 +598,9 @@ export const useAppStore = create<AppState>((set) => ({
 
   clipboardText: '',
   setClipboardText: (text) => set({ clipboardText: text }),
+
+  simulationMode: false,
+  setSimulationMode: (mode) => set({ simulationMode: mode }),
 }));
 
 // ── Decrypt SIP password on boot ────────────────────────────────────
