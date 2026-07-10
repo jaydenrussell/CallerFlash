@@ -444,10 +444,7 @@ impl SipClient {
                             safe_emit(
                                 &handle,
                                 "sip:status",
-                                SipStatus::new(
-                                    "error",
-                                    Some("Invalid server address".to_string()),
-                                ),
+                                SipStatus::new("error", Some("Invalid server address".to_string())),
                             );
                             return;
                         }
