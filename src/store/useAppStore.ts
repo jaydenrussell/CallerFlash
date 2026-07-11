@@ -234,7 +234,7 @@ async function initStorageMigration() {
         const currentSipPassword = useAppStore.getState().sipConfig.password;
         const mergedToast = { ...defaultToastConfig, ...fileData.toastConfig };
         const mergedPrefs = { ...defaultAppPreferences, ...fileData.appPreferences };
-        const mergedSip = { ...defaultSipConfig, ...fileData.sipConfig, password: currentSipPassword || '' };
+        const mergedSip = { ...defaultSipConfig, ...fileData.sipConfig, password: currentSipPassword };
         const mergedUpdate = { ...defaultUpdateInfo };
         if (fileData.updateChannel) mergedUpdate.updateChannel = fileData.updateChannel;
         if (fileData.autoUpdate !== undefined) mergedUpdate.autoUpdate = fileData.autoUpdate;
@@ -253,13 +253,19 @@ async function initStorageMigration() {
         // for old data that was only saved to the write-through cache).
         const encryptedPassword = fileData.sipPasswordEncrypted || persistedUi.sipPasswordEncrypted;
         if (encryptedPassword && window.callerflash?.safeStorage?.decrypt) {
-          window.callerflash.safeStorage.decrypt(encryptedPassword).then((decrypted) => {
+          try {
+            const decrypted = await window.callerflash.safeStorage.decrypt(encryptedPassword);
             if (decrypted) {
               useAppStore.setState((s) => ({
                 sipConfig: { ...s.sipConfig, password: decrypted }
               }));
+              console.log('[store] SIP password decrypted from file storage');
+            } else {
+              console.warn('[store] SIP password decrypt returned empty');
             }
-          });
+          } catch (e) {
+            console.error('[store] SIP password decrypt failed:', e);
+          }
         }
         return;
       }
@@ -272,7 +278,8 @@ async function initStorageMigration() {
         console.log('[store] Migrated localStorage to file storage');
       }
     }
-  } catch {
+  } catch (e) {
+    console.error('[store] initStorageMigration failed:', e);
     // Ignore — localStorage data is still valid
   }
 }
@@ -540,23 +547,9 @@ export const useAppStore = create<AppState>((set) => ({
 
   clipboardText: '',
   setClipboardText: (text) => set({ clipboardText: text }),
-}));
+})); 
 
-// ── Decrypt SIP password on boot ────────────────────────────────────
-if (typeof window !== 'undefined' && window.callerflash?.safeStorage?.decrypt && persistedUi.sipPasswordEncrypted) {
-  window.callerflash.safeStorage.decrypt(persistedUi.sipPasswordEncrypted).then((decrypted) => {
-    if (decrypted) {
-      useAppStore.setState((s) => ({
-        sipConfig: {
-          ...s.sipConfig,
-          password: decrypted,
-        }
-      }));
-    }
-  });
-}
-
-// Init storage migration (async, non-blocking)
+// Init storage migration (handles SIP password decryption internally)
 initStorageMigration();
 
 // ── Sync start-with-Windows toggle with actual Windows state ─────────
