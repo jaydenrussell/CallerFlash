@@ -111,14 +111,14 @@ interface PersistedUiSettings {
 class SecureStorage {
   private _cache: PersistedUiSettings | null = null;
   private writeQueue: Promise<void> = Promise.resolve();
-  private isElectron: boolean;
+  private hasNativeStorage: boolean;
 
   get cache(): PersistedUiSettings | null {
     return this._cache;
   }
 
   constructor() {
-    this.isElectron = typeof window !== 'undefined' && !!window.callerflash?.platform?.isElectron;
+    this.hasNativeStorage = typeof window !== 'undefined' && !!window.callerflash?.storage;
   }
 
   /** Pre-populate cache so first save doesn't clobber unrelated fields. */
@@ -131,19 +131,16 @@ class SecureStorage {
 
     let data: PersistedUiSettings = { version: STORAGE_VERSION };
 
-    if (this.isElectron) {
-      // Use main process file-based storage (survives updates)
+    if (this.hasNativeStorage) {
       try {
         const result = await window.callerflash?.storage?.load?.();
         if (result && typeof result === 'object') {
           data = { ...data, ...result };
         }
       } catch {
-        // Fallback to localStorage if main process fails
         data = this.loadFromLocalStorage();
       }
     } else {
-      // Web dev mode: use localStorage
       data = this.loadFromLocalStorage();
     }
 
@@ -164,7 +161,7 @@ class SecureStorage {
     const toSave = { ...settings, version: STORAGE_VERSION };
     this._cache = toSave;
 
-    if (this.isElectron) {
+    if (this.hasNativeStorage) {
       try {
         await window.callerflash?.storage?.save?.(toSave);
       } catch {
@@ -251,10 +248,11 @@ async function initStorageMigration() {
           toastDragPosition: fileData.toastDragPosition ?? null,
           updateInfo: mergedUpdate,
         });
-        // Decrypt SIP password from file storage (module-level decrypt used
-        // persistedUi from localStorage which may not have the encrypted blob).
-        if (fileData.sipPasswordEncrypted && window.callerflash?.safeStorage?.decrypt) {
-          window.callerflash.safeStorage.decrypt(fileData.sipPasswordEncrypted).then((decrypted) => {
+        // Decrypt SIP password from file storage (fallback to localStorage
+        // for old data that was only saved to the write-through cache).
+        const encryptedPassword = fileData.sipPasswordEncrypted || persistedUi.sipPasswordEncrypted;
+        if (encryptedPassword && window.callerflash?.safeStorage?.decrypt) {
+          window.callerflash.safeStorage.decrypt(encryptedPassword).then((decrypted) => {
             if (decrypted) {
               useAppStore.setState((s) => ({
                 sipConfig: { ...s.sipConfig, password: decrypted }

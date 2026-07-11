@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Server, Lock, Save, RotateCcw, Activity,
   ChevronDown, Eye, EyeOff, ShieldCheck, Wifi, WifiOff
@@ -140,6 +140,13 @@ export function SipSettings() {
   const [showPassword, setShowPassword] = useState(false);
   const [saved, setSaved] = useState(false);
   const [testing, setTesting] = useState(false);
+
+  // Sync password from store after async decryption completes
+  useEffect(() => {
+    if (sipConfig.password && !localConfig.password) {
+      setLocalConfig(prev => ({ ...prev, password: sipConfig.password }));
+    }
+  }, [sipConfig.password]);
 
   // Custom mode is on if the current server isn't in the known list
   const isCustomServer = !knownServerValues.has(localConfig.server);
