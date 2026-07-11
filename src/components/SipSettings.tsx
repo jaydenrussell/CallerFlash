@@ -142,7 +142,7 @@ export function SipSettings() {
 
   // Sync password from store after async decryption completes
   useEffect(() => {
-    if (sipConfig.password && !localConfig.password) {
+    if (sipConfig.password) {
       setLocalConfig(prev => ({ ...prev, password: sipConfig.password }));
     }
   }, [sipConfig.password]);

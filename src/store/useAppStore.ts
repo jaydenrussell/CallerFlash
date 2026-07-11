@@ -231,9 +231,10 @@ async function initStorageMigration() {
       if (fileData && Object.keys(fileData).length > 0 && fileData.version >= 2) {
         // File storage is authoritative — update cache and hydrate store
         secureStorage.initCache({ ...fileData });
+        const currentSipPassword = useAppStore.getState().sipConfig.password;
         const mergedToast = { ...defaultToastConfig, ...fileData.toastConfig };
         const mergedPrefs = { ...defaultAppPreferences, ...fileData.appPreferences };
-        const mergedSip = { ...defaultSipConfig, ...fileData.sipConfig };
+        const mergedSip = { ...defaultSipConfig, ...fileData.sipConfig, password: currentSipPassword || '' };
         const mergedUpdate = { ...defaultUpdateInfo };
         if (fileData.updateChannel) mergedUpdate.updateChannel = fileData.updateChannel;
         if (fileData.autoUpdate !== undefined) mergedUpdate.autoUpdate = fileData.autoUpdate;

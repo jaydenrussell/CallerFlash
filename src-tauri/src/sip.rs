@@ -46,8 +46,8 @@ impl Serialize for SipConfig {
         st.serialize_field("server", &self.server)?;
         st.serialize_field("port", &self.port)?;
         st.serialize_field("protocol", &self.protocol)?;
-        st.serialize_field("auth_username", &self.auth_username)?;
-        st.serialize_field("register_expiry", &self.register_expiry)?;
+        st.serialize_field("authUsername", &self.auth_username)?;
+        st.serialize_field("registerExpiry", &self.register_expiry)?;
         st.end()
     }
 }
@@ -55,6 +55,7 @@ impl Serialize for SipConfig {
 impl<'de> Deserialize<'de> for SipConfig {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
         struct Raw {
             username: String,
             password: String,
