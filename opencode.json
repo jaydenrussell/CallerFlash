@@ -1,0 +1,9 @@
+{
+  "skills": ["ci-build-only"],
+  "customCommands": {
+    "verify": {
+      "command": "npx tsc --noEmit && cargo check && cargo test --package callerflash --lib sip::tests --lib storage::tests",
+      "description": "Type-check TS + Rust + run unit tests (fast, no build)"
+    }
+  }
+}
