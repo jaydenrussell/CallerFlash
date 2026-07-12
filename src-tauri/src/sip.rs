@@ -407,9 +407,13 @@ impl SipClient {
                     },
                 );
 
-                // Build TransportLayer and Endpoint for transaction handling
+                // Build TransportLayer and Endpoint for transaction handling.
+                // add_connection registers TCP/TLS (they have a remote address);
+                // add_transport also registers UDP (no remote address) into the
+                // listen set that serve_listens() and lookup() traverse.
                 let transport_layer = TransportLayer::new(cancel_token.child_token());
                 transport_layer.add_connection(transport.clone());
+                transport_layer.add_transport(transport.clone());
 
                 let endpoint = RsEndpointBuilder::new()
                     .with_user_agent("CallerFlash")
@@ -764,18 +768,10 @@ impl SipClient {
                 // If it fails, we abort the task immediately (do_register already
                 // emitted a sip:status error event).
                 let local_sip_addr = match &transport {
-                    SipConnection::Udp(u) => {
-                        // UDP transport binds to 0.0.0.0 — substitute the real local IP
-                        let addr = u.get_addr();
-                        let host = sip::Host::IpAddr(local_ip);
-                        SipAddr {
-                            addr: sip::HostWithPort {
-                                host,
-                                port: addr.addr.port,
-                            },
-                            ..addr.clone()
-                        }
-                    }
+                    // Use the transport's own address as-is so get_via can find it
+                    // in the transport layer. For UDP the host will be 0.0.0.0 but
+                    // the SIP server sends responses to the UDP packet's source IP.
+                    SipConnection::Udp(u) => u.get_addr().clone(),
                     SipConnection::Tcp(t) => t.get_addr().clone(),
                     SipConnection::Tls(t) => t.get_addr().clone(),
                     _ => {
