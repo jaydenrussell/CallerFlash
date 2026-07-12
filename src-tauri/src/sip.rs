@@ -529,9 +529,10 @@ impl SipClient {
                     handle: &AppHandle,
                     connected: &Arc<Mutex<bool>>,
                     consecutive_failures: &mut u32,
+                    local_sip_addr: &SipAddr,
                 ) -> bool {
                     *cseq += 1;
-                    let via = match endpoint_inner.get_via(None, None) {
+                    let via = match endpoint_inner.get_via(Some(local_sip_addr.clone()), None) {
                         Ok(v) => v,
                         Err(e) => {
                             log::error!("[sip] Failed to create Via: {}", e);
@@ -762,6 +763,28 @@ impl SipClient {
                 // Initial registration — its return value is NOT discarded anymore.
                 // If it fails, we abort the task immediately (do_register already
                 // emitted a sip:status error event).
+                let local_sip_addr = match &transport {
+                    SipConnection::Udp(u) => {
+                        // UDP transport binds to 0.0.0.0 — substitute the real local IP
+                        let addr = u.get_addr();
+                        let host = sip::Host::IpAddr(local_ip);
+                        SipAddr {
+                            addr: sip::HostWithPort {
+                                host,
+                                port: addr.addr.port,
+                            },
+                            ..addr.clone()
+                        }
+                    }
+                    SipConnection::Tcp(t) => t.get_addr().clone(),
+                    SipConnection::Tls(t) => t.get_addr().clone(),
+                    _ => {
+                        log::error!("[sip] Unsupported transport type for Via");
+                        cancel_token.cancel();
+                        endpoint_serve.abort();
+                        return;
+                    }
+                };
                 let registered = do_register(
                     &endpoint_inner,
                     &server_uri,
@@ -774,6 +797,7 @@ impl SipClient {
                     &handle,
                     &connected,
                     &mut consecutive_failures,
+                    &local_sip_addr,
                 )
                 .await;
 
@@ -826,6 +850,7 @@ impl SipClient {
                                 &handle,
                                 &connected,
                                 &mut consecutive_failures,
+                                &local_sip_addr,
                             ).await;
 
                             if !still_registered {
