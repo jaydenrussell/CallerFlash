@@ -901,8 +901,17 @@ pub async fn sip_connect(
     if !SIP_RATE_LIMITER.check("sip_connect") {
         return Err(CommandError::rate_limited());
     }
-    config.validate()?;
-    let sip_client = app.state::<SipClient>();
+    if let Err(e) = config.validate() {
+        log::error!("[sip] sip_connect: config validation failed: {}", e);
+        return Err(CommandError::invalid_input(format!("Config: {}", e)));
+    }
+    let sip_client = match app.try_state::<SipClient>() {
+        Some(c) => c,
+        None => {
+            log::error!("[sip] sip_connect: SipClient not registered");
+            return Err(CommandError::startup("SIP client not initialized"));
+        }
+    };
     sip_client.start(config).await;
     Ok(serde_json::json!({"success": true}))
 }
