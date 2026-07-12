@@ -661,10 +661,7 @@ impl SipClient {
                                 StatusCode::Unauthorized
                                 | StatusCode::ProxyAuthenticationRequired => {
                                     if auth_sent {
-                                        let reason = resp
-                                            .reason_phrase()
-                                            .unwrap_or("")
-                                            .to_string();
+                                        let reason = resp.reason_phrase().unwrap_or("").to_string();
                                         log::error!(
                                             "[sip] Auth retry failed: {} {}",
                                             resp.status_code.code(),
