@@ -176,7 +176,7 @@ export default function App() {
         addDiagnosticLog({ level: 'success', category: 'SIP', message: 'REGISTER 200 OK (Registration active)' });
         addDiagnosticLog({ level: 'info', category: 'SIP', message: 'Ready for incoming calls' });
       } else if (data.status === 'error') {
-        useAppStore.setState({ sipRegistered: false, isConnecting: false });
+        useAppStore.setState({ sipConnected: false, sipRegistered: false, isConnecting: false });
         addDiagnosticLog({ level: 'error', category: 'SIP', message: `SIP Error: ${data.message}` });
       }
     });

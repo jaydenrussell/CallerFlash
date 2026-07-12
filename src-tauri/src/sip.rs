@@ -140,7 +140,11 @@ impl SipConfig {
                 )));
             }
         }
-        if self.password.expose_secret().len() > 512 {
+        let pw = self.password.expose_secret();
+        if pw.is_empty() {
+            return Err(CommandError::invalid_input("SIP password is required"));
+        }
+        if pw.len() > 512 {
             return Err(CommandError::invalid_input(
                 "SIP password exceeds maximum length of 512 characters",
             ));
@@ -192,6 +196,24 @@ fn sanitize_caller_id(s: &str) -> String {
         .chars()
         .take(MAX_CALLER_ID_LENGTH)
         .collect()
+}
+
+/// Determine the local IP address that the OS will use for outbound traffic
+/// to the given server address. Creates a temporary UDP socket — no actual
+/// data is sent; only local OS syscalls are made.
+fn get_local_ip_for(server_addr: std::net::SocketAddr) -> std::net::IpAddr {
+    if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
+        if socket.connect(server_addr).is_ok() {
+            if let Ok(local) = socket.local_addr() {
+                let ip = local.ip();
+                if !ip.is_unspecified() && !ip.is_loopback() {
+                    return ip;
+                }
+            }
+        }
+    }
+    // Fallback — some servers accept this, others use the source IP anyway.
+    std::net::IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0))
 }
 
 fn safe_emit(handle: &AppHandle, event: &str, payload: impl serde::Serialize + Clone) {
@@ -463,6 +485,11 @@ impl SipClient {
                         return;
                     }
                 };
+                // Determine the local IP for the Contact header. The SIP server uses
+                // this to route incoming calls back to us; it must be our address,
+                // not the server's.
+                let local_ip = get_local_ip_for(std::net::SocketAddr::new(server_addr.ip(), port));
+                let local_ip_str = local_ip.to_string();
                 let contact_uri = match Uri::try_from({
                     let transport_param = match protocol.as_str() {
                         "TCP" => ";transport=tcp",
@@ -471,7 +498,7 @@ impl SipClient {
                     };
                     format!(
                         "sip:{}@{}:{}{}",
-                        config.username, config.server, local_port, transport_param
+                        config.username, local_ip_str, local_port, transport_param
                     )
                     .as_str()
                 }) {
@@ -508,6 +535,15 @@ impl SipClient {
                         Ok(v) => v,
                         Err(e) => {
                             log::error!("[sip] Failed to create Via: {}", e);
+                            safe_emit(
+                                handle,
+                                "sip:status",
+                                SipStatus {
+                                    status: "error".to_string(),
+                                    message: Some(format!("SIP internal error (Via): {}", e)),
+                                },
+                            );
+                            *consecutive_failures += 1;
                             return false;
                         }
                     };
@@ -557,6 +593,18 @@ impl SipClient {
                         Ok(k) => k,
                         Err(e) => {
                             log::error!("[sip] Failed to create transaction key: {}", e);
+                            safe_emit(
+                                handle,
+                                "sip:status",
+                                SipStatus {
+                                    status: "error".to_string(),
+                                    message: Some(format!(
+                                        "SIP internal error (transaction key): {}",
+                                        e
+                                    )),
+                                },
+                            );
+                            *consecutive_failures += 1;
                             return false;
                         }
                     };
@@ -566,6 +614,14 @@ impl SipClient {
 
                     if let Err(e) = tx.send().await {
                         log::error!("[sip] Failed to send REGISTER: {}", e);
+                        safe_emit(
+                            handle,
+                            "sip:status",
+                            SipStatus {
+                                status: "error".to_string(),
+                                message: Some(format!("Failed to send REGISTER: {}", e)),
+                            },
+                        );
                         *consecutive_failures += 1;
                         return false;
                     }
@@ -605,10 +661,28 @@ impl SipClient {
                                 StatusCode::Unauthorized
                                 | StatusCode::ProxyAuthenticationRequired => {
                                     if auth_sent {
+                                        let reason = resp
+                                            .reason_phrase()
+                                            .unwrap_or("")
+                                            .to_string();
                                         log::error!(
-                                            "[sip] Auth retry failed: {}",
-                                            resp.status_code
+                                            "[sip] Auth retry failed: {} {}",
+                                            resp.status_code.code(),
+                                            reason
                                         );
+                                        safe_emit(
+                                            handle,
+                                            "sip:status",
+                                            SipStatus {
+                                                status: "error".to_string(),
+                                                message: Some(format!(
+                                                    "Authentication retry failed: {} {}",
+                                                    resp.status_code.code(),
+                                                    reason
+                                                )),
+                                            },
+                                        );
+                                        *consecutive_failures += 1;
                                         return false;
                                     }
                                     *cseq += 1;
@@ -632,6 +706,18 @@ impl SipClient {
                                                 "[sip] Auth challenge handling failed: {}",
                                                 e
                                             );
+                                            safe_emit(
+                                                handle,
+                                                "sip:status",
+                                                SipStatus {
+                                                    status: "error".to_string(),
+                                                    message: Some(format!(
+                                                        "Auth challenge handling failed: {}",
+                                                        e
+                                                    )),
+                                                },
+                                            );
+                                            *consecutive_failures += 1;
                                             return false;
                                         }
                                     }
@@ -676,8 +762,10 @@ impl SipClient {
                     false
                 }
 
-                // Initial registration
-                do_register(
+                // Initial registration — its return value is NOT discarded anymore.
+                // If it fails, we abort the task immediately (do_register already
+                // emitted a sip:status error event).
+                let registered = do_register(
                     &endpoint_inner,
                     &server_uri,
                     &from_to_uri,
@@ -692,7 +780,16 @@ impl SipClient {
                 )
                 .await;
 
-                // Main loop: re-registration + INVITE listener
+                if !registered {
+                    log::error!("[sip] Initial registration failed — aborting task");
+                    cancel_token.cancel();
+                    endpoint_serve.abort();
+                    return;
+                }
+
+                // Main loop: re-registration + INVITE listener.
+                // This loop only runs when the initial registration succeeded
+                // (the !registered check above exits on failure).
                 loop {
                     let base_ms = refresh_ms;
                     let backoff_ms = base_ms * 2u64.pow(consecutive_failures.min(6));

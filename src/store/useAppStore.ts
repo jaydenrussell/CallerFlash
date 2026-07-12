@@ -431,9 +431,10 @@ export const useAppStore = create<AppState>((set) => ({
     if (window.callerflash?.sip?.connect) {
       window.callerflash.sip.connect(s.sipConfig).then((res) => {
         if (!res.success) {
-          useAppStore.setState({ isConnecting: false });
+          useAppStore.setState({ sipConnected: false, isConnecting: false });
+          s.addDiagnosticLog({ level: 'error', category: 'SIP', message: `Connection failed: ${res.message || 'Unknown error'}` });
         } else {
-          useAppStore.setState({ sipConnected: true });
+          useAppStore.setState({ sipConnected: true, isConnecting: false });
           s.addDiagnosticLog({ level: 'success', category: 'SIP', message: 'Connection established to ' + s.sipConfig.server });
         }
       });
