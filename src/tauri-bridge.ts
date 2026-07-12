@@ -231,7 +231,9 @@ function setup(): void {
           const result = safeJsonResponse(await invoke('sip_connect', { config }));
           return { success: result.success === true, message: typeof result.message === 'string' ? result.message : undefined };
         } catch (e) {
-          return { success: false, message: String(e) };
+          const msg = (e && typeof e === 'object' && 'message' in e) ? String((e as Record<string, unknown>).message) : String(e);
+          logError('sip.connect invoke failed:', e);
+          return { success: false, message: msg || 'Unknown error' };
         }
       },
       disconnect: async () => {
