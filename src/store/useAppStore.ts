@@ -152,8 +152,14 @@ class SecureStorage {
   }
 
   async save(settings: PersistedUiSettings): Promise<void> {
-    // Queue writes to prevent race conditions
-    this.writeQueue = this.writeQueue.then(() => this.doSave(settings));
+    // Queue writes to prevent race conditions.
+    // Catch rejections to prevent the chain from breaking — if one save
+    // fails, subsequent saves must still be able to execute.
+    this.writeQueue = this.writeQueue
+      .then(() => this.doSave(settings))
+      .catch(() => {
+        console.warn('[SecureStorage] A queued save failed, chain continues');
+      });
     return this.writeQueue;
   }
 
@@ -251,7 +257,6 @@ async function initStorageMigration() {
 
         // Decrypt SIP password from file storage (fallback to localStorage
         // for old data that was only saved to the write-through cache).
-        const filePassword = fileData.sipConfig?.password;
         const encryptedPassword = fileData.sipPasswordEncrypted || persistedUi.sipPasswordEncrypted;
         if (encryptedPassword && window.callerflash?.safeStorage?.decrypt) {
           try {
@@ -267,18 +272,23 @@ async function initStorageMigration() {
           } catch (e) {
             console.error('[store] SIP password decrypt failed:', e);
           }
-        } else if (filePassword) {
-          // Plaintext fallback — encrypt now so next load uses the secure path
-          useAppStore.setState((s) => ({
-            sipConfig: { ...s.sipConfig, password: filePassword }
-          }));
-          if (window.callerflash?.safeStorage?.encrypt) {
-            const encrypted = await window.callerflash.safeStorage.encrypt(filePassword);
-            if (encrypted) {
-              secureStorage.save({
-                ...secureStorage.cache,
-                sipPasswordEncrypted: encrypted,
-              });
+        } else {
+          // Plaintext fallback — check file data first, then initial localStorage snapshot
+          const plaintextPassword = fileData.sipConfig?.password || persistedUi.sipConfig?.password;
+          if (plaintextPassword) {
+            useAppStore.setState((s) => ({
+              sipConfig: { ...s.sipConfig, password: plaintextPassword }
+            }));
+            console.log('[store] SIP password loaded as plaintext, encrypting for future loads');
+            // Encrypt now so next load uses the secure path
+            if (window.callerflash?.safeStorage?.encrypt) {
+              const encrypted = await window.callerflash.safeStorage.encrypt(plaintextPassword);
+              if (encrypted) {
+                secureStorage.save({
+                  ...secureStorage.cache,
+                  sipPasswordEncrypted: encrypted,
+                });
+              }
             }
           }
         }
@@ -427,6 +437,7 @@ export const useAppStore = create<AppState>((set) => ({
             sipPasswordEncrypted: encrypted,
           });
           saved = true;
+          console.log('[store] SIP config saved with encrypted password');
         } else {
           console.warn('[store] SIP password encrypt returned null, saving plaintext');
         }
@@ -436,13 +447,19 @@ export const useAppStore = create<AppState>((set) => ({
           ...secureStorage.cache,
           sipConfig: next,
         });
+        console.log('[store] SIP config saved (plaintext fallback)');
       }
     } catch (e) {
-      console.error('[store] Failed to persist SIP config:', e);
-      secureStorage.save({
-        ...secureStorage.cache,
-        sipConfig: next,
-      }).catch(() => {});
+      console.error('[store] Failed to persist SIP config via SecureStorage:', e);
+      // Absolute last resort — write directly to localStorage so the
+      // data survives restart even if the native storage chain is broken.
+      try {
+        const fallback = { version: STORAGE_VERSION, sipConfig: next };
+        window.localStorage.setItem(UI_STORAGE_KEY, JSON.stringify(fallback));
+        console.log('[store] SIP config saved directly to localStorage (emergency fallback)');
+      } catch (lsErr) {
+        console.error('[store] Emergency localStorage write also failed:', lsErr);
+      }
     }
   },
   setSipConnected: (connected) => set({ sipConnected: connected }),

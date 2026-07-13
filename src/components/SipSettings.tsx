@@ -137,7 +137,8 @@ export function SipSettings() {
     disconnectSip,
   } = useAppStore();
   const [localConfig, setLocalConfig] = useState<SipConfig>({ ...sipConfig });
-  const [showPassword, setShowPassword] = useState(false);
+  // Start with password visible so the user can see what's stored
+  const [showPassword, setShowPassword] = useState(true);
   const [saved, setSaved] = useState(false);
 
   // Sync password from store after async decryption completes
