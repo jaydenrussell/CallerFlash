@@ -16,7 +16,10 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Listener, Manager};
 
 pub use sip::{sip_connect, sip_disconnect, sip_test_connection};
-pub use storage::{storage_decrypt_value, storage_encrypt_value, storage_load, storage_save};
+pub use storage::{
+    keyring_get_password, keyring_store_password, storage_decrypt_value, storage_encrypt_value,
+    storage_load, storage_save,
+};
 pub use tray::{tray_set_sip_status, tray_set_update_available};
 pub use update::cmd_verify_update;
 
@@ -430,6 +433,8 @@ pub fn run() {
             storage_save,
             storage_encrypt_value,
             storage_decrypt_value,
+            keyring_store_password,
+            keyring_get_password,
             diagnostics_append,
             diagnostics_export,
             diagnostics_load,
