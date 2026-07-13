@@ -231,10 +231,9 @@ async function initStorageMigration() {
       if (fileData && Object.keys(fileData).length > 0 && fileData.version >= 2) {
         // File storage is authoritative — update cache and hydrate store
         secureStorage.initCache({ ...fileData });
-        const currentSipPassword = useAppStore.getState().sipConfig.password;
         const mergedToast = { ...defaultToastConfig, ...fileData.toastConfig };
         const mergedPrefs = { ...defaultAppPreferences, ...fileData.appPreferences };
-        const mergedSip = { ...defaultSipConfig, ...fileData.sipConfig, password: currentSipPassword };
+        const mergedSip = { ...defaultSipConfig, ...fileData.sipConfig };
         const mergedUpdate = { ...defaultUpdateInfo };
         if (fileData.updateChannel) mergedUpdate.updateChannel = fileData.updateChannel;
         if (fileData.autoUpdate !== undefined) mergedUpdate.autoUpdate = fileData.autoUpdate;
@@ -249,8 +248,10 @@ async function initStorageMigration() {
           toastDragPosition: fileData.toastDragPosition ?? null,
           updateInfo: mergedUpdate,
         });
+
         // Decrypt SIP password from file storage (fallback to localStorage
         // for old data that was only saved to the write-through cache).
+        const filePassword = fileData.sipConfig?.password;
         const encryptedPassword = fileData.sipPasswordEncrypted || persistedUi.sipPasswordEncrypted;
         if (encryptedPassword && window.callerflash?.safeStorage?.decrypt) {
           try {
@@ -265,6 +266,20 @@ async function initStorageMigration() {
             }
           } catch (e) {
             console.error('[store] SIP password decrypt failed:', e);
+          }
+        } else if (filePassword) {
+          // Plaintext fallback — encrypt now so next load uses the secure path
+          useAppStore.setState((s) => ({
+            sipConfig: { ...s.sipConfig, password: filePassword }
+          }));
+          if (window.callerflash?.safeStorage?.encrypt) {
+            const encrypted = await window.callerflash.safeStorage.encrypt(filePassword);
+            if (encrypted) {
+              secureStorage.save({
+                ...secureStorage.cache,
+                sipPasswordEncrypted: encrypted,
+              });
+            }
           }
         }
         return;
@@ -396,27 +411,40 @@ export const useAppStore = create<AppState>((set) => ({
   sipConnected: false,
   sipRegistered: false,
   sipConfig: defaultSipConfig,
-  setSipConfig: (config) => set((s) => {
-    const next = { ...s.sipConfig, ...config };
+  setSipConfig: async (config: Partial<SipConfig>) => {
+    const prev = useAppStore.getState().sipConfig;
+    const next = { ...prev, ...config };
+    useAppStore.setState({ sipConfig: next });
 
-    // Persist asynchronously (don't block UI)
-    if (window.callerflash?.safeStorage?.encrypt) {
-      window.callerflash.safeStorage.encrypt(next.password || '').then((encrypted) => {
-        secureStorage.save({
+    try {
+      let saved = false;
+      if (window.callerflash?.safeStorage?.encrypt) {
+        const encrypted = await window.callerflash.safeStorage.encrypt(next.password || '');
+        if (encrypted) {
+          await secureStorage.save({
+            ...secureStorage.cache,
+            sipConfig: { ...next, password: '' },
+            sipPasswordEncrypted: encrypted,
+          });
+          saved = true;
+        } else {
+          console.warn('[store] SIP password encrypt returned null, saving plaintext');
+        }
+      }
+      if (!saved) {
+        await secureStorage.save({
           ...secureStorage.cache,
-          sipConfig: { ...next, password: '' },
-          sipPasswordEncrypted: encrypted || '',
+          sipConfig: next,
         });
-      });
-    } else {
+      }
+    } catch (e) {
+      console.error('[store] Failed to persist SIP config:', e);
       secureStorage.save({
         ...secureStorage.cache,
         sipConfig: next,
-      });
+      }).catch(() => {});
     }
-
-    return { sipConfig: next };
-  }),
+  },
   setSipConnected: (connected) => set({ sipConnected: connected }),
   setSipRegistered: (registered) => set({ sipRegistered: registered }),
   isConnecting: false,
