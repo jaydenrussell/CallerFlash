@@ -354,6 +354,11 @@ export function SipSettings() {
                   onChange={(e) => updateLocal({ port: parseInt(e.target.value, 10) || 5060 })}
                   className="w-full px-3 py-2 bg-win-card border border-win-border rounded-lg text-sm text-win-text focus:outline-none focus:border-win-accent transition-colors"
                 />
+                {localConfig.protocol === 'TLS' && (
+                  <p className="text-[11px] text-win-text-tertiary mt-1">
+                    TLS alternatives: 5081, 42873
+                  </p>
+                )}
               </InputField>
               <InputField label="Protocol">
                 <div className="relative">
@@ -362,7 +367,12 @@ export function SipSettings() {
                     onChange={(e) => {
                       const v = e.target.value;
                       if (v === 'UDP' || v === 'TCP' || v === 'TLS') {
-                        updateLocal({ protocol: v });
+                        // Auto-switch port when TLS is selected: 5060→5061
+                        if (v === 'TLS' && localConfig.port === 5060) {
+                          updateLocal({ protocol: v, port: 5061 });
+                        } else {
+                          updateLocal({ protocol: v });
+                        }
                       }
                     }}
                     className="w-full px-3 py-2 bg-win-card border border-win-border rounded-lg text-sm text-win-text focus:outline-none focus:border-win-accent transition-colors appearance-none pr-10"
