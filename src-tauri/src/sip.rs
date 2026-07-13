@@ -452,24 +452,23 @@ impl SipClient {
                     "TLS" => ";transport=tls",
                     _ => "",
                 };
-                let server_uri =
-                    match Uri::try_from(
-                        format!("sip:{}:{}{}", config.server, port, server_transport_param).as_str(),
-                    ) {
-                        Ok(u) => u,
-                        Err(e) => {
-                            log::error!("[sip] Invalid server URI: {}", e);
-                            safe_emit(
-                                &handle,
-                                "sip:status",
-                                SipStatus {
-                                    status: "error".to_string(),
-                                    message: Some("Invalid server address".to_string()),
-                                },
-                            );
-                            return;
-                        }
-                    };
+                let server_uri = match Uri::try_from(
+                    format!("sip:{}:{}{}", config.server, port, server_transport_param).as_str(),
+                ) {
+                    Ok(u) => u,
+                    Err(e) => {
+                        log::error!("[sip] Invalid server URI: {}", e);
+                        safe_emit(
+                            &handle,
+                            "sip:status",
+                            SipStatus {
+                                status: "error".to_string(),
+                                message: Some("Invalid server address".to_string()),
+                            },
+                        );
+                        return;
+                    }
+                };
 
                 let auth_username = config
                     .auth_username
