@@ -150,6 +150,16 @@ declare global {
       getStartWithWindows: () => Promise<boolean | null>;
       setStartMinimized: (enabled: boolean) => void;
     };
+    startup: {
+      runChecks: () => Promise<{
+        checks: Array<{ name: string; ok: boolean; message: string | null }>;
+        all_ok: boolean;
+        os_name: string;
+        os_version: string;
+        is_windows_11: boolean;
+        edition: string;
+      }>;
+    };
   }
 
   interface Window {

@@ -46,30 +46,186 @@ export function Diagnostics() {
     return matchesSearch && matchesLevel && matchesCategory;
   });
 
-  const runFullDiagnostics = () => {
-    const tests: { delay: number; log: Parameters<typeof addDiagnosticLog>[0] }[] = [
-      { delay: 0, log: { level: 'info', category: 'SYSTEM', message: '═══ Starting full diagnostic suite ═══' } },
-      { delay: 200, log: { level: 'info', category: 'SIP', message: 'Testing DNS resolution for SIP server...' } },
-      { delay: 600, log: { level: 'success', category: 'SIP', message: 'DNS resolved: SIP server → 199.19.233.x (3ms)' } },
-      { delay: 900, log: { level: 'info', category: 'SIP', message: 'Testing TCP connectivity to port 5060...' } },
-      { delay: 1400, log: { level: 'success', category: 'SIP', message: 'TCP port 5060 reachable (12ms latency)' } },
-      { delay: 1700, log: { level: 'info', category: 'SIP', message: 'Testing STUN binding request...' } },
-      { delay: 2200, log: { level: 'success', category: 'SIP', message: 'STUN binding: Mapped 203.0.113.x:5060 (Symmetric NAT)' } },
-      { delay: 2500, log: { level: 'info', category: 'SIP', message: 'Verifying SIP OPTIONS response...' } },
-      { delay: 3000, log: { level: 'success', category: 'SIP', message: 'SIP OPTIONS: 200 OK' } },
-      { delay: 3300, log: { level: 'info', category: 'TOAST', message: 'Testing notification system...' } },
-      { delay: 3600, log: { level: 'success', category: 'TOAST', message: 'Notification API: Available and permitted' } },
-      { delay: 3800, log: { level: 'info', category: 'TOAST', message: 'Testing clipboard access...' } },
-      { delay: 4100, log: { level: 'success', category: 'TOAST', message: 'Clipboard API: Read/Write access granted' } },
-      { delay: 4400, log: { level: 'info', category: 'SYSTEM', message: 'Checking audio devices...' } },
-      { delay: 4800, log: { level: 'success', category: 'SYSTEM', message: 'Audio output: Default — Speakers' } },
-      { delay: 5100, log: { level: 'info', category: 'UPDATE', message: 'Checking GitHub for updates...' } },
-      { delay: 5500, log: { level: 'success', category: 'UPDATE', message: 'Current version is up to date' } },
-      { delay: 5800, log: { level: 'success', category: 'SYSTEM', message: '═══ All diagnostic tests passed ═══' } },
-    ];
-    tests.forEach(({ delay, log }) => {
-      setTimeout(() => addDiagnosticLog(log), delay);
-    });
+  const runFullDiagnostics = async () => {
+    const addLog = addDiagnosticLog;
+
+    addLog({ level: 'info', category: 'SYSTEM', message: '══════ Starting full diagnostic suite ══════' });
+
+    const savedConfig = useAppStore.getState().sipConfig;
+    const hasSipConfig = savedConfig.server && savedConfig.server.trim().length > 0;
+
+    // ── Phase 1: SIP Protocol Connectivity ────────────────────────────
+    if (!hasSipConfig) {
+      addLog({ level: 'warning', category: 'SIP', message: 'SIP server not configured — skipping protocol tests' });
+      addLog({ level: 'info', category: 'SIP', message: 'Configure SIP settings first, then re-run diagnostics' });
+    } else {
+      const protocols = ['UDP', 'TCP', 'TLS'] as const;
+      for (const protocol of protocols) {
+        addLog({ level: 'info', category: 'SIP', message: `Testing ${protocol} connectivity to ${savedConfig.server}...` });
+        try {
+          const config: Record<string, unknown> = {
+            server: savedConfig.server,
+            username: savedConfig.username,
+            password: savedConfig.password,
+            authUsername: savedConfig.authUsername,
+            registerExpiry: savedConfig.registerExpiry,
+            protocol,
+            port: protocol === 'TLS' ? 5061 : savedConfig.port,
+          };
+          const result = await window.callerflash!.sip.testConnection(config) as Record<string, unknown>;
+          const success = result.success as boolean;
+          if (success) {
+            const dns = result.dns as Record<string, unknown> | undefined;
+            if (dns) {
+              addLog({
+                level: 'success', category: 'SIP',
+                message: `${protocol} DNS: ${dns.ip as string} (${dns.family as string}, ${dns.timeMs as number}ms)`,
+              });
+            }
+            const portCheck = result.portCheck as Record<string, unknown> | undefined;
+            if (portCheck) {
+              if (portCheck.reachable === true || portCheck.reachable === 'local-ok') {
+                const latency = portCheck.latencyMs as number | undefined;
+                const suffix = latency != null ? ` (${latency}ms)` : '';
+                addLog({ level: 'success', category: 'SIP', message: `${protocol} port ${result.port as number}: reachable${suffix}` });
+              } else if (portCheck.reachable === false) {
+                addLog({ level: 'warning', category: 'SIP', message: `${protocol} port ${result.port as number}: unreachable — ${(portCheck.detail as string) || 'no detail'}` });
+              }
+            }
+          } else {
+            addLog({ level: 'error', category: 'SIP', message: `${protocol} test failed: ${(result.error as string) || 'Unknown'}` });
+          }
+        } catch (e) {
+          addLog({ level: 'error', category: 'SIP', message: `${protocol} exception: ${String(e)}` });
+        }
+        // Rate limit: SIP_RATE_LIMITER = 2 calls/sec, so wait 600ms between tests
+        if (protocol !== 'TLS') {
+          await new Promise((r) => setTimeout(r, 600));
+        }
+      }
+    }
+
+    // ── Phase 2: Notifications ────────────────────────────────────────
+    addLog({ level: 'info', category: 'TOAST', message: 'Testing native OS notification...' });
+    try {
+      if (window.callerflash?.notify?.show) {
+        window.callerflash.notify.show({
+          title: 'CallerFlash Diagnostics',
+          body: 'Native notification system is working correctly.',
+        });
+        addLog({ level: 'success', category: 'TOAST', message: 'Native notification sent — check your notification centre' });
+      } else {
+        addLog({ level: 'warning', category: 'TOAST', message: 'Native notification API not available' });
+      }
+    } catch (e) {
+      addLog({ level: 'error', category: 'TOAST', message: `Native notification failed: ${String(e)}` });
+    }
+
+    addLog({ level: 'info', category: 'TOAST', message: 'Testing toast window...' });
+    try {
+      const toastCfg = useAppStore.getState().toastConfig;
+      if (window.callerflash?.toast?.show) {
+        window.callerflash.toast.show({
+          id: crypto.randomUUID(),
+          callerNumber: '+15551234567',
+          callerName: 'Diagnostics Test Call',
+          timestamp: new Date().toISOString(),
+          config: toastCfg,
+        } as unknown as Parameters<typeof window.callerflash.toast.show>[0]);
+        addLog({ level: 'success', category: 'TOAST', message: `Toast window shown — style: ${toastCfg.style}, ${toastCfg.duration}s, ${toastCfg.position}` });
+        addLog({ level: 'info', category: 'TOAST', message: `  Sound: ${toastCfg.soundName} | Auto-copy: ${toastCfg.autoCopyToClipboard} | Show name: ${toastCfg.showCallerName} | Show time: ${toastCfg.showTimestamp}` });
+        addLog({ level: 'info', category: 'TOAST', message: `  Font: ${toastCfg.fontFamily} ${toastCfg.fontSize}px | Opacity: ${toastCfg.opacity}% | Radius: ${toastCfg.borderRadius}px` });
+      } else {
+        addLog({ level: 'warning', category: 'TOAST', message: 'Toast API not available' });
+      }
+    } catch (e) {
+      addLog({ level: 'error', category: 'TOAST', message: `Toast test failed: ${String(e)}` });
+    }
+
+    // ── Phase 3: Clipboard + Audio ────────────────────────────────────
+    addLog({ level: 'info', category: 'TOAST', message: 'Testing clipboard API...' });
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText('callerflash-diag-ok');
+        const read = await navigator.clipboard.readText();
+        if (read === 'callerflash-diag-ok') {
+          addLog({ level: 'success', category: 'TOAST', message: 'Clipboard read/write: OK' });
+        } else {
+          addLog({ level: 'warning', category: 'TOAST', message: 'Clipboard: write OK but read mismatch' });
+        }
+      } else {
+        addLog({ level: 'warning', category: 'TOAST', message: 'Clipboard API unavailable (HTTPS or Tauri required)' });
+      }
+    } catch (e) {
+      addLog({ level: 'warning', category: 'TOAST', message: `Clipboard API: ${String(e)}` });
+    }
+
+    addLog({ level: 'info', category: 'SYSTEM', message: 'Testing audio playback...' });
+    try {
+      const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (AC) {
+        const ctx = new AC();
+        if (ctx.state === 'suspended') await ctx.resume();
+        ctx.close();
+        addLog({ level: 'success', category: 'SYSTEM', message: 'AudioContext: available and operational' });
+      } else {
+        addLog({ level: 'warning', category: 'SYSTEM', message: 'AudioContext API not available' });
+      }
+    } catch (e) {
+      addLog({ level: 'warning', category: 'SYSTEM', message: `Audio API: ${String(e)}` });
+    }
+
+    // ── Phase 4: Startup System Checks ────────────────────────────────
+    addLog({ level: 'info', category: 'SYSTEM', message: 'Running startup system checks...' });
+    try {
+      if (window.callerflash?.startup?.runChecks) {
+        const report = await window.callerflash.startup.runChecks();
+        addLog({ level: 'info', category: 'SYSTEM', message: `OS: ${report.os_name} ${report.os_version} (${report.edition})` });
+        if (report.is_windows_11) {
+          addLog({ level: 'info', category: 'SYSTEM', message: 'Windows 11 detected' });
+        }
+        for (const check of report.checks) {
+          addLog({
+            level: check.ok ? 'success' : 'error',
+            category: 'SYSTEM',
+            message: `${check.ok ? '✓' : '✗'} ${check.name}${check.message ? ': ' + check.message : ''}`,
+          });
+        }
+        addLog({ level: report.all_ok ? 'success' : 'warning', category: 'SYSTEM', message: report.all_ok ? 'All startup checks passed' : 'Some startup checks had issues (non-fatal)' });
+      } else {
+        addLog({ level: 'warning', category: 'SYSTEM', message: 'Startup checks API not available' });
+      }
+    } catch (e) {
+      addLog({ level: 'error', category: 'SYSTEM', message: `Startup checks failed: ${String(e)}` });
+    }
+
+    // ── Phase 5: Update Check ─────────────────────────────────────────
+    addLog({ level: 'info', category: 'UPDATE', message: 'Checking for updates...' });
+    try {
+      const channel = useAppStore.getState().updateInfo.updateChannel;
+      if (window.callerflash?.updater?.check) {
+        const result = (await window.callerflash.updater.check(channel)) as Record<string, unknown>;
+        if (result.upToDate === true) {
+          const ver = useAppStore.getState().updateInfo.currentVersion;
+          addLog({ level: 'success', category: 'UPDATE', message: `Version ${ver} is up to date (channel: ${channel})` });
+        } else if (result.version) {
+          addLog({ level: 'info', category: 'UPDATE', message: `Update available: ${result.version as string}` });
+          if (result.downloadUrl) {
+            addLog({ level: 'info', category: 'UPDATE', message: `  Release: ${result.downloadUrl as string}` });
+          }
+        } else if (result.error) {
+          addLog({ level: 'warning', category: 'UPDATE', message: `Update check returned: ${result.error as string}` });
+        } else {
+          addLog({ level: 'info', category: 'UPDATE', message: 'Update check complete (no actionable result)' });
+        }
+      } else {
+        addLog({ level: 'warning', category: 'UPDATE', message: 'Update API not available (dev mode)' });
+      }
+    } catch (e) {
+      addLog({ level: 'warning', category: 'UPDATE', message: `Update check failed: ${String(e)}` });
+    }
+
+    addLog({ level: 'success', category: 'SYSTEM', message: '══════ Diagnostic suite complete ══════' });
   };
 
   const exportLogs = async () => {

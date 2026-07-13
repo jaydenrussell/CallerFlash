@@ -331,6 +331,12 @@ function setup(): void {
       },
     },
 
+    startup: {
+      runChecks: async () => {
+        return await invoke('run_startup_checks');
+      },
+    },
+
     platform: {
       isElectron: false,
       arch: 'x64',
