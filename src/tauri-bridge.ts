@@ -295,6 +295,14 @@ function setup(): void {
           details?: string | null;
         }>;
       },
+      exportLogs: async (text: string) => {
+        try {
+          return await invoke<string>('diagnostics_export', { text });
+        } catch (e) {
+          logError('diagnostics.exportLogs', e);
+          return null;
+        }
+      },
     },
 
     app: {
