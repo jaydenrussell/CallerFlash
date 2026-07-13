@@ -338,7 +338,9 @@ impl SipClient {
             let future = std::panic::AssertUnwindSafe(async move {
                 let server = config.server.clone();
                 let protocol = config.protocol.as_deref().unwrap_or("UDP").to_string();
-                let port = config.port.unwrap_or(if protocol == "TLS" { 5061 } else { 5060 });
+                let port = config
+                    .port
+                    .unwrap_or(if protocol == "TLS" { 5061 } else { 5060 });
 
                 let server_addr =
                     match tokio::net::lookup_host(format!("{}:{}", server, port)).await {
@@ -950,7 +952,9 @@ pub async fn sip_test_connection(config: SipConfig) -> Result<serde_json::Value,
     }
     let server = config.server.clone();
     let protocol = config.protocol.as_deref().unwrap_or("UDP").to_uppercase();
-    let port = config.port.unwrap_or(if protocol == "TLS" { 5061 } else { 5060 });
+    let port = config
+        .port
+        .unwrap_or(if protocol == "TLS" { 5061 } else { 5060 });
 
     let dns_start = std::time::Instant::now();
     let dns_result = match tokio::net::lookup_host(format!("{}:{}", server, port)).await {
