@@ -367,9 +367,10 @@ export function SipSettings() {
                     onChange={(e) => {
                       const v = e.target.value;
                       if (v === 'UDP' || v === 'TCP' || v === 'TLS') {
-                        // Auto-switch port when TLS is selected: 5060→5061
                         if (v === 'TLS' && localConfig.port === 5060) {
                           updateLocal({ protocol: v, port: 5061 });
+                        } else if ((v === 'UDP' || v === 'TCP') && localConfig.port === 5061) {
+                          updateLocal({ protocol: v, port: 5060 });
                         } else {
                           updateLocal({ protocol: v });
                         }

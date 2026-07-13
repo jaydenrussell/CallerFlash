@@ -72,20 +72,32 @@ export function Diagnostics() {
     });
   };
 
-  const exportLogs = () => {
-    const text = diagnosticLogs.map((log) =>
-      `[${log.timestamp.toISOString()}] [${log.level.toUpperCase()}] [${log.category}] ${log.message}${log.details ? '\n  ' + log.details : ''}`
-    ).join('\n');
-    const blob = new Blob([text], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `callerflash-diagnostics-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.log`;
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const exportLogs = async () => {
+    const text = diagnosticLogs.map((log) => {
+      const ts = log.timestamp instanceof Date ? log.timestamp : new Date(log.timestamp);
+      return `[${ts.toISOString()}] [${log.level.toUpperCase()}] [${log.category}] ${log.message}${log.details ? '\n  ' + log.details : ''}`;
+    }).join('\n');
+    // Use Rust backend to write to temp file and open it (reliable in Tauri webview)
+    if (window.callerflash?.diagnostics?.exportLogs) {
+      const path = await window.callerflash.diagnostics.exportLogs(text);
+      if (path) {
+        addDiagnosticLog({ level: 'info', category: 'SYSTEM', message: `Log exported to ${path}` });
+      } else {
+        addDiagnosticLog({ level: 'error', category: 'SYSTEM', message: 'Log export failed' });
+      }
+    } else {
+      // Fallback: browser blob download
+      const blob = new Blob([text], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `callerflash-diagnostics-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.log`;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
   };
 
   const logCounts = {
