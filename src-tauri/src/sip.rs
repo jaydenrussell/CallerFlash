@@ -447,8 +447,15 @@ impl SipClient {
                     }
                 });
 
+                let server_transport_param = match protocol.as_str() {
+                    "TCP" => ";transport=tcp",
+                    "TLS" => ";transport=tls",
+                    _ => "",
+                };
                 let server_uri =
-                    match Uri::try_from(format!("sip:{}:{}", config.server, port).as_str()) {
+                    match Uri::try_from(
+                        format!("sip:{}:{}{}", config.server, port, server_transport_param).as_str(),
+                    ) {
                         Ok(u) => u,
                         Err(e) => {
                             log::error!("[sip] Invalid server URI: {}", e);
