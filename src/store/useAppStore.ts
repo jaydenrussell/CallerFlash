@@ -226,6 +226,12 @@ function loadSettingsSync(): PersistedUiSettings {
 }
 
 const persistedUi: PersistedUiSettings = loadSettingsSync();
+console.log('[store] localStorage snapshot:', {
+  hasSipConfig: !!persistedUi.sipConfig,
+  hasPassword: !!persistedUi.sipConfig?.password,
+  hasEncrypted: !!persistedUi.sipPasswordEncrypted,
+  version: persistedUi.version,
+});
 // Pre-populate SecureStorage cache so first save preserves all fields.
 secureStorage.initCache({ ...persistedUi });
 
@@ -257,6 +263,8 @@ async function initStorageMigration() {
 
         // Decrypt SIP password from file storage (fallback to localStorage
         // for old data that was only saved to the write-through cache).
+        // If decryption fails, fall through to the plaintext password.
+        let restored = false;
         const encryptedPassword = fileData.sipPasswordEncrypted || persistedUi.sipPasswordEncrypted;
         if (encryptedPassword && window.callerflash?.safeStorage?.decrypt) {
           try {
@@ -265,15 +273,17 @@ async function initStorageMigration() {
               useAppStore.setState((s) => ({
                 sipConfig: { ...s.sipConfig, password: decrypted }
               }));
+              restored = true;
               console.log('[store] SIP password decrypted from file storage');
             } else {
-              console.warn('[store] SIP password decrypt returned empty');
+              console.warn('[store] SIP password decrypt returned empty, trying plaintext fallback');
             }
           } catch (e) {
-            console.error('[store] SIP password decrypt failed:', e);
+            console.error('[store] SIP password decrypt failed, trying plaintext fallback:', e);
           }
-        } else {
-          // Plaintext fallback — check file data first, then initial localStorage snapshot
+        }
+        // Plaintext fallback — check file data first, then initial localStorage snapshot
+        if (!restored) {
           const plaintextPassword = fileData.sipConfig?.password || persistedUi.sipConfig?.password;
           if (plaintextPassword) {
             useAppStore.setState((s) => ({
@@ -426,6 +436,25 @@ export const useAppStore = create<AppState>((set) => ({
     const next = { ...prev, ...config };
     useAppStore.setState({ sipConfig: next });
 
+    // PHASE 1 — Synchronous write to localStorage.
+    // This guarantees the password is persisted even if the app closes
+    // before any async IPC (encrypt, native save) completes.
+    try {
+      const snapshot: PersistedUiSettings = {
+        ...persistedUi,
+        sipConfig: next,
+        version: STORAGE_VERSION,
+      };
+      window.localStorage.setItem(UI_STORAGE_KEY, JSON.stringify(snapshot));
+      if (secureStorage.cache) {
+        secureStorage.cache.sipConfig = next;
+      }
+    } catch (e) {
+      console.error('[store] Sync localStorage write failed:', e);
+    }
+
+    // PHASE 2 — Async upgrade: encrypt password and save via native storage.
+    // If this fails the sync write from phase 1 still protects the data.
     try {
       let saved = false;
       if (window.callerflash?.safeStorage?.encrypt) {
@@ -439,7 +468,7 @@ export const useAppStore = create<AppState>((set) => ({
           saved = true;
           console.log('[store] SIP config saved with encrypted password');
         } else {
-          console.warn('[store] SIP password encrypt returned null, saving plaintext');
+          console.warn('[store] SIP password encrypt returned null');
         }
       }
       if (!saved) {
@@ -447,19 +476,10 @@ export const useAppStore = create<AppState>((set) => ({
           ...secureStorage.cache,
           sipConfig: next,
         });
-        console.log('[store] SIP config saved (plaintext fallback)');
+        console.log('[store] SIP config saved via native storage (plaintext)');
       }
     } catch (e) {
-      console.error('[store] Failed to persist SIP config via SecureStorage:', e);
-      // Absolute last resort — write directly to localStorage so the
-      // data survives restart even if the native storage chain is broken.
-      try {
-        const fallback = { version: STORAGE_VERSION, sipConfig: next };
-        window.localStorage.setItem(UI_STORAGE_KEY, JSON.stringify(fallback));
-        console.log('[store] SIP config saved directly to localStorage (emergency fallback)');
-      } catch (lsErr) {
-        console.error('[store] Emergency localStorage write also failed:', lsErr);
-      }
+      console.error('[store] Async native save failed (sync localStorage still safe):', e);
     }
   },
   setSipConnected: (connected) => set({ sipConnected: connected }),
