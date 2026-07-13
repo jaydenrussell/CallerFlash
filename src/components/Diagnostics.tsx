@@ -81,7 +81,10 @@ export function Diagnostics() {
     const a = document.createElement('a');
     a.href = url;
     a.download = `callerflash-diagnostics-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.log`;
+    a.style.display = 'none';
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
