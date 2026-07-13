@@ -460,9 +460,13 @@ export const useAppStore = create<AppState>((set) => ({
       if (window.callerflash?.safeStorage?.encrypt) {
         const encrypted = await window.callerflash.safeStorage.encrypt(next.password || '');
         if (encrypted) {
+          // Keep plaintext password in sipConfig so localStorage write-through
+          // preserves it as fallback. Phase 1's sync write is the primary
+          // safety net, but if Phase 2 runs after Phase 1 the localStorage
+          // entry gets overwritten — don't let the encrypted path clobber it.
           await secureStorage.save({
             ...secureStorage.cache,
-            sipConfig: { ...next, password: '' },
+            sipConfig: next,
             sipPasswordEncrypted: encrypted,
           });
           saved = true;
