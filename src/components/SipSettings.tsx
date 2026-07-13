@@ -173,9 +173,11 @@ export function SipSettings() {
     connectSip();
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const configChanged = JSON.stringify(localConfig) !== JSON.stringify(sipConfig);
-    setSipConfig(localConfig);
+    // Await the save so the "Saved" indicator only appears after the
+    // async encrypt + write completes (never show a false positive).
+    await setSipConfig(localConfig);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
     addDiagnosticLog({

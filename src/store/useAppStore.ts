@@ -261,10 +261,9 @@ async function initStorageMigration() {
           updateInfo: mergedUpdate,
         });
 
-        // Decrypt SIP password from file storage (fallback to localStorage
-        // for old data that was only saved to the write-through cache).
-        // If decryption fails, fall through to the plaintext password.
-        let restored = false;
+        // Decrypt SIP password from encrypted storage.
+        // The password is NEVER stored as plaintext — only the encrypted
+        // blob (sipPasswordEncrypted) exists in file or localStorage.
         const encryptedPassword = fileData.sipPasswordEncrypted || persistedUi.sipPasswordEncrypted;
         if (encryptedPassword && window.callerflash?.safeStorage?.decrypt) {
           try {
@@ -273,34 +272,15 @@ async function initStorageMigration() {
               useAppStore.setState((s) => ({
                 sipConfig: { ...s.sipConfig, password: decrypted }
               }));
-              restored = true;
-              console.log('[store] SIP password decrypted from file storage');
+              console.log('[store] SIP password decrypted from storage');
             } else {
-              console.warn('[store] SIP password decrypt returned empty, trying plaintext fallback');
+              console.warn('[store] SIP password decrypt returned empty');
             }
           } catch (e) {
-            console.error('[store] SIP password decrypt failed, trying plaintext fallback:', e);
+            console.error('[store] SIP password decrypt failed, user must re-enter it:', e);
           }
-        }
-        // Plaintext fallback — check file data first, then initial localStorage snapshot
-        if (!restored) {
-          const plaintextPassword = fileData.sipConfig?.password || persistedUi.sipConfig?.password;
-          if (plaintextPassword) {
-            useAppStore.setState((s) => ({
-              sipConfig: { ...s.sipConfig, password: plaintextPassword }
-            }));
-            console.log('[store] SIP password loaded as plaintext, encrypting for future loads');
-            // Encrypt now so next load uses the secure path
-            if (window.callerflash?.safeStorage?.encrypt) {
-              const encrypted = await window.callerflash.safeStorage.encrypt(plaintextPassword);
-              if (encrypted) {
-                secureStorage.save({
-                  ...secureStorage.cache,
-                  sipPasswordEncrypted: encrypted,
-                });
-              }
-            }
-          }
+        } else {
+          console.log('[store] No encrypted SIP password found, user must re-enter it');
         }
         return;
       }
@@ -436,54 +416,33 @@ export const useAppStore = create<AppState>((set) => ({
     const next = { ...prev, ...config };
     useAppStore.setState({ sipConfig: next });
 
-    // PHASE 1 — Synchronous write to localStorage.
-    // This guarantees the password is persisted even if the app closes
-    // before any async IPC (encrypt, native save) completes.
+    // Encrypt the password and persist via native encrypted storage.
+    // The password is NEVER written to disk as plaintext — only the
+    // encrypted blob (sipPasswordEncrypted) reaches localStorage via
+    // the write-through cache.
     try {
-      const snapshot: PersistedUiSettings = {
-        ...persistedUi,
-        sipConfig: next,
-        version: STORAGE_VERSION,
-      };
-      window.localStorage.setItem(UI_STORAGE_KEY, JSON.stringify(snapshot));
-      if (secureStorage.cache) {
-        secureStorage.cache.sipConfig = next;
-      }
-    } catch (e) {
-      console.error('[store] Sync localStorage write failed:', e);
-    }
-
-    // PHASE 2 — Async upgrade: encrypt password and save via native storage.
-    // If this fails the sync write from phase 1 still protects the data.
-    try {
-      let saved = false;
       if (window.callerflash?.safeStorage?.encrypt) {
         const encrypted = await window.callerflash.safeStorage.encrypt(next.password || '');
         if (encrypted) {
-          // Keep plaintext password in sipConfig so localStorage write-through
-          // preserves it as fallback. Phase 1's sync write is the primary
-          // safety net, but if Phase 2 runs after Phase 1 the localStorage
-          // entry gets overwritten — don't let the encrypted path clobber it.
           await secureStorage.save({
             ...secureStorage.cache,
-            sipConfig: next,
+            sipConfig: { ...next, password: '' },
             sipPasswordEncrypted: encrypted,
           });
-          saved = true;
-          console.log('[store] SIP config saved with encrypted password');
-        } else {
-          console.warn('[store] SIP password encrypt returned null');
+          console.log('[store] SIP config saved (encrypted password)');
+          return;
         }
+        console.warn('[store] SIP password encrypt returned null');
       }
-      if (!saved) {
-        await secureStorage.save({
-          ...secureStorage.cache,
-          sipConfig: next,
-        });
-        console.log('[store] SIP config saved via native storage (plaintext)');
-      }
+      // If encrypt API is unavailable, fall back to storing encrypted
+      // via the native file storage (which is AES-256-GCM encrypted).
+      await secureStorage.save({
+        ...secureStorage.cache,
+        sipConfig: next,
+      });
+      console.log('[store] SIP config saved via native encrypted storage');
     } catch (e) {
-      console.error('[store] Async native save failed (sync localStorage still safe):', e);
+      console.error('[store] Failed to persist SIP config:', e);
     }
   },
   setSipConnected: (connected) => set({ sipConnected: connected }),
