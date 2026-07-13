@@ -123,6 +123,18 @@ pub fn diagnostics_append(
 }
 
 #[tauri::command]
+pub fn diagnostics_export(text: String) -> Result<String, CommandError> {
+    let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
+    let filename = format!("callerflash-diagnostics-{}.log", timestamp);
+    let path = std::env::temp_dir().join(&filename);
+    fs::write(&path, &text).map_err(|e| CommandError::io(format!("Write failed: {}", e)))?;
+    let display = path.to_string_lossy().to_string();
+    log::info!("[diagnostics] Exported log to {:?}", path);
+    let _ = open::that(path);
+    Ok(display)
+}
+
+#[tauri::command]
 pub fn diagnostics_load(app: tauri::AppHandle) -> Vec<LogEntry> {
     let data_dir = app
         .path()

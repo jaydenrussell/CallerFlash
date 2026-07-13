@@ -251,6 +251,7 @@ async fn create_transport(
     protocol: &str,
     server_ip: std::net::IpAddr,
     port: u16,
+    server_hostname: &str,
     cancel_token: CancellationToken,
 ) -> Result<(SipConnection, u16), String> {
     match protocol {
@@ -290,7 +291,7 @@ async fn create_transport(
             }
             let tls_config = TlsConfig {
                 ca_certs: Some(ca_pem.into_bytes()),
-                sni_hostname: None,
+                sni_hostname: Some(server_hostname.to_string()),
                 ..Default::default()
             };
             let tls = TlsConnection::connect(&target, Some(&tls_config), None, Some(cancel_token))
@@ -382,6 +383,7 @@ impl SipClient {
                     &protocol,
                     server_addr.ip(),
                     port,
+                    &server,
                     cancel_token.child_token(),
                 )
                 .await
