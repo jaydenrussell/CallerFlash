@@ -232,8 +232,8 @@ export default function App() {
     if (!window.callerflash?.sip?.onInvite) return;
     return window.callerflash.sip.onInvite((callerData) => {
       const { toastConfig } = useAppStore.getState();
-      const safeNumber = sanitizeCallerNumberForClipboard(callerData.callerNumber);
-      const safeName = sanitizeCallerName(callerData.callerName || '');
+      const safeNumber = sanitizeCallerNumberForClipboard(callerData.callerNumber ?? '');
+      const safeName = sanitizeCallerName(callerData.callerName ?? '');
 
       const record = {
         id: crypto.randomUUID(),
@@ -242,7 +242,7 @@ export default function App() {
         timestamp: new Date(),
         duration: 0,
         direction: 'inbound' as const,
-        status: 'answered' as const,
+        status: 'missed' as const,
       };
 
       useAppStore.getState().addCallRecord(record);

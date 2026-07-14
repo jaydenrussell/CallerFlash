@@ -172,6 +172,7 @@ pub struct SipStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InviteData {
     pub caller_number: String,
     pub caller_name: String,
@@ -832,9 +833,11 @@ impl SipClient {
                                     caller_number,
                                     caller_name,
                                 };
-                                safe_emit(&handle, "sip:invite", invite_data);
+                safe_emit(&handle, "sip:invite", invite_data);
 
-                                if let Err(e) = tx.reply(StatusCode::BusyHere).await {
+                            // Send 180 Ringing so the caller hears ringing while the notification is shown.
+                            // The SIP server will eventually time out the call via its ring-no-answer timer.
+                            if let Err(e) = tx.reply(StatusCode::Ringing).await {
                                     log::error!("[sip] Failed to reply to INVITE: {}", e);
                                 }
                             }
