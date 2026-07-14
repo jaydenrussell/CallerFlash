@@ -34,6 +34,10 @@ declare global {
     /** Show a native OS notification. No-op in web demo. */
     show(title: string, body: string): void;
     show(data: { title: string; body: string; urgency?: 'critical' | 'normal' | 'low'; timeoutType?: 'default' | 'never'; soundEnabled?: boolean }): void;
+    /** Request notification permission from the OS. Returns 'granted' | 'denied'. */
+    requestPermission?: () => Promise<string>;
+    /** Check whether notification permission is already granted. */
+    isPermissionGranted?: () => Promise<boolean>;
   }
 
   interface CallerFlashToastEventData {
@@ -94,29 +98,37 @@ declare global {
     prerelease: boolean;
   }
 
-  /* eslint-disable @typescript-eslint/no-explicit-any */
+  interface UpdaterResult {
+    version?: string;
+    downloadUrl?: string;
+    publishedAt?: string;
+    error?: string;
+    upToDate?: boolean;
+    friendlyName?: string;
+    status?: string;
+  }
+
   interface CallerFlashUpdaterApi {
-    check: (channel: string) => Promise<any>;
-    download: (channel: string, version: string, downloadUrl: string) => Promise<any>;
-    install: (version: string) => Promise<any>;
+    check: (channel: string) => Promise<UpdaterResult>;
+    download: (channel: string, version: string, downloadUrl: string) => Promise<{ status: string; version?: string; error?: string }>;
+    install: (version: string) => Promise<{ status: string }>;
     show: () => void;
     setChannel: (channel: string) => void;
-    getDownloadState: () => Promise<any>;
-    onStatus: (callback: (data: any) => void) => () => void;
-    onProgress: (callback: (data: any) => void) => () => void;
+    getDownloadState: () => Promise<{ status: string; version: string | null; path: string | null; error: string | null }>;
+    onStatus: (callback: (data: { status: string; version?: string; progress?: number }) => void) => () => void;
+    onProgress: (callback: (data: { percent: number }) => void) => () => void;
     onDiagnostic: (callback: (data: { level: string; message: string; details?: string }) => void) => () => void;
-    onBackgroundCheck: (callback: (data: any) => void) => () => void;
+    onBackgroundCheck: (callback: (data: { version?: string; upToDate?: boolean }) => void) => () => void;
   }
 
   interface CallerFlashSipApi {
-    connect: (config: any) => Promise<{ success: boolean; message?: string }>;
+    connect: (config: Record<string, unknown>) => Promise<{ success: boolean; message?: string }>;
     disconnect: () => Promise<{ success: boolean }>;
-    testConnection: (config: any) => Promise<any>;
+    testConnection: (config: Record<string, unknown>) => Promise<Record<string, unknown>>;
     onStatus: (callback: (data: { status: string; message?: string }) => void) => () => void;
     onLog: (callback: (data: { message: string }) => void) => () => void;
     onInvite: (callback: (data: { callerNumber: string; callerName: string }) => void) => () => void;
   }
-  /* eslint-enable @typescript-eslint/no-explicit-any */
 
   interface CallerFlashPlatformInfo {
     isElectron: true;
