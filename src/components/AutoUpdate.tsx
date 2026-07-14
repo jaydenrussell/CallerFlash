@@ -53,7 +53,7 @@ function parseChangelog(body: string, max = 6): string[] {
  *   - Nightly date codes: nightly-20260624 or nightly-20260624-17
  * Nightly versions are always considered NEWER than any semver version.
  * Between two nightlies, the later date wins; same date → higher index wins.
- * Stable > beta > alpha (same base version).
+ *   Stable > beta (same base version).
  */
 function compareVersions(a: string, b: string): number {
   const va = formatVersion(a);
@@ -96,9 +96,9 @@ function compareVersions(a: string, b: string): number {
     if (pa.pre && !pb.pre) return -1;  // a is beta, b is stable → a < b
     if (pa.pre && pb.pre) {
       // Both have prerelease — compare type first (alpha < beta), then number.
-      const typeOrder: Record<string, number> = { alpha: 0, beta: 1 };
-      const tA = typeOrder[pa.pre] ?? 2;
-      const tB = typeOrder[pb.pre] ?? 2;
+      const typeOrder: Record<string, number> = { beta: 0 };
+      const tA = typeOrder[pa.pre] ?? 1;
+      const tB = typeOrder[pb.pre] ?? 1;
       if (tA !== tB) return tA > tB ? 1 : -1;
       return pa.preN > pb.preN ? 1 : pa.preN < pb.preN ? -1 : 0;
     }
@@ -120,31 +120,24 @@ function formatReleaseDate(iso: string): string {
 /**
  * Returns true if a GitHub release matches the given channel.
  * Tag conventions:
- *   stable  → v1.5.0 (no prerelease suffix)
- *   beta    → v1.5.0-beta.28
- *   nightly → vnightly-20260624 (date code)
+ *   stable → v1.5.0 (no prerelease suffix)
+ *   beta   → v1.5.0-beta.28
  */
 function matchesChannel(
   release: GithubRelease,
-  channel: 'stable' | 'beta' | 'alpha' | 'tauri'
+  channel: 'stable' | 'beta'
 ): boolean {
   const tag = release.tag_name;
-  if (channel === 'tauri') return /-tauri/i.test(tag);
-  if (/-tauri/i.test(tag)) return false; // exclude Tauri from Electron channels
-  if (channel === 'stable') return !/-beta|alpha/i.test(tag);
+  if (channel === 'stable') return !/-beta/i.test(tag);
   if (channel === 'beta') return /-beta(\.|$)/.test(tag);
-  if (channel === 'alpha') return /-alpha(\.|$)/i.test(tag);
   return false;
 }
 
 /** Check if a raw version string belongs to the given channel. */
-function versionMatchesChannel(version: string, channel: 'stable' | 'beta' | 'alpha' | 'tauri'): boolean {
+function versionMatchesChannel(version: string, channel: 'stable' | 'beta'): boolean {
   const tag = version.replace(/^v/, '');
-  if (channel === 'tauri') return /-tauri/i.test(tag);
-  if (/-tauri/i.test(tag)) return false; // exclude Tauri from Electron channels
-  if (channel === 'stable') return !/-beta|alpha/i.test(tag);
-  if (channel === 'beta') return /-beta(\.|$)/i.test(tag);
-  if (channel === 'alpha') return /-alpha(\.|$)/i.test(tag);
+  if (channel === 'stable') return !/-beta/i.test(tag);
+  if (channel === 'beta') return /-beta(\.|$)/.test(tag);
   return false;
 }
 
@@ -402,7 +395,7 @@ export function AutoUpdate() {
       message: 'Checking GitHub for updates…',
     });
 
-    // Use Electron main process to check
+    // Use Tauri updater to check
     if (window.callerflash?.updater?.check) {
       const result = await window.callerflash.updater.check(updateInfo.updateChannel);
       if (id !== checkIdRef.current) return; // Stale response — channel changed
@@ -740,7 +733,7 @@ export function AutoUpdate() {
           <div className="p-2 rounded-lg bg-win-card border border-win-border/50 mb-1.5">
             <p className="text-[11px] font-medium text-win-text-secondary mb-1">Update Channel</p>
             <div className="flex gap-1">
-              {(['stable', 'beta', 'alpha', 'tauri'] as const).map((channelOpt) => (
+              {(['stable', 'beta'] as const).map((channelOpt) => (
                 <button
                   key={channelOpt}
                   onClick={() => {
