@@ -1,4 +1,4 @@
-﻿name: Build & Release
+name: Build & Release
 
 # Triggered by pushing a version tag (e.g., v1.5.0).
 # Builds the Tauri app, signs it, creates a GitHub Release.
@@ -37,6 +37,29 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
+      - name: Generate updater manifest (update.json)
+        shell: pwsh
+        run: |
+          $sigFile = Get-ChildItem src-tauri/target/release/bundle/nsis/*.sig | Select-Object -First 1
+          $sig = Get-Content $sigFile.FullName -Raw
+          $installer = Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe | Select-Object -First 1
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          $pubDate = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+          $url = "https://github.com/jaydenrussell/CallerFlash/releases/download/${{ github.ref_name }}/$($installer.Name)"
+
+          $json = @{
+            version = $version
+            pub_date = $pubDate
+            platforms = @{
+              "windows-x86_64" = @{
+                signature = $sig.Trim()
+                url = $url
+              }
+            }
+          } | ConvertTo-Json
+
+          $json | Set-Content -Path src-tauri/target/release/bundle/nsis/update.json -Encoding ascii
+
       - name: Upload NSIS installer
         uses: actions/upload-artifact@v4
         with:
@@ -48,8 +71,7 @@ jobs:
         with:
           name: Updater-Artifacts
           path: |
-            src-tauri/target/release/bundle/nsis/*.msi
-            src-tauri/target/release/bundle/nsis/*.zip
+            src-tauri/target/release/bundle/nsis/*.sig
             src-tauri/target/release/bundle/nsis/update.json
 
       - name: Generate checksums
@@ -66,4 +88,6 @@ jobs:
           draft: true
           files: |
             src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/nsis/*.sig
+            src-tauri/target/release/bundle/nsis/update.json
             SHA256SUMS
