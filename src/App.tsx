@@ -64,6 +64,24 @@ export default function App() {
     }
   }, []);
 
+  // Suppress the default browser right-click menu everywhere except text inputs
+  // and contenteditable elements — matches Windows 11 shell behavior.
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target.isContentEditable
+      ) {
+        return; // allow native context menu on text fields
+      }
+      e.preventDefault();
+    };
+    document.addEventListener('contextmenu', handler);
+    return () => document.removeEventListener('contextmenu', handler);
+  }, []);
+
   // Request native notification permission on first launch
   useEffect(() => {
     if (typeof window !== 'undefined' && window.callerflash?.notify) {
