@@ -128,16 +128,16 @@ function matchesChannel(
   channel: 'stable' | 'beta'
 ): boolean {
   const tag = release.tag_name;
-  if (channel === 'stable') return !/-beta/i.test(tag);
-  if (channel === 'beta') return /-beta(\.|$)/.test(tag);
+  if (channel === 'stable') return !/-(beta|tauri)(\.|$)/i.test(tag);
+  if (channel === 'beta') return /-(beta|tauri)(\.|$)/i.test(tag);
   return false;
 }
 
 /** Check if a raw version string belongs to the given channel. */
 function versionMatchesChannel(version: string, channel: 'stable' | 'beta'): boolean {
   const tag = version.replace(/^v/, '');
-  if (channel === 'stable') return !/-beta/i.test(tag);
-  if (channel === 'beta') return /-beta(\.|$)/.test(tag);
+  if (channel === 'stable') return !/-(beta|tauri)(\.|$)/i.test(tag);
+  if (channel === 'beta') return /-(beta|tauri)(\.|$)/i.test(tag);
   return false;
 }
 
