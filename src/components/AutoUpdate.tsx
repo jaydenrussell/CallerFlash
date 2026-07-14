@@ -565,9 +565,9 @@ export function AutoUpdate() {
   const isBusy = phase === 'checking' || phase === 'downloading' || phase === 'installing';
 
   return (
-    <div className="flex flex-col h-full gap-3 animate-fade-in">
+    <div className="flex flex-col h-full gap-2 animate-fade-in">
       {/* Compact header — title left, Check right */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <h2 className="text-xl font-bold text-win-text">Updates</h2>
           <p className="text-xs text-win-text-secondary mt-0.5">
@@ -729,17 +729,17 @@ export function AutoUpdate() {
       )}
 
       {/* Settings + Release History — fill remaining vertical space */}
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <div className="bg-win-surface rounded-xl border border-win-border p-3 overflow-y-auto min-h-0">
-          <h3 className="text-sm font-semibold text-win-text mb-2 flex items-center gap-2">
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-2">
+        <div className="bg-win-surface rounded-xl border border-win-border p-2.5 overflow-y-auto min-h-0">
+          <h3 className="text-sm font-semibold text-win-text mb-1.5 flex items-center gap-2">
             <Shield className="w-4 h-4 text-win-accent" />
             Settings
           </h3>
 
           {/* Update Channel */}
-          <div className="p-2.5 rounded-lg bg-win-card border border-win-border/50 mb-2">
-            <p className="text-[11px] font-medium text-win-text-secondary mb-1.5">Update Channel</p>
-            <div className="flex gap-1.5">
+          <div className="p-2 rounded-lg bg-win-card border border-win-border/50 mb-1.5">
+            <p className="text-[11px] font-medium text-win-text-secondary mb-1">Update Channel</p>
+            <div className="flex gap-1">
               {(['stable', 'beta', 'alpha', 'tauri'] as const).map((channelOpt) => (
                 <button
                   key={channelOpt}
@@ -747,7 +747,7 @@ export function AutoUpdate() {
                     setUpdateInfo({ updateChannel: channelOpt, updateAvailable: false, latestVersion: '' });
                     setOutcome(null);
                   }}
-                  className={`flex-1 px-2 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  className={`flex-1 px-1.5 py-1 rounded-lg text-xs font-medium transition-all ${
                     updateInfo.updateChannel === channelOpt
                       ? 'bg-win-accent/20 text-win-accent border border-win-accent/30'
                       : 'bg-win-surface text-win-text-secondary hover:bg-win-surface-hover border border-win-border'
@@ -761,19 +761,19 @@ export function AutoUpdate() {
           </div>
 
           {/* Auto-check frequency */}
-          <div className="p-2.5 rounded-lg bg-win-card border border-win-border/50 mb-2">
-            <div className="flex items-center justify-between mb-1.5">
+          <div className="p-2 rounded-lg bg-win-card border border-win-border/50 mb-1.5">
+            <div className="flex items-center justify-between mb-1">
               <p className="text-[11px] font-medium text-win-text-secondary">Auto-check frequency</p>
               <p className="text-[10px] text-win-text-tertiary">
                 Last: {formatRelativeLastCheck(updateInfo.lastChecked)}
               </p>
             </div>
-            <div className="flex gap-1.5">
+            <div className="flex gap-1">
               {(['off', 'daily', 'weekly', 'monthly'] as const).map((freq) => (
                 <button
                   key={freq}
                   onClick={() => setUpdateInfo({ updateCheckFrequency: freq })}
-                  className={`flex-1 px-2 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  className={`flex-1 px-1.5 py-1 rounded-lg text-xs font-medium transition-all ${
                     updateInfo.updateCheckFrequency === freq
                       ? 'bg-win-accent/20 text-win-accent border border-win-accent/30'
                       : 'bg-win-surface text-win-text-secondary hover:bg-win-surface-hover border border-win-border'
@@ -783,7 +783,7 @@ export function AutoUpdate() {
                 </button>
               ))}
             </div>
-            <p className="text-[10px] text-win-text-tertiary mt-1.5 leading-snug">
+            <p className="text-[10px] text-win-text-tertiary mt-1 leading-snug">
               {updateInfo.updateCheckFrequency === 'off'
                 ? 'Auto-check disabled. Use the Check button to look manually.'
                 : `Auto-checks on tab open if the last check is older than ${FREQUENCY_INTERVAL_DAYS[updateInfo.updateCheckFrequency]} day${FREQUENCY_INTERVAL_DAYS[updateInfo.updateCheckFrequency] === 1 ? '' : 's'}.`}
@@ -792,12 +792,12 @@ export function AutoUpdate() {
 
           {/* Auto-download toggle */}
           <div
-            className="flex items-center justify-between p-2.5 rounded-lg bg-win-card border border-win-border/50 hover:border-win-border cursor-pointer transition-colors mb-2"
+            className="flex items-center justify-between p-2 rounded-lg bg-win-card border border-win-border/50 hover:border-win-border cursor-pointer transition-colors"
             onClick={() => setUpdateInfo({ autoDownload: !updateInfo.autoDownload })}
           >
             <div className="min-w-0 pr-2">
               <p className="text-sm font-medium text-win-text">Auto-download updates</p>
-              <p className="text-[11px] text-win-text-tertiary">
+              <p className="text-[11px] text-win-text-tertiary leading-snug">
                 {updateInfo.autoDownload
                   ? `Verified ${updateInfo.updateChannel} updates download in the background and install automatically when you click Update.`
                   : 'Updates are checked but not downloaded. Click Update to download and install.'}
@@ -816,8 +816,8 @@ export function AutoUpdate() {
         </div>
 
         {/* Release History — strictly filtered to the active channel */}
-        <div className="bg-win-surface rounded-xl border border-win-border p-3 flex flex-col min-h-0">
-          <div className="flex items-center justify-between mb-2 flex-shrink-0">
+        <div className="bg-win-surface rounded-xl border border-win-border p-2.5 flex flex-col min-h-0">
+          <div className="flex items-center justify-between mb-1.5 flex-shrink-0">
             <h3 className="text-sm font-semibold text-win-text flex items-center gap-2">
               <GitCommit className="w-4 h-4 text-win-accent" />
               {updateInfo.updateChannel.charAt(0).toUpperCase() + updateInfo.updateChannel.slice(1)} Releases
