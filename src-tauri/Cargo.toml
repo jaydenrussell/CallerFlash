@@ -14,6 +14,12 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
+embed-resource = "3"
+
+[features]
+default = ["migration"]
+# Migration from Sip-Toast: decrypt legacy encrypted configs on first run
+migration = ["dep:aes-gcm", "dep:hmac", "dep:sha2"]
 
 [dependencies]
 serde_json = "1.0"
@@ -30,7 +36,6 @@ tokio-util = "0.7"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 base64 = "0.22"
-aes-gcm = "0.10"
 futures-util = "0.3"
 rsipstack = "0.5"
 rustls-native-certs = "0.8"
@@ -40,6 +45,10 @@ once_cell = "1.20"
 ed25519-dalek = "2"
 hex = "0.4"
 secrecy = "0.10"
-hmac = "0.12"
-sha2 = "0.10"
+aes-gcm = { version = "0.10", optional = true }
+hmac = { version = "0.12", optional = true }
+sha2 = { version = "0.10", optional = true }
+
+[dev-dependencies]
+tempfile = "3"
 
