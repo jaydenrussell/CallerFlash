@@ -22,7 +22,7 @@ export interface SipConfig {
   username: string;
   password: string;
   authUsername: string;
-  protocol: 'UDP' | 'TCP' | 'TLS';
+  protocol: 'UDP' | 'TCP';
   codec: string;
   stunServer: string;
   registerExpiry: number;

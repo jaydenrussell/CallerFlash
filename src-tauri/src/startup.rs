@@ -32,42 +32,6 @@ fn check_config_integrity(data_dir: &std::path::Path) {
     }
 }
 
-fn check_keyring(checks: &mut Vec<StartupCheck>) {
-    let entry = keyring::Entry::new("callerflash-startup-check", "startup");
-    match entry {
-        Ok(entry) => match entry.get_password() {
-            Ok(_) => checks.push(StartupCheck {
-                name: "System keyring".to_string(),
-                ok: true,
-                message: Some("Keyring accessible".to_string()),
-            }),
-            Err(keyring::Error::NoEntry) => {
-                checks.push(StartupCheck {
-                    name: "System keyring".to_string(),
-                    ok: true,
-                    message: Some("Keyring accessible (no stored key yet)".to_string()),
-                });
-            }
-            Err(e) => {
-                log::warn!("[startup] Keyring error (non-fatal): {}", e);
-                checks.push(StartupCheck {
-                    name: "System keyring".to_string(),
-                    ok: true,
-                    message: Some(format!("Keyring degraded: {}", e)),
-                });
-            }
-        },
-        Err(e) => {
-            log::warn!("[startup] Keyring not available: {}", e);
-            checks.push(StartupCheck {
-                name: "System keyring".to_string(),
-                ok: true,
-                message: Some("Keyring unavailable — using in-memory fallback".to_string()),
-            });
-        }
-    }
-}
-
 fn detect_windows_info() -> (String, String, String) {
     let os = std::env::consts::OS;
     if os != "windows" {
@@ -130,7 +94,6 @@ pub fn run_self_check(data_dir: PathBuf) -> StartupReport {
 
     check_directory(&data_dir, "App data", &mut checks);
     check_config_integrity(&data_dir);
-    check_keyring(&mut checks);
 
     let all_ok = checks.iter().all(|c| c.ok);
 

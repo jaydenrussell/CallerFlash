@@ -202,25 +202,6 @@ function setup(): void {
       },
     },
 
-    safeStorage: {
-      encrypt: async (plaintext: string) => {
-        try {
-          return await invoke<string>('storage_encrypt_value', { plaintext });
-        } catch (e) {
-          logError('safeStorage.encrypt', e);
-          return null;
-        }
-      },
-      decrypt: async (payload: string) => {
-        try {
-          return await invoke<string>('storage_decrypt_value', { payload });
-        } catch (e) {
-          logError('safeStorage.decrypt', e);
-          return null;
-        }
-      },
-    },
-
     sip: {
       connect: async (config: unknown) => {
         const cfg = config as Record<string, unknown>;

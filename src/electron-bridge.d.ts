@@ -26,11 +26,6 @@ declare global {
     setUpdateAvailable: (version: string | null) => void;
   }
 
-  interface CallerFlashSafeStorageApi {
-    encrypt: (plaintext: string) => Promise<string | null>;
-    decrypt: (base64Cipher: string) => Promise<string | null>;
-  }
-
   interface CallerFlashShellApi {
     openExternal: (url: string) => void;
   }
@@ -132,7 +127,6 @@ declare global {
   interface CallerFlashBridge {
     window: CallerFlashWindowControls;
     tray: CallerFlashTrayApi;
-    safeStorage: CallerFlashSafeStorageApi;
     shell: CallerFlashShellApi;
     notify: CallerFlashNotifyApi;
     toast: CallerFlashToastApi;
