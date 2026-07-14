@@ -11,8 +11,9 @@ import { listen, emit } from '@tauri-apps/api/event';
 import { check as updaterCheck } from '@tauri-apps/plugin-updater';
 import { sanitizeSipServer } from './security/secretRedactor';
 
-const log = (...args: unknown[]) => console.log('[tauri-bridge]', ...args);
-const logError = (...args: unknown[]) => console.error('[tauri-bridge]', ...args);
+// Bridge logs only in dev mode — production builds tree-shake these.
+const log = (...args: unknown[]) => { if (import.meta.env.DEV) console.log('[tauri-bridge]', ...args); };
+const logError = (...args: unknown[]) => { if (import.meta.env.DEV) console.error('[tauri-bridge]', ...args); };
 
 function safeJsonResponse(data: unknown): Record<string, unknown> {
   if (data === null || data === undefined || typeof data !== 'object') {

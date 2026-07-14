@@ -179,12 +179,17 @@ async fn toast_show(app: AppHandle, data: serde_json::Value) -> Result<(), Comma
         .current_monitor()
         .map_err(|e| CommandError::unknown(format!("Monitor error: {}", e)))?
     {
-        let size = monitor.size();
+        let mon_pos = monitor.position();
+        let mon_size = monitor.size();
         let scale = monitor.scale_factor();
-        let wa_w = size.width as f64 / scale;
-        let x = wa_w - width - 16.0;
-        let y = 40.0;
-        let _ = window.set_position(tauri::PhysicalPosition::new(x as i32, y as i32));
+        // Use logical coordinates: convert physical monitor bounds to logical,
+        // clamp to the monitor's right edge with 16px margin, 40px from top.
+        let x = ((mon_pos.x as f64) / scale)
+            + ((mon_size.width as f64) / scale)
+            - width
+            - 16.0;
+        let y = ((mon_pos.y as f64) / scale) + 40.0;
+        let _ = window.set_position(tauri::LogicalPosition::new(x, y));
     }
 
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -421,6 +426,7 @@ pub fn run() {
                 );
             }
 
+            #[cfg(feature = "migration")]
             migrate::run_migration(&data_dir);
 
             Ok(())

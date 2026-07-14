@@ -64,6 +64,24 @@ export default function App() {
     }
   }, []);
 
+  // Request native notification permission on first launch
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.callerflash?.notify) {
+      const { requestPermission, isPermissionGranted } = window.callerflash.notify;
+      if (typeof isPermissionGranted === 'function') {
+        isPermissionGranted().then((granted) => {
+          if (!granted && typeof requestPermission === 'function') {
+            requestPermission().catch(() => {
+              // User denied — notifications won't work, the SIP toast window still shows calls
+            });
+          }
+        }).catch(() => {
+          // API not available, ignore
+        });
+      }
+    }
+  }, []);
+
   // Check if this is the first run of a new update
   const [isFirstRunAfterUpdate, setIsFirstRunAfterUpdate] = useState(false);
   
