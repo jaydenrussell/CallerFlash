@@ -184,10 +184,7 @@ async fn toast_show(app: AppHandle, data: serde_json::Value) -> Result<(), Comma
         let scale = monitor.scale_factor();
         // Use logical coordinates: convert physical monitor bounds to logical,
         // clamp to the monitor's right edge with 16px margin, 40px from top.
-        let x = ((mon_pos.x as f64) / scale)
-            + ((mon_size.width as f64) / scale)
-            - width
-            - 16.0;
+        let x = ((mon_pos.x as f64) / scale) + ((mon_size.width as f64) / scale) - width - 16.0;
         let y = ((mon_pos.y as f64) / scale) + 40.0;
         let _ = window.set_position(tauri::LogicalPosition::new(x, y));
     }

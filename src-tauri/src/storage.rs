@@ -124,11 +124,18 @@ mod tests {
     fn test_load_restores_from_backup_when_main_corrupted() {
         let (storage, _dir) = temp_storage();
         let backup = serde_json::json!({"version": 2, "sip": {"server": "backup.example.com"}});
-        fs::write(&storage.backup_path, serde_json::to_string_pretty(&backup).unwrap()).unwrap();
+        fs::write(
+            &storage.backup_path,
+            serde_json::to_string_pretty(&backup).unwrap(),
+        )
+        .unwrap();
         fs::write(&storage.settings_path, "not valid json {{{").unwrap();
         let loaded = storage.load_data();
         assert_eq!(loaded, backup);
-        assert_file(&storage.settings_path, r#"{"version":2,"sip":{"server":"backup.example.com"}}"#);
+        assert_file(
+            &storage.settings_path,
+            r#"{"version":2,"sip":{"server":"backup.example.com"}}"#,
+        );
     }
 
     #[test]
@@ -150,7 +157,11 @@ mod tests {
         storage.save_data(&data).unwrap();
         // Orphan .tmp with different data
         let bogus = serde_json::json!({"version": 99});
-        fs::write(&storage.tmp_path, serde_json::to_string_pretty(&bogus).unwrap()).unwrap();
+        fs::write(
+            &storage.tmp_path,
+            serde_json::to_string_pretty(&bogus).unwrap(),
+        )
+        .unwrap();
         let loaded = storage.load_data();
         assert_eq!(loaded, data);
         // Cleanup orphan for clean dir deletion
