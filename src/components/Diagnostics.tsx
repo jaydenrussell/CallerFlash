@@ -59,7 +59,7 @@ export function Diagnostics() {
       addLog({ level: 'warning', category: 'SIP', message: 'SIP server not configured — skipping protocol tests' });
       addLog({ level: 'info', category: 'SIP', message: 'Configure SIP settings first, then re-run diagnostics' });
     } else {
-      const protocols = ['UDP', 'TCP', 'TLS'] as const;
+      const protocols = ['UDP', 'TCP'] as const;
       for (const protocol of protocols) {
         addLog({ level: 'info', category: 'SIP', message: `Testing ${protocol} connectivity to ${savedConfig.server}...` });
         try {
@@ -70,7 +70,7 @@ export function Diagnostics() {
             authUsername: savedConfig.authUsername,
             registerExpiry: savedConfig.registerExpiry,
             protocol,
-            port: protocol === 'TLS' ? 5061 : savedConfig.port,
+            port: savedConfig.port,
           };
           const result = await window.callerflash!.sip.testConnection(config) as Record<string, unknown>;
           const success = result.success as boolean;

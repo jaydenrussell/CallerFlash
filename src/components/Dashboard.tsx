@@ -71,7 +71,7 @@ export function Dashboard() {
           <DetailRow label="Codec" value={sipConfig.codec} />
           <DetailRow label="STUN" value={sipConfig.stunServer || '—'} />
           <DetailRow label="Registration" value={sipRegistered ? `Active (${sipConfig.registerExpiry}s)` : 'Inactive'} />
-          <DetailRow label="Encryption" value={sipConfig.protocol === 'TLS' ? 'TLS' : 'Optional'} />
+          <DetailRow label="Encryption" value="None" />
         </div>
         <div className="mt-2 flex items-center gap-2">
           <InfoButton

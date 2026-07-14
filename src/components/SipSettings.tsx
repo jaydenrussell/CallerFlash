@@ -354,11 +354,7 @@ export function SipSettings() {
                   onChange={(e) => updateLocal({ port: parseInt(e.target.value, 10) || 5060 })}
                   className="w-full px-3 py-2 bg-win-card border border-win-border rounded-lg text-sm text-win-text focus:outline-none focus:border-win-accent transition-colors"
                 />
-                {localConfig.protocol === 'TLS' && (
-                  <p className="text-[11px] text-win-text-tertiary mt-1">
-                    TLS alternatives: 5081, 42873
-                  </p>
-                )}
+
               </InputField>
               <InputField label="Protocol">
                 <div className="relative">
@@ -366,10 +362,8 @@ export function SipSettings() {
                     value={localConfig.protocol}
                     onChange={(e) => {
                       const v = e.target.value;
-                      if (v === 'UDP' || v === 'TCP' || v === 'TLS') {
-                        if (v === 'TLS' && localConfig.port === 5060) {
-                          updateLocal({ protocol: v, port: 5061 });
-                        } else if ((v === 'UDP' || v === 'TCP') && localConfig.port === 5061) {
+                      if (v === 'UDP' || v === 'TCP') {
+                        if ((v === 'UDP' || v === 'TCP') && localConfig.port === 5061) {
                           updateLocal({ protocol: v, port: 5060 });
                         } else {
                           updateLocal({ protocol: v });
@@ -380,7 +374,6 @@ export function SipSettings() {
                   >
                     <option value="UDP">UDP</option>
                     <option value="TCP">TCP</option>
-                    <option value="TLS">TLS (Encrypted)</option>
                   </select>
                   <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-win-text-tertiary pointer-events-none" />
                 </div>

@@ -103,7 +103,6 @@ interface PersistedUiSettings {
   toastConfig?: Partial<ToastConfig>;
   releasePageUrl?: string;
   sipConfig?: Partial<SipConfig>;
-  sipPasswordEncrypted?: string;
   lastRunVersion?: string;
 }
 
@@ -229,7 +228,6 @@ const persistedUi: PersistedUiSettings = loadSettingsSync();
 console.log('[store] localStorage snapshot:', {
   hasSipConfig: !!persistedUi.sipConfig,
   hasPassword: !!persistedUi.sipConfig?.password,
-  hasEncrypted: !!persistedUi.sipPasswordEncrypted,
   version: persistedUi.version,
 });
 // Pre-populate SecureStorage cache so first save preserves all fields.
@@ -261,52 +259,7 @@ async function initStorageMigration() {
           updateInfo: mergedUpdate,
         });
 
-        // Primary: load SIP password directly from Windows Credential Manager
-        if (window.callerflash?.safeStorage?.loadPassword) {
-          const password = await window.callerflash.safeStorage.loadPassword();
-          if (password) {
-            useAppStore.setState((s) => ({
-              sipConfig: { ...s.sipConfig, password }
-            }));
-            console.log('[store] SIP password loaded from Windows Credential Manager');
-            // Clean up old encrypted blob if present
-            if (fileData.sipPasswordEncrypted) {
-              const cleaned = { ...fileData };
-              delete cleaned.sipPasswordEncrypted;
-              secureStorage.save(cleaned);
-            }
-            return;
-          }
-          console.log('[store] No password in keyring, trying legacy migration...');
-        }
-
-        // Fallback: try legacy encrypted blob (migration from old format)
-        const encryptedPassword = fileData.sipPasswordEncrypted || persistedUi.sipPasswordEncrypted;
-        if (encryptedPassword && window.callerflash?.safeStorage?.decrypt) {
-          try {
-            const decrypted = await window.callerflash.safeStorage.decrypt(encryptedPassword);
-            if (decrypted) {
-              // Migrate to new keyring storage
-              if (window.callerflash?.safeStorage?.storePassword) {
-                await window.callerflash.safeStorage.storePassword(decrypted);
-                console.log('[store] SIP password migrated to Windows Credential Manager');
-              }
-              useAppStore.setState((s) => ({
-                sipConfig: { ...s.sipConfig, password: decrypted }
-              }));
-              console.log('[store] SIP password decrypted from legacy storage');
-              // Clean up old blob
-              const cleaned = { ...fileData };
-              delete cleaned.sipPasswordEncrypted;
-              secureStorage.save(cleaned);
-              return;
-            }
-          } catch (e) {
-            console.error('[store] Legacy SIP password decrypt failed, user must re-enter it:', e);
-          }
-        } else {
-          console.log('[store] No legacy encrypted SIP password found, user must re-enter it');
-        }
+        console.log('[store] SIP config loaded from encrypted file');
         return;
       }
     }
@@ -441,42 +394,12 @@ export const useAppStore = create<AppState>((set) => ({
     const next = { ...prev, ...config };
     useAppStore.setState({ sipConfig: next });
 
-    const password = next.password || '';
     try {
-      // Primary: store password directly in Windows Credential Manager
-      if (window.callerflash?.safeStorage?.storePassword) {
-        const stored = await window.callerflash.safeStorage.storePassword(password);
-        if (stored) {
-          await secureStorage.save({
-            ...secureStorage.cache,
-            sipConfig: { ...next, password: '' },
-            sipPasswordEncrypted: undefined,
-          });
-          console.log('[store] SIP password stored in Windows Credential Manager');
-          return;
-        }
-        console.warn('[store] keyring.storePassword failed, trying fallback');
-      }
-      // Fallback 1: encrypt-and-store in settings file
-      if (window.callerflash?.safeStorage?.encrypt) {
-        const encrypted = await window.callerflash.safeStorage.encrypt(password);
-        if (encrypted) {
-          await secureStorage.save({
-            ...secureStorage.cache,
-            sipConfig: { ...next, password: '' },
-            sipPasswordEncrypted: encrypted,
-          });
-          console.log('[store] SIP config saved via encrypted blob fallback');
-          return;
-        }
-        console.warn('[store] SIP password encrypt returned null');
-      }
-      // Last resort: store in AES-256-GCM encrypted file
       await secureStorage.save({
         ...secureStorage.cache,
         sipConfig: next,
       });
-      console.log('[store] SIP config saved via file encryption');
+      console.log('[store] SIP config saved');
     } catch (e) {
       console.error('[store] Failed to persist SIP config:', e);
     }

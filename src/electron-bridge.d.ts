@@ -29,10 +29,6 @@ declare global {
   interface CallerFlashSafeStorageApi {
     encrypt: (plaintext: string) => Promise<string | null>;
     decrypt: (base64Cipher: string) => Promise<string | null>;
-    /** Store SIP password directly in OS keyring (Windows Credential Manager). */
-    storePassword: (password: string) => Promise<boolean>;
-    /** Retrieve SIP password from OS keyring. Returns null if not stored. */
-    loadPassword: () => Promise<string | null>;
   }
 
   interface CallerFlashShellApi {

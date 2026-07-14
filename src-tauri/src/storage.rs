@@ -252,39 +252,6 @@ pub fn storage_save(app: AppHandle, data: serde_json::Value) -> Result<(), Comma
     storage.save_data(&data)
 }
 
-const KEYRING_USER_PASSWORD: &str = "sip-password";
-
-#[tauri::command]
-pub fn keyring_store_password(password: String) -> Result<(), CommandError> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER_PASSWORD)
-        .map_err(|e| CommandError::crypto(format!("Failed to create keyring entry: {}", e)))?;
-    entry
-        .set_password(&password)
-        .map_err(|e| CommandError::crypto(format!("Failed to store password in keyring: {}", e)))?;
-    log::info!("[keyring] SIP password stored in Windows Credential Manager");
-    Ok(())
-}
-
-#[tauri::command]
-pub fn keyring_get_password() -> Result<Option<String>, CommandError> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER_PASSWORD)
-        .map_err(|e| CommandError::crypto(format!("Failed to create keyring entry: {}", e)))?;
-    match entry.get_password() {
-        Ok(password) => {
-            log::info!("[keyring] SIP password retrieved from Windows Credential Manager");
-            Ok(Some(password))
-        }
-        Err(keyring::Error::NoEntry) => {
-            log::info!("[keyring] No SIP password found in keyring");
-            Ok(None)
-        }
-        Err(e) => {
-            log::error!("[keyring] Failed to get password: {}", e);
-            Err(CommandError::crypto(format!("Keyring read failed: {}", e)))
-        }
-    }
-}
-
 #[tauri::command]
 pub fn storage_encrypt_value(plaintext: String) -> Result<String, CommandError> {
     let key = get_or_create_key()?;

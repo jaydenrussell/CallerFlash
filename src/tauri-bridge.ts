@@ -219,23 +219,6 @@ function setup(): void {
           return null;
         }
       },
-      storePassword: async (password: string) => {
-        try {
-          await invoke('keyring_store_password', { password });
-          return true;
-        } catch (e) {
-          logError('safeStorage.storePassword', e);
-          return false;
-        }
-      },
-      loadPassword: async () => {
-        try {
-          return await invoke<string | null>('keyring_get_password');
-        } catch (e) {
-          logError('safeStorage.loadPassword', e);
-          return null;
-        }
-      },
     },
 
     sip: {
