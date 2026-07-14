@@ -11,9 +11,9 @@
   },
   "scripts": {
     "dev": "vite",
-    "dev:tauri": "cargo tauri dev",
+    "dev:tauri": "npx @tauri-apps/cli@^2 dev",
     "build": "vite build",
-    "build:tauri": "vite build && cargo tauri build --bundles nsis",
+    "build:tauri": "vite build && npx @tauri-apps/cli@^2 build --bundles nsis",
     "preview": "vite preview",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
