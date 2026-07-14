@@ -228,8 +228,8 @@ export function ToastSettings() {
               <SliderField
                 label="Font size"
                 value={toastConfig.fontSize}
-                min={10}
-                max={28}
+                min={12}
+                max={36}
                 step={1}
                 unit="px"
                 onChange={(v) => update({ fontSize: v })}

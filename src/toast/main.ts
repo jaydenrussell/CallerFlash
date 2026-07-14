@@ -58,12 +58,10 @@ function show(data: ToastPayload): void {
   }
 
   if (c.fontFamily) document.body.style.fontFamily = c.fontFamily;
-  if (c.fontSize && elNumber && elName && elTime && elTitle) {
-    const b = c.fontSize;
+  if (c.fontSize && elNumber) {
+    const b = Math.min(36, Math.max(12, c.fontSize));
     elNumber.style.fontSize = b + 'px';
-    elName.style.fontSize = Math.max(10, b - 4) + 'px';
-    elTime.style.fontSize = Math.max(9, b - 6) + 'px';
-    elTitle.style.fontSize = Math.max(10, b - 5) + 'px';
+    if (elName) elName.style.fontSize = Math.max(12, b - 4) + 'px';
   }
 
   const toastEl = document.getElementById('toast');
