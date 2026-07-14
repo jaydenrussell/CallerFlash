@@ -120,6 +120,9 @@ class SecureStorage {
     this.hasNativeStorage = typeof window !== 'undefined' && !!window.callerflash?.storage;
   }
 
+    /** Optional callback fired when native storage fails (user-visible warning). */
+  onNativeSaveError: ((e: unknown) => void) | null = null;
+
   /** Pre-populate cache so first save doesn't clobber unrelated fields. */
   initCache(data: PersistedUiSettings): void {
     this._cache = data;
@@ -169,12 +172,10 @@ class SecureStorage {
     if (this.hasNativeStorage) {
       try {
         await window.callerflash?.storage?.save?.(toSave);
-      } catch {
-        // Fallback to localStorage
+      } catch (e) {
+        this.onNativeSaveError?.(e);
       }
     }
-    // Always save to localStorage as write-through cache so
-    // loadSettingsSync() on next startup sees the latest data.
     this.saveToLocalStorage(toSave);
   }
 
@@ -225,13 +226,16 @@ function loadSettingsSync(): PersistedUiSettings {
 }
 
 const persistedUi: PersistedUiSettings = loadSettingsSync();
-console.log('[store] localStorage snapshot:', {
-  hasSipConfig: !!persistedUi.sipConfig,
-  hasPassword: !!persistedUi.sipConfig?.password,
-  version: persistedUi.version,
-});
 // Pre-populate SecureStorage cache so first save preserves all fields.
 secureStorage.initCache({ ...persistedUi });
+secureStorage.onNativeSaveError = (e) => {
+  useAppStore.getState().addDiagnosticLog({
+    level: 'warning',
+    category: 'SYSTEM',
+    message: 'File storage write failed, using localStorage fallback',
+    details: String(e),
+  });
+};
 
 // Phase 2: After store is created, try to load from file storage and hydrate store
 async function initStorageMigration() {
@@ -259,7 +263,6 @@ async function initStorageMigration() {
           updateInfo: mergedUpdate,
         });
 
-        console.log('[store] SIP config loaded from encrypted file');
         return;
       }
     }
@@ -268,17 +271,16 @@ async function initStorageMigration() {
     if (localData && Object.keys(localData).length > 1) {
       if (window.callerflash?.storage?.save) {
         await window.callerflash.storage.save(localData);
-        console.log('[store] Migrated localStorage to file storage');
       }
     }
   } catch (e) {
-    console.error('[store] initStorageMigration failed:', e);
+      // initStorageMigration failure is non-fatal — localStorage fallback still works
     // Ignore — localStorage data is still valid
   }
 }
 
 // ── Store interface ──────────────────────────────────────────────────
-interface AppState {
+export interface AppState {
   activeTab: TabId;
   setActiveTab: (tab: TabId) => void;
 
@@ -399,9 +401,9 @@ export const useAppStore = create<AppState>((set) => ({
         ...secureStorage.cache,
         sipConfig: next,
       });
-      console.log('[store] SIP config saved');
     } catch (e) {
-      console.error('[store] Failed to persist SIP config:', e);
+      // SIP config save failure is non-fatal — localStorage fallback persists
+      const _ = e;
     }
   },
   setSipConnected: (connected) => set({ sipConnected: connected }),
@@ -553,7 +555,7 @@ if (typeof window !== 'undefined' && window.callerflash?.app?.getStartWithWindow
       const corrected = { ...useAppStore.getState().appPreferences, startWithWindows: enabled };
       const cache = secureStorage.cache;
       secureStorage.save({ ...cache, appPreferences: corrected });
-      console.log('[store] Synced startWithWindows to', enabled);
+      // Synced startWithWindows from actual Windows state
     }
   });
 }
