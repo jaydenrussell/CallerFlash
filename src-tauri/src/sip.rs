@@ -445,16 +445,17 @@ impl SipClient {
                     }
                 };
 
+                let serve_handle = handle.clone();
                 let endpoint_serve = tokio::spawn({
                     let inner = endpoint_inner.clone();
                     async move {
                         log::info!("[sip] Endpoint serve task started");
-                        safe_emit(&handle, "sip:log", serde_json::json!({
+                        let _ = safe_emit(&serve_handle, "sip:log", serde_json::json!({
                             "message": "SIP endpoint serve task started"
                         }));
                         let _ = inner.serve().await;
                         log::warn!("[sip] Endpoint serve task exited!");
-                        safe_emit(&handle, "sip:log", serde_json::json!({
+                        let _ = safe_emit(&serve_handle, "sip:log", serde_json::json!({
                             "message": "SIP endpoint serve task EXITED"
                         }));
                     }
@@ -833,59 +834,63 @@ impl SipClient {
                     let delay_ms = backoff_ms.min(3_600_000);
 
                     tokio::select! {
-                        Some(mut tx) = incoming.recv() => {
-                            // DIAG: Log every incoming transaction (method + key) so we can see what
-                            // hits the Rust code even if the frontend event handler never fires.
-                            log::info!("[sip] Incoming transaction: method={:?}, key={}", tx.original.method, tx.key);
-                            safe_emit(&handle, "sip:log", serde_json::json!({
-                                "message": format!("Incoming SIP transaction: method={:?}, key={}", tx.original.method, tx.key)
-                            }));
+                        result = incoming.recv() => {
+                            match result {
+                                Some(mut tx) => {
+                                    // DIAG: Log every incoming transaction (method + key) so we can see what
+                                    // hits the Rust code even if the frontend event handler never fires.
+                                    log::info!("[sip] Incoming transaction: method={:?}, key={}", tx.original.method, tx.key);
+                                    safe_emit(&handle, "sip:log", serde_json::json!({
+                                        "message": format!("Incoming SIP transaction: method={:?}, key={}", tx.original.method, tx.key)
+                                    }));
 
-                            if tx.original.method == Method::Invite {
-                                safe_emit(&handle, "sip:log", serde_json::json!({
-                                    "message": "Processing INVITE transaction in Rust loop"
-                                }));
-
-                                let (caller_number, caller_name) =
-                                    extract_invite_caller(&SipMessage::Request(tx.original.clone()));
-
-                                safe_emit(&handle, "sip:log", serde_json::json!({
-                                    "message": format!("Emitting sip:invite to frontend (caller={}, name={})", caller_number, caller_name)
-                                }));
-
-                                let invite_data = InviteData {
-                                    caller_number,
-                                    caller_name,
-                                };
-                                safe_emit(&handle, "sip:invite", invite_data);
-
-                            // Send 180 Ringing so the caller hears ringing while the notification is shown.
-                            // The SIP server will eventually time out the call via its ring-no-answer timer.
-                            match tx.reply(StatusCode::Ringing).await {
-                                    Ok(_) => {
+                                    if tx.original.method == Method::Invite {
                                         safe_emit(&handle, "sip:log", serde_json::json!({
-                                            "message": "180 Ringing sent successfully"
+                                            "message": "Processing INVITE transaction in Rust loop"
                                         }));
-                                    }
-                                    Err(e) => {
-                                        log::error!("[sip] Failed to reply to INVITE: {}", e);
+
+                                        let (caller_number, caller_name) =
+                                            extract_invite_caller(&SipMessage::Request(tx.original.clone()));
+
                                         safe_emit(&handle, "sip:log", serde_json::json!({
-                                            "message": format!("Failed to reply to INVITE: {}", e)
+                                            "message": format!("Emitting sip:invite to frontend (caller={}, name={})", caller_number, caller_name)
+                                        }));
+
+                                        let invite_data = InviteData {
+                                            caller_number,
+                                            caller_name,
+                                        };
+                                        safe_emit(&handle, "sip:invite", invite_data);
+
+                                    // Send 180 Ringing so the caller hears ringing while the notification is shown.
+                                    // The SIP server will eventually time out the call via its ring-no-answer timer.
+                                    match tx.reply(StatusCode::Ringing).await {
+                                            Ok(_) => {
+                                                safe_emit(&handle, "sip:log", serde_json::json!({
+                                                    "message": "180 Ringing sent successfully"
+                                                }));
+                                            }
+                                            Err(e) => {
+                                                log::error!("[sip] Failed to reply to INVITE: {}", e);
+                                                safe_emit(&handle, "sip:log", serde_json::json!({
+                                                    "message": format!("Failed to reply to INVITE: {}", e)
+                                                }));
+                                            }
+                                        }
+                                    } else {
+                                        safe_emit(&handle, "sip:log", serde_json::json!({
+                                            "message": format!("Non-INVITE transaction ignored: method={:?}", tx.original.method)
                                         }));
                                     }
                                 }
-                            } else {
-                                safe_emit(&handle, "sip:log", serde_json::json!({
-                                    "message": format!("Non-INVITE transaction ignored: method={:?}", tx.original.method)
-                                }));
+                                None => {
+                                    log::error!("[sip] INCOMING CHANNEL CLOSED - no more transactions will be received!");
+                                    safe_emit(&handle, "sip:log", serde_json::json!({
+                                        "message": "INCOMING CHANNEL CLOSED - server transactions will not be received"
+                                    }));
+                                    break;
+                                }
                             }
-                        }
-                        None = incoming.recv() => {
-                            log::error!("[sip] INCOMING CHANNEL CLOSED - no more transactions will be received!");
-                            safe_emit(&handle, "sip:log", serde_json::json!({
-                                "message": "INCOMING CHANNEL CLOSED - server transactions will not be received"
-                            }));
-                            break;
                         }
                         _ = tokio::time::sleep(std::time::Duration::from_millis(delay_ms)) => {
                             heartbeat_counter += 1;
