@@ -1,0 +1,49 @@
+name: Auto-tag on version bump
+
+on:
+  push:
+    branches: [stable]
+    paths:
+      - 'package.json'
+
+permissions:
+  contents: write
+
+jobs:
+  auto-tag:
+    name: Create version tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.get-version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+
+      - name: Extract version from package.json
+        id: get-version
+        run: |
+          VERSION=$(jq -r '.version' package.json)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check if tag already exists
+        id: check-tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.get-version.outputs.tag }}"
+          if gh api "repos/${{ github.repository }}/git/ref/tags/$TAG" --jq '.ref' 2>/dev/null; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Tag $TAG already exists — skipping"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create and push tag
+        if: steps.check-tag.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.get-version.outputs.tag }}"
+          git tag "$TAG"
+          git push origin "$TAG"
+          echo "Created tag $TAG"
