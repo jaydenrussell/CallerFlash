@@ -223,6 +223,23 @@ fn safe_emit(handle: &AppHandle, event: &str, payload: impl serde::Serialize + C
     }
 }
 
+/// Extract the public IP:port from a REGISTER 200 OK response.
+/// The SIP server adds `received` (our public IP) and `rport` (our public port)
+/// to the top Via header when the original request included `;rport` (RFC 3581).
+fn detect_public_address(resp: &sip::Response) -> Option<(String, u16)> {
+    let via_header = resp.via_header().ok()?;
+    let first_via = via_header.first_value().ok()?;
+
+    // Parse the Via string into a typed Via to access received/rport params
+    let via_str = first_via.value();
+    let typed_via = rsipstack::sip::headers::typed::Via::parse(via_str).ok()?;
+
+    let public_ip = typed_via.received()?.ok()?;
+    let public_port = typed_via.rport().flatten().unwrap_or(5060);
+
+    Some((public_ip.to_string(), public_port))
+}
+
 fn extract_invite_caller(text: &SipMessage) -> (String, String) {
     let mut caller_number = "Unknown".to_string();
     let mut caller_name = String::new();
@@ -514,7 +531,7 @@ impl SipClient {
                 // not the server's.
                 let local_ip = get_local_ip_for(std::net::SocketAddr::new(server_addr.ip(), port));
                 let local_ip_str = local_ip.to_string();
-                let contact_uri = match Uri::try_from({
+                let mut contact_uri = match Uri::try_from({
                     let transport_param = match protocol.as_str() {
                         "TCP" => ";transport=tcp",
                         "TLS" => ";transport=tls",
@@ -533,11 +550,19 @@ impl SipClient {
                     }
                 };
 
+                // Shared state for public address discovered from REGISTER response Via received/rport
+                let external_addr: Arc<Mutex<Option<(String, u16)>>> =
+                    Arc::new(Mutex::new(None));
+
                 let mut cseq = 1u32;
 
                 let _ = handle.emit(
                     "sip:log",
                     serde_json::json!({"message": format!("[SIP] Starting registration — server: {}:{}, expiry: {}, protocol: {}", config.server, port, expiry, protocol)}),
+                );
+                let _ = handle.emit(
+                    "sip:log",
+                    serde_json::json!({"message": format!("[SIP] Contact URI: {} (local addr: {}:{})", contact_uri, local_ip_str, local_port)}),
                 );
 
                 #[allow(clippy::too_many_arguments)]
@@ -554,6 +579,7 @@ impl SipClient {
                     connected: &Arc<Mutex<bool>>,
                     consecutive_failures: &mut u32,
                     local_sip_addr: &SipAddr,
+                    external_addr: &Arc<Mutex<Option<(String, u16)>>>,
                 ) -> bool {
                     *cseq += 1;
                     let via = match endpoint_inner.get_via(Some(local_sip_addr.clone()), None) {
@@ -747,6 +773,30 @@ impl SipClient {
                                 StatusCode::OK => {
                                     *connected.lock().await = true;
                                     *consecutive_failures = 0;
+
+                                    // Detect public address from Via received/rport (RFC 3581)
+                                    if external_addr.lock().await.is_none() {
+                                        if let Some(public_addr) = detect_public_address(&resp) {
+                                            *external_addr.lock().await =
+                                                Some(public_addr.clone());
+                                            log::info!(
+                                                "[sip] Detected public address: {}:{}",
+                                                public_addr.0,
+                                                public_addr.1
+                                            );
+                                            safe_emit(
+                                                handle,
+                                                "sip:log",
+                                                serde_json::json!({
+                                                    "message": format!(
+                                                        "[SIP] Detected public address: {}:{}",
+                                                        public_addr.0, public_addr.1
+                                                    )
+                                                }),
+                                            );
+                                        }
+                                    }
+
                                     safe_emit(
                                         handle,
                                         "sip:status",
@@ -814,6 +864,7 @@ impl SipClient {
                     &connected,
                     &mut consecutive_failures,
                     &local_sip_addr,
+                    &external_addr,
                 )
                 .await;
 
@@ -822,6 +873,55 @@ impl SipClient {
                     cancel_token.cancel();
                     endpoint_serve.abort();
                     return;
+                }
+
+                // After initial registration, re-register immediately with the corrected
+                // public Contact header if we discovered our public IP:port from the
+                // server's Via received/rport (RFC 3581 NAT traversal).
+                if let Some((ref public_ip, public_port)) = *external_addr.lock().await {
+                    let transport_param = match protocol.as_str() {
+                        "TCP" => ";transport=tcp",
+                        "TLS" => ";transport=tls",
+                        _ => "",
+                    };
+                    let new_contact_str = format!(
+                        "sip:{}@{}:{}{}",
+                        config.username, public_ip, public_port, transport_param
+                    );
+                    if let Ok(new_contact) = Uri::try_from(new_contact_str.as_str()) {
+                        log::info!(
+                            "[sip] Updating Contact to public address: {}:{}",
+                            public_ip,
+                            public_port
+                        );
+                        safe_emit(
+                            &handle,
+                            "sip:log",
+                            serde_json::json!({
+                                "message": format!(
+                                    "[SIP] Updating Contact to public address: {}:{}",
+                                    public_ip, public_port
+                                )
+                            }),
+                        );
+                        contact_uri = new_contact;
+                        let _ = do_register(
+                            &endpoint_inner,
+                            &server_uri,
+                            &from_to_uri,
+                            &contact_uri,
+                            &call_id,
+                            &mut cseq,
+                            expiry,
+                            &credential,
+                            &handle,
+                            &connected,
+                            &mut consecutive_failures,
+                            &local_sip_addr,
+                            &external_addr,
+                        )
+                        .await;
+                    }
                 }
 
 // Main loop: re-registration + INVITE listener.
@@ -918,6 +1018,7 @@ impl SipClient {
                                 &connected,
                                 &mut consecutive_failures,
                                 &local_sip_addr,
+                                &external_addr,
                             ).await;
 
                             if !still_registered {
