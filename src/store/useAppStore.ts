@@ -68,7 +68,7 @@ export interface DiagnosticLog {
   level: 'info' | 'warning' | 'error' | 'success';
   category: 'SIP' | 'TOAST' | 'UPDATE' | 'SYSTEM';
   message: string;
-  details?: string;
+  details?: string | null;
 }
 
 export interface UpdateInfo {
@@ -92,7 +92,7 @@ export type TabId = 'dashboard' | 'calls' | 'settings' | 'preferences' | 'toast'
 
 // ── Persisted shape (what gets written to disk) ──────────────────────
 interface PersistedUiSettings {
-  version: number;
+  version?: number;
   appPreferences?: Partial<AppPreferences>;
   toastDragPosition?: { x: number; y: number } | null;
   updateCheckFrequency?: 'off' | 'daily' | 'weekly' | 'monthly';
@@ -241,8 +241,8 @@ secureStorage.onNativeSaveError = (e) => {
 async function initStorageMigration() {
   try {
     if (typeof window !== 'undefined' && window.callerflash?.storage?.load) {
-      const fileData = await window.callerflash.storage.load();
-      if (fileData && Object.keys(fileData).length > 0 && fileData.version >= 2) {
+      const fileData = (await window.callerflash.storage.load()) as unknown as PersistedUiSettings;
+      if (fileData && Object.keys(fileData).length > 0 && (fileData.version ?? 0) >= 2) {
         // File storage is authoritative — update cache and hydrate store
         secureStorage.initCache({ ...fileData });
         const mergedToast = { ...defaultToastConfig, ...fileData.toastConfig };
@@ -270,7 +270,7 @@ async function initStorageMigration() {
     const localData = loadSettingsSync();
     if (localData && Object.keys(localData).length > 1) {
       if (window.callerflash?.storage?.save) {
-        await window.callerflash.storage.save(localData);
+        await window.callerflash.storage.save(localData as unknown as Record<string, unknown>);
       }
     }
   } catch (e) {
@@ -401,9 +401,8 @@ export const useAppStore = create<AppState>((set) => ({
         ...secureStorage.cache,
         sipConfig: next,
       });
-    } catch (e) {
+    } catch {
       // SIP config save failure is non-fatal — localStorage fallback persists
-      const _ = e;
     }
   },
   setSipConnected: (connected) => set({ sipConnected: connected }),
@@ -418,7 +417,7 @@ export const useAppStore = create<AppState>((set) => ({
     s.addDiagnosticLog({ level: 'info', category: 'SIP', message: 'Initiating SIP connection…' });
 
     if (window.callerflash?.sip?.connect) {
-      window.callerflash.sip.connect(s.sipConfig).then((res) => {
+      window.callerflash.sip.connect(s.sipConfig as unknown as Record<string, unknown>).then((res) => {
         if (!res.success) {
           useAppStore.setState({ sipConnected: false, isConnecting: false });
           s.addDiagnosticLog({ level: 'error', category: 'SIP', message: `Connection failed: ${res.message || 'Unknown error'}` });

@@ -89,12 +89,12 @@ function setup(): void {
       getPosition: async (): Promise<{ x: number; y: number } | null> => {
         return (await invoke('toast_get_position').catch((e) => { logError('toast.getPosition', e); return null; })) as { x: number; y: number } | null;
       },
-      getInitial: async (): Promise<unknown> => {
-        return (await invoke('toast_get_initial').catch((e) => { logError('toast.getInitial', e); return null; })) as unknown;
+      getInitial: async (): Promise<CallerFlashToastEventData | null> => {
+        return (await invoke('toast_get_initial').catch((e) => { logError('toast.getInitial', e); return null; })) as CallerFlashToastEventData | null;
       },
-      onShow: (callback: (data: unknown) => void) => {
+      onShow: (callback: (data: CallerFlashToastEventData) => void) => {
         const unlisten: Promise<() => void> = listen('toast:show:event', (event) => {
-          callback(event.payload);
+          callback(event.payload as CallerFlashToastEventData);
         }).catch((e) => { logError('toast.onShow', e); return () => {}; });
         return () => { unlisten.then((fn) => fn()).catch((e) => logError('toast.onShow cleanup', e)); };
       },
@@ -180,25 +180,25 @@ function setup(): void {
       getDownloadState: async function () {
         return { status: currentUpdate ? 'available' : 'idle', version: currentUpdate?.version || null, path: null, error: null };
       },
-      onStatus: function (callback: (data: unknown) => void) {
+      onStatus: function (callback: (data: { status: string; version?: string; progress?: number; downloadUrl?: string; message?: string; error?: string }) => void) {
         const unlisten: Promise<() => void> = listen('updater:status', function (event) {
-          callback(event.payload);
+          callback(event.payload as { status: string; version?: string; progress?: number; downloadUrl?: string; message?: string; error?: string });
         }).catch(function (e) { logError('updater.onStatus', e); return function () {}; });
         return function () { void unlisten.then(function (fn) { return fn(); }).catch(function (e) { logError('updater.onStatus cleanup', e); }); };
       },
-      onProgress: function (callback: (data: unknown) => void) {
+      onProgress: function (callback: (data: { percent: number }) => void) {
         const unlisten: Promise<() => void> = listen('updater:progress', function (event) {
-          callback(event.payload);
+          callback(event.payload as { percent: number });
         }).catch(function (e) { logError('updater.onProgress', e); return function () {}; });
         return function () { void unlisten.then(function (fn) { return fn(); }).catch(function (e) { logError('updater.onProgress cleanup', e); }); };
       },
-      onDiagnostic: function (callback: (data: unknown) => void) {
+      onDiagnostic: function (callback: (data: { level: string; message: string; details?: string }) => void) {
         const unlisten: Promise<() => void> = listen('updater:diagnostic', function (event) {
-          callback(event.payload);
+          callback(event.payload as { level: string; message: string; details?: string });
         }).catch(function (e) { logError('updater.onDiagnostic', e); return function () {}; });
         return function () { void unlisten.then(function (fn) { return fn(); }).catch(function (e) { logError('updater.onDiagnostic cleanup', e); }); };
       },
-      onBackgroundCheck: function (_callback: (data: unknown) => void) {
+      onBackgroundCheck: function (_callback: (data: { version?: string; upToDate?: boolean }) => void) {
         return function () {};
       },
     },
@@ -264,15 +264,15 @@ function setup(): void {
     },
 
     diagnostics: {
-      append: (entry: { id: string; timestamp: Date | string; level: string; category: string; message: string; details?: string | null }) => {
+      append: (entry: { id: string; timestamp: Date | string; level: 'info' | 'warning' | 'error' | 'success'; category: 'SIP' | 'TOAST' | 'UPDATE' | 'SYSTEM'; message: string; details?: string | null }) => {
         invoke('diagnostics_append', { entry }).catch((e) => logError('diagnostics.append', e));
       },
       load: async () => {
         return (await invoke('diagnostics_load').catch((e) => { logError('diagnostics.load', e); return []; })) as Array<{
           id: string;
           timestamp: Date;
-          level: string;
-          category: string;
+          level: 'info' | 'warning' | 'error' | 'success';
+          category: 'SIP' | 'TOAST' | 'UPDATE' | 'SYSTEM';
           message: string;
           details?: string | null;
         }>;

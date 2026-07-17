@@ -467,14 +467,22 @@ impl SipClient {
                     let inner = endpoint_inner.clone();
                     async move {
                         log::info!("[sip] Endpoint serve task started");
-                        let _ = safe_emit(&serve_handle, "sip:log", serde_json::json!({
-                            "message": "SIP endpoint serve task started"
-                        }));
+                        safe_emit(
+                            &serve_handle,
+                            "sip:log",
+                            serde_json::json!({
+                                "message": "SIP endpoint serve task started"
+                            }),
+                        );
                         let _ = inner.serve().await;
                         log::warn!("[sip] Endpoint serve task exited!");
-                        let _ = safe_emit(&serve_handle, "sip:log", serde_json::json!({
-                            "message": "SIP endpoint serve task EXITED"
-                        }));
+                        safe_emit(
+                            &serve_handle,
+                            "sip:log",
+                            serde_json::json!({
+                                "message": "SIP endpoint serve task EXITED"
+                            }),
+                        );
                     }
                 });
 
@@ -551,8 +559,7 @@ impl SipClient {
                 };
 
                 // Shared state for public address discovered from REGISTER response Via received/rport
-                let external_addr: Arc<Mutex<Option<(String, u16)>>> =
-                    Arc::new(Mutex::new(None));
+                let external_addr: Arc<Mutex<Option<(String, u16)>>> = Arc::new(Mutex::new(None));
 
                 let mut cseq = 1u32;
 
@@ -777,8 +784,7 @@ impl SipClient {
                                     // Detect public address from Via received/rport (RFC 3581)
                                     if external_addr.lock().await.is_none() {
                                         if let Some(public_addr) = detect_public_address(&resp) {
-                                            *external_addr.lock().await =
-                                                Some(public_addr.clone());
+                                            *external_addr.lock().await = Some(public_addr.clone());
                                             log::info!(
                                                 "[sip] Detected public address: {}:{}",
                                                 public_addr.0,
@@ -924,7 +930,7 @@ impl SipClient {
                     }
                 }
 
-// Main loop: re-registration + INVITE listener.
+                // Main loop: re-registration + INVITE listener.
                 // This loop only runs when the initial registration succeeded
                 // (the !registered check above exits on failure).
                 let mut heartbeat_counter = 0u64;
