@@ -273,9 +273,8 @@ async function initStorageMigration() {
         await window.callerflash.storage.save(localData as unknown as Record<string, unknown>);
       }
     }
-  } catch (e) {
-      // initStorageMigration failure is non-fatal — localStorage fallback still works
-    // Ignore — localStorage data is still valid
+  } catch {
+    // initStorageMigration failure is non-fatal — localStorage fallback still works
   }
 }
 
