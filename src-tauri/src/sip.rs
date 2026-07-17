@@ -448,7 +448,15 @@ impl SipClient {
                 let endpoint_serve = tokio::spawn({
                     let inner = endpoint_inner.clone();
                     async move {
+                        log::info!("[sip] Endpoint serve task started");
+                        safe_emit(&handle, "sip:log", serde_json::json!({
+                            "message": "SIP endpoint serve task started"
+                        }));
                         let _ = inner.serve().await;
+                        log::warn!("[sip] Endpoint serve task exited!");
+                        safe_emit(&handle, "sip:log", serde_json::json!({
+                            "message": "SIP endpoint serve task EXITED"
+                        }));
                     }
                 });
 
@@ -815,9 +823,10 @@ impl SipClient {
                     return;
                 }
 
-                // Main loop: re-registration + INVITE listener.
+// Main loop: re-registration + INVITE listener.
                 // This loop only runs when the initial registration succeeded
                 // (the !registered check above exits on failure).
+                let mut heartbeat_counter = 0u64;
                 loop {
                     let base_ms = refresh_ms;
                     let backoff_ms = base_ms * 2u64.pow(consecutive_failures.min(6));
@@ -871,7 +880,22 @@ impl SipClient {
                                 }));
                             }
                         }
+                        None = incoming.recv() => {
+                            log::error!("[sip] INCOMING CHANNEL CLOSED - no more transactions will be received!");
+                            safe_emit(&handle, "sip:log", serde_json::json!({
+                                "message": "INCOMING CHANNEL CLOSED - server transactions will not be received"
+                            }));
+                            break;
+                        }
                         _ = tokio::time::sleep(std::time::Duration::from_millis(delay_ms)) => {
+                            heartbeat_counter += 1;
+                            if heartbeat_counter % 10 == 0 {
+                                log::info!("[sip] Heartbeat: loop alive, registered={}, delay_ms={}", *connected.lock().await, delay_ms);
+                                safe_emit(&handle, "sip:log", serde_json::json!({
+                                    "message": format!("SIP loop heartbeat: registered={}, delay_ms={}", *connected.lock().await, delay_ms)
+                                }));
+                            }
+
                             if !*connected.lock().await {
                                 break;
                             }
