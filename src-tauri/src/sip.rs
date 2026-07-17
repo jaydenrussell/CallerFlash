@@ -840,14 +840,14 @@ impl SipClient {
                                 let (caller_number, caller_name) =
                                     extract_invite_caller(&SipMessage::Request(tx.original.clone()));
 
+                                safe_emit(&handle, "sip:log", serde_json::json!({
+                                    "message": format!("Emitting sip:invite to frontend (caller={}, name={})", caller_number, caller_name)
+                                }));
+
                                 let invite_data = InviteData {
                                     caller_number,
                                     caller_name,
                                 };
-
-                                safe_emit(&handle, "sip:log", serde_json::json!({
-                                    "message": format!("Emitting sip:invite to frontend (caller={}, name={})", caller_number, caller_name)
-                                }));
                                 safe_emit(&handle, "sip:invite", invite_data);
 
                             // Send 180 Ringing so the caller hears ringing while the notification is shown.
