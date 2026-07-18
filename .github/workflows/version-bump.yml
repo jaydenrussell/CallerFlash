@@ -1,0 +1,90 @@
+name: Auto Version Bump
+
+# Bumps the patch version on every push to main (or minor if patch ≥ 9).
+# The z/patch digit never exceeds 9 — hitting 9 rolls into a minor bump.
+# Uses [skip ci] so this workflow does not re-trigger itself.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need the full history so we can detect the auto-bump bot's own
+          # commits and avoid re-trigger loops.
+          fetch-depth: 0
+
+      - name: Check if latest commit is already a version bump
+        id: skip_check
+        shell: pwsh
+        run: |
+          $msg = git log -1 --pretty=%B
+          $skip = "false"
+          if ($msg -match '^chore: bump') {
+            $skip = "true"
+          }
+          echo "skip=$skip" >> $env:GITHUB_OUTPUT
+
+      - name: Compute next version
+        id: version
+        if: steps.skip_check.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          $content = Get-Content src-tauri/Cargo.toml -Raw
+          $match = [regex]::Match($content, 'version = "(\d+)\.(\d+)\.(\d+)"')
+          if (-not $match.Success) {
+            Write-Error "Cannot parse version from Cargo.toml"
+            exit 1
+          }
+          $major = [int]$match.Groups[1].Value
+          $minor = [int]$match.Groups[2].Value
+          $patch = [int]$match.Groups[3].Value
+
+          # z (patch) can never reach 10 — roll into minor
+          if ($patch -ge 9) {
+            $minor += 1
+            $patch = 0
+          } else {
+            $patch += 1
+          }
+
+          $new = "$major.$minor.$patch"
+          echo "current=$($match.Groups[0].Value)" >> $env:GITHUB_OUTPUT
+          echo "next=$new" >> $env:GITHUB_OUTPUT
+
+      - name: Update version in all manifests
+        if: steps.skip_check.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          $cur = "${{ steps.version.outputs.current }}"
+          $nxt = "${{ steps.version.outputs.next }}"
+
+          # Cargo.toml
+          (Get-Content src-tauri/Cargo.toml) -replace 'version = "'+$cur+'"', 'version = "'+$nxt+'"' `
+            | Set-Content src-tauri/Cargo.toml -Encoding utf8
+
+          # package.json
+          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
+          $pkg.version = $nxt
+          $pkg | ConvertTo-Json -Depth 32 | Set-Content package.json -Encoding utf8
+
+          # tauri.conf.json
+          $tauri = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $tauri.version = $nxt
+          $tauri | ConvertTo-Json -Depth 32 | Set-Content src-tauri/tauri.conf.json -Encoding utf8
+
+      - name: Commit and push
+        if: steps.skip_check.outputs.skip != 'true'
+        run: |
+          git config user.name "callerflash-bot"
+          git config user.email "bot@callerflash.app"
+          git add src-tauri/Cargo.toml package.json src-tauri/tauri.conf.json
+          git commit -m "chore: bump version to ${{ steps.version.outputs.next }} [skip ci]"
+          git push

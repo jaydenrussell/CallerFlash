@@ -1,18 +1,48 @@
 name: Build & Release
 
-# Triggered by pushing a version tag (e.g., v1.5.0).
-# Builds the Tauri app, signs it, creates a GitHub Release.
+# Triggered by pushing main → stable (git push origin main:stable).
+# Reads the version from Cargo.toml, creates a git tag, builds the
+# Tauri app, signs it, and publishes a GitHub Release.
 
 on:
   push:
-    tags: ['v*']
+    branches: [stable]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
+  tag:
+    name: Tag version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version from Cargo.toml
+        id: version
+        shell: pwsh
+        run: |
+          $content = Get-Content src-tauri/Cargo.toml -Raw
+          $match = [regex]::Match($content, 'version = "(\d+\.\d+\.\d+)"')
+          if (-not $match.Success) {
+            Write-Error "Cannot parse version from Cargo.toml"
+            exit 1
+          }
+          $ver = $match.Groups[1].Value
+          echo "value=$ver" >> $env:GITHUB_OUTPUT
+
+      - name: Create git tag
+        run: |
+          git config user.name "callerflash-bot"
+          git config user.email "bot@callerflash.app"
+          git tag "v${{ steps.version.outputs.value }}"
+          git push origin "v${{ steps.version.outputs.value }}"
+
   build:
+    needs: tag
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,12 +70,12 @@ jobs:
       - name: Generate updater manifest (update.json)
         shell: pwsh
         run: |
+          $version = "${{ needs.tag.outputs.version }}"
           $sigFile = Get-ChildItem src-tauri/target/release/bundle/nsis/*.sig | Select-Object -First 1
           $sig = Get-Content $sigFile.FullName -Raw
           $installer = Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe | Select-Object -First 1
-          $version = "${{ github.ref_name }}" -replace '^v', ''
           $pubDate = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
-          $url = "https://github.com/jaydenrussell/CallerFlash/releases/download/${{ github.ref_name }}/$($installer.Name)"
+          $url = "https://github.com/jaydenrussell/CallerFlash/releases/download/v$version/$($installer.Name)"
 
           $json = @{
             version = $version
@@ -85,8 +115,9 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ needs.tag.outputs.version }}
           draft: true
-          prerelease: ${{ contains(github.ref_name, '-tauri') || contains(github.ref_name, '-beta') }}
+          prerelease: false
           files: |
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/nsis/*.sig
