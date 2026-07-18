@@ -67,9 +67,16 @@ jobs:
           $cur = "${{ steps.version.outputs.current }}"
           $nxt = "${{ steps.version.outputs.next }}"
 
-          # Cargo.toml
-          (Get-Content src-tauri/Cargo.toml) -replace 'version = "'+$cur+'"', 'version = "'+$nxt+'"' `
-            | Set-Content src-tauri/Cargo.toml -Encoding utf8
+          # Cargo.toml — use .Replace() for literal string replacement (no regex)
+          $cargo = Get-Content src-tauri/Cargo.toml -Raw
+          $oldVer = 'version = "' + $cur + '"'
+          $newVer = 'version = "' + $nxt + '"'
+          if ($cargo -notmatch [regex]::Escape($oldVer)) {
+            Write-Error "Could not find '$oldVer' in Cargo.toml"
+            exit 1
+          }
+          $cargo = $cargo.Replace($oldVer, $newVer)
+          Set-Content -Path src-tauri/Cargo.toml -Value $cargo -Encoding utf8 -NoNewline
 
           # package.json
           $pkg = Get-Content package.json -Raw | ConvertFrom-Json
