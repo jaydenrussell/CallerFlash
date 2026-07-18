@@ -62,12 +62,14 @@ jobs:
         shell: pwsh
         run: |
           $v = $env:VERSION
+          $pkgRepl = '"version": "' + $v + '"'
+          $cargoRepl = 'version = "' + $v + '"'
           # package.json
-          (Get-Content package.json -Raw) -replace '"version": "\d+\.\d+\.\d+[^"]*"', '"version": "'+$v+'"' | Set-Content package.json
+          (Get-Content package.json -Raw) -replace '"version": "\d+\.\d+\.\d+[^"]*"', $pkgRepl | Set-Content package.json
           # Cargo.toml
-          (Get-Content src-tauri/Cargo.toml -Raw) -replace '(?m)^version = "\d+\.\d+\.\d+[^"]*"', 'version = "'+$v+'"' | Set-Content src-tauri/Cargo.toml
+          (Get-Content src-tauri/Cargo.toml -Raw) -replace '(?m)^version = "\d+\.\d+\.\d+[^"]*"', $cargoRepl | Set-Content src-tauri/Cargo.toml
           # tauri.conf.json
-          (Get-Content src-tauri/tauri.conf.json -Raw) -replace '"version": "\d+\.\d+\.\d+[^"]*"', '"version": "'+$v+'"' | Set-Content src-tauri/tauri.conf.json
+          (Get-Content src-tauri/tauri.conf.json -Raw) -replace '"version": "\d+\.\d+\.\d+[^"]*"', $pkgRepl | Set-Content src-tauri/tauri.conf.json
           Write-Host "Version set to $v in package.json, Cargo.toml, tauri.conf.json"
 
       - name: Build Tauri app
