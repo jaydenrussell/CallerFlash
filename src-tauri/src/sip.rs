@@ -4,10 +4,10 @@ use rsipstack::sip::prelude::*;
 use rsipstack::sip::{self, typed, Header, Method, SipMessage, StatusCode, Uri};
 use rsipstack::transaction::key::{TransactionKey, TransactionRole};
 use rsipstack::transaction::transaction::Transaction;
+use rsipstack::transport::connection::KEEPALIVE_REQUEST;
 use rsipstack::transport::stream::StreamConnection;
 use rsipstack::transport::tcp::TcpConnection;
 use rsipstack::transport::tls::{TlsConfig, TlsConnection};
-use rsipstack::transport::connection::KEEPALIVE_REQUEST;
 use rsipstack::transport::udp::UdpConnection;
 use rsipstack::transport::{SipAddr, SipConnection, TransportLayer};
 use rsipstack::EndpointBuilder as RsEndpointBuilder;
@@ -922,13 +922,9 @@ impl SipClient {
                 // call delivery. TCP servers should reuse the existing authenticated
                 // TCP connection per RFC 3261 §18.1.1.
                 if protocol == "UDP" {
-                    if let Some((ref public_ip, ref public_port)) =
-                        *external_addr.lock().await
-                    {
-                        let new_contact_str = format!(
-                            "sip:{}@{}:{}",
-                            config.username, public_ip, public_port
-                        );
+                    if let Some((ref public_ip, ref public_port)) = *external_addr.lock().await {
+                        let new_contact_str =
+                            format!("sip:{}@{}:{}", config.username, public_ip, public_port);
                         if let Ok(new_contact) = Uri::try_from(new_contact_str.as_str()) {
                             log::info!(
                                 "[sip] Updating Contact to public address: {}:{}",
