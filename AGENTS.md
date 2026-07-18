@@ -8,7 +8,7 @@
 
 ## What this repo is
 
-CallerFlash: a Windows SIP caller-ID app (registers to a SIP trunk, shows toast notifications on inbound calls, optional Acuity client lookup). `refactor/tauri` is the **Tauri (Rust backend + React frontend)** rewrite. It is NOT the Electron version.
+CallerFlash: a Windows SIP caller-ID app (registers to a SIP trunk, shows toast notifications on inbound calls). `refactor/tauri` is the **Tauri (Rust backend + React frontend)** rewrite. It is NOT the Electron version.
 
 ## Architecture map
 
