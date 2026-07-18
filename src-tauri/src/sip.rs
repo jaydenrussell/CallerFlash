@@ -223,23 +223,6 @@ fn safe_emit(handle: &AppHandle, event: &str, payload: impl serde::Serialize + C
     }
 }
 
-/// Extract the public IP:port from a REGISTER 200 OK response.
-/// The SIP server adds `received` (our public IP) and `rport` (our public port)
-/// to the top Via header when the original request included `;rport` (RFC 3581).
-fn detect_public_address(resp: &sip::Response) -> Option<(String, u16)> {
-    let via_header = resp.via_header().ok()?;
-    let first_via = via_header.first_value().ok()?;
-
-    // Parse the Via string into a typed Via to access received/rport params
-    let via_str = first_via.value();
-    let typed_via = rsipstack::sip::headers::typed::Via::parse(via_str).ok()?;
-
-    let public_ip = typed_via.received()?.ok()?;
-    let public_port = typed_via.rport().flatten().unwrap_or(5060);
-
-    Some((public_ip.to_string(), public_port))
-}
-
 fn extract_invite_caller(text: &SipMessage) -> (String, String) {
     let mut caller_number = "Unknown".to_string();
     let mut caller_name = String::new();
@@ -783,7 +766,8 @@ impl SipClient {
 
                                     // Detect public address from Via received/rport (RFC 3581)
                                     if external_addr.lock().await.is_none() {
-                                        if let Some(public_addr) = detect_public_address(&resp) {
+                                        if let Some(addr) = resp.via_received() {
+                                            let public_addr = (addr.host.to_string(), addr.port.map(|p| p.0).unwrap_or(5060));
                                             *external_addr.lock().await = Some(public_addr.clone());
                                             log::info!(
                                                 "[sip] Detected public address: {}:{}",

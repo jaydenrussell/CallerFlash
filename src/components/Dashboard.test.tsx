@@ -11,7 +11,6 @@ const mockStore = vi.hoisted(() => ({
     password: "pass",
     authUsername: "",
     codec: "PCMU",
-    stunServer: "",
     registerExpiry: 300,
   },
   registrationStatus: "Registered",
@@ -42,7 +41,6 @@ describe("Dashboard", () => {
       password: "pass",
       authUsername: "",
       codec: "PCMU",
-      stunServer: "",
       registerExpiry: 300,
     };
     mockStore.registrationStatus = "Registered";

@@ -214,7 +214,6 @@ export function SipSettings() {
       authUsername: '',
       protocol: 'UDP',
       codec: 'G.711u',
-      stunServer: 'stun.l.google.com',
       registerExpiry: 300,
     };
     setLocalConfig(defaults);
@@ -380,27 +379,16 @@ export function SipSettings() {
               </InputField>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <InputField label="Registration Expiry" hint="seconds">
-                <input
-                  type="number"
-                  min={30}
-                  max={3600}
-                  value={localConfig.registerExpiry}
-                  onChange={(e) => updateLocal({ registerExpiry: parseInt(e.target.value, 10) || 300 })}
-                  className="w-full px-3 py-2 bg-win-card border border-win-border rounded-lg text-sm text-win-text focus:outline-none focus:border-win-accent transition-colors"
-                />
-              </InputField>
-              <InputField label="STUN Server">
-                <input
-                  type="text"
-                  value={localConfig.stunServer}
-                  onChange={(e) => updateLocal({ stunServer: e.target.value })}
-                  placeholder="stun.l.google.com"
-                  className="w-full px-3 py-2 bg-win-card border border-win-border rounded-lg text-sm text-win-text font-mono placeholder:text-win-text-tertiary focus:outline-none focus:border-win-accent transition-colors"
-                />
-              </InputField>
-            </div>
+            <InputField label="Registration Expiry" hint="seconds">
+              <input
+                type="number"
+                min={30}
+                max={3600}
+                value={localConfig.registerExpiry}
+                onChange={(e) => updateLocal({ registerExpiry: parseInt(e.target.value, 10) || 300 })}
+                className="w-full px-3 py-2 bg-win-card border border-win-border rounded-lg text-sm text-win-text focus:outline-none focus:border-win-accent transition-colors"
+              />
+            </InputField>
           </div>
         </SettingsSection>
 

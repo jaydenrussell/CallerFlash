@@ -10,7 +10,6 @@ const defaultState: Partial<AppState> = {
     password: "",
     authUsername: "",
     codec: "PCMU",
-    stunServer: "",
     registerExpiry: 300,
   },
   sipConnected: false,
