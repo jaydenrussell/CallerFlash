@@ -814,6 +814,35 @@ impl SipClient {
                     return;
                 }
 
+                // TCP/TLS keepalive: send CRLF every 20s to keep the router's NAT
+                // mapping alive.  Consumer routers drop idle TCP NAT mappings in
+                // 60-120 seconds, so VoIP.ms INVITEs sent back to our public
+                // IP:port get silently dropped by the router.
+                let keepalive_transport = transport.clone();
+                let keepalive_cancel = cancel_token.child_token();
+                tokio::spawn(async move {
+                    let mut interval =
+                        tokio::time::interval(std::time::Duration::from_secs(20));
+                    // Skip the immediate first tick
+                    interval.tick().await;
+                    loop {
+                        tokio::select! {
+                            _ = interval.tick() => {
+                                let ka = b"\r\n\r\n";
+                                let result = match &keepalive_transport {
+                                    SipConnection::Tcp(tcp) => tcp.send_raw(ka).await,
+                                    SipConnection::Tls(tls) => tls.send_raw(ka).await,
+                                    _ => Ok(()),
+                                };
+                                if let Err(e) = result {
+                                    log::error!("[sip] Keepalive send failed: {}", e);
+                                }
+                            }
+                            _ = keepalive_cancel.cancelled() => break,
+                        }
+                    }
+                });
+
                 // Main loop: re-registration + INVITE listener.
                 // This loop only runs when the initial registration succeeded
                 // (the !registered check above exits on failure).
