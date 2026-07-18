@@ -912,50 +912,75 @@ impl SipClient {
                 // After initial registration, re-register immediately with the corrected
                 // public Contact header if we discovered our public IP:port from the
                 // server's Via received/rport (RFC 3581 NAT traversal).
-                if let Some((ref public_ip, public_port)) = *external_addr.lock().await {
-                    let transport_param = match protocol.as_str() {
-                        "TCP" => ";transport=tcp",
-                        "TLS" => ";transport=tls",
-                        _ => "",
-                    };
-                    let new_contact_str = format!(
-                        "sip:{}@{}:{}{}",
-                        config.username, public_ip, public_port, transport_param
-                    );
-                    if let Ok(new_contact) = Uri::try_from(new_contact_str.as_str()) {
-                        log::info!(
-                            "[sip] Updating Contact to public address: {}:{}",
-                            public_ip,
-                            public_port
+                //
+                // NOTE: This only works correctly for UDP. For TCP/TLS the `received`
+                // parameter gives us the public IP, but `rport` is UDP-only (RFC 3581)
+                // so the port defaults to 5060 — which is wrong (our TCP connection
+                // uses an ephemeral source port, and there's no listener on 5060).
+                // Updating Contact with public_ip:5060 would tell the SIP server to
+                // open a new TCP connection to a port we're not listening on, breaking
+                // call delivery. TCP servers should reuse the existing authenticated
+                // TCP connection per RFC 3261 §18.1.1.
+                if protocol == "UDP" {
+                    if let Some((ref public_ip, ref public_port)) =
+                        *external_addr.lock().await
+                    {
+                        let new_contact_str = format!(
+                            "sip:{}@{}:{}",
+                            config.username, public_ip, public_port
                         );
-                        safe_emit(
-                            &handle,
-                            "sip:log",
-                            serde_json::json!({
-                                "message": format!(
-                                    "[SIP] Updating Contact to public address: {}:{}",
-                                    public_ip, public_port
-                                )
-                            }),
-                        );
-                        contact_uri = new_contact;
-                        let _ = do_register(
-                            &endpoint_inner,
-                            &server_uri,
-                            &from_to_uri,
-                            &contact_uri,
-                            &call_id,
-                            &mut cseq,
-                            expiry,
-                            &credential,
-                            &handle,
-                            &connected,
-                            &mut consecutive_failures,
-                            &local_sip_addr,
-                            &external_addr,
-                        )
-                        .await;
+                        if let Ok(new_contact) = Uri::try_from(new_contact_str.as_str()) {
+                            log::info!(
+                                "[sip] Updating Contact to public address: {}:{}",
+                                public_ip,
+                                public_port
+                            );
+                            safe_emit(
+                                &handle,
+                                "sip:log",
+                                serde_json::json!({
+                                    "message": format!(
+                                        "[SIP] Updating Contact to public address: {}:{}",
+                                        public_ip, public_port
+                                    )
+                                }),
+                            );
+                            contact_uri = new_contact;
+                            let _ = do_register(
+                                &endpoint_inner,
+                                &server_uri,
+                                &from_to_uri,
+                                &contact_uri,
+                                &call_id,
+                                &mut cseq,
+                                expiry,
+                                &credential,
+                                &handle,
+                                &connected,
+                                &mut consecutive_failures,
+                                &local_sip_addr,
+                                &external_addr,
+                            )
+                            .await;
+                        }
                     }
+                } else {
+                    log::info!(
+                        "[sip] Skipping Contact update for {} — server should reuse \
+                         existing TCP connection for incoming calls",
+                        protocol
+                    );
+                    safe_emit(
+                        &handle,
+                        "sip:log",
+                        serde_json::json!({
+                            "message": format!(
+                                "[SIP] Skipping Contact update for {} — \
+                                 server should reuse existing connection for incoming calls",
+                                protocol
+                            )
+                        }),
+                    );
                 }
 
                 // Main loop: re-registration + INVITE listener.
