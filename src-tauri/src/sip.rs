@@ -767,7 +767,10 @@ impl SipClient {
                                     // Detect public address from Via received/rport (RFC 3581)
                                     if external_addr.lock().await.is_none() {
                                         if let Some(addr) = resp.via_received() {
-                                            let public_addr = (addr.host.to_string(), addr.port.map(|p| p.0).unwrap_or(5060));
+                                            let public_addr = (
+                                                addr.host.to_string(),
+                                                addr.port.map(|p| p.0).unwrap_or(5060),
+                                            );
                                             *external_addr.lock().await = Some(public_addr.clone());
                                             log::info!(
                                                 "[sip] Detected public address: {}:{}",
