@@ -87,5 +87,5 @@ jobs:
           git config user.name "callerflash-bot"
           git config user.email "bot@callerflash.app"
           git add src-tauri/Cargo.toml package.json src-tauri/tauri.conf.json
-          git commit -m "chore: bump version to ${{ steps.version.outputs.next }} [skip ci]"
+          git commit -m "chore: bump version to ${{ steps.version.outputs.next }}"
           git push
