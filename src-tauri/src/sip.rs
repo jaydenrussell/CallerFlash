@@ -7,6 +7,7 @@ use rsipstack::transaction::transaction::Transaction;
 use rsipstack::transport::stream::StreamConnection;
 use rsipstack::transport::tcp::TcpConnection;
 use rsipstack::transport::tls::{TlsConfig, TlsConnection};
+use rsipstack::transport::connection::KEEPALIVE_REQUEST;
 use rsipstack::transport::udp::UdpConnection;
 use rsipstack::transport::{SipAddr, SipConnection, TransportLayer};
 use rsipstack::EndpointBuilder as RsEndpointBuilder;
@@ -468,6 +469,46 @@ impl SipClient {
                         );
                     }
                 });
+
+                // UDP keepalive: send \r\n\r\n every 20s to keep the NAT binding alive.
+                // Without this, consumer routers drop the mapping ~30-60s after the last
+                // outbound packet, and the re-REGISTER interval (285s) is far too sparse.
+                if protocol == "UDP" {
+                    let keepalive_handle = handle.clone();
+                    let keepalive_transport = transport.clone();
+                    let keepalive_cancel = cancel_token.child_token();
+                    let server_sip_addr = SipAddr::from(server_addr);
+                    tokio::spawn(async move {
+                        let udp = match &keepalive_transport {
+                            SipConnection::Udp(u) => u.clone(),
+                            _ => {
+                                log::error!("[keepalive] Expected UDP transport, got non-UDP");
+                                return;
+                            }
+                        };
+                        log::info!("[keepalive] Starting UDP keepalive task (every 20s)");
+                        safe_emit(
+                            &keepalive_handle,
+                            "sip:log",
+                            serde_json::json!({
+                                "message": "UDP keepalive task started (every 20s)"
+                            }),
+                        );
+                        loop {
+                            tokio::select! {
+                                _ = tokio::time::sleep(std::time::Duration::from_secs(20)) => {
+                                    if let Err(e) = udp.send_raw(KEEPALIVE_REQUEST, &server_sip_addr).await {
+                                        log::warn!("[keepalive] send_raw error: {}", e);
+                                    }
+                                }
+                                _ = keepalive_cancel.cancelled() => {
+                                    log::info!("[keepalive] Task cancelled");
+                                    break;
+                                }
+                            }
+                        }
+                    });
+                }
 
                 let server_transport_param = match protocol.as_str() {
                     "TCP" => ";transport=tcp",
