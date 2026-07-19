@@ -11,7 +11,6 @@ const mockStore = vi.hoisted(() => ({
     password: "",
     authUsername: "",
     codec: "PCMU",
-    stunServer: "",
     registerExpiry: 300,
   },
   registrationStatus: "Disconnected",
@@ -40,7 +39,6 @@ describe("SipSettings", () => {
       password: "",
       authUsername: "",
       codec: "PCMU",
-      stunServer: "",
       registerExpiry: 300,
     };
     mockStore.sipConnected = false;

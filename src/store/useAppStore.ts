@@ -24,7 +24,6 @@ export interface SipConfig {
   authUsername: string;
   protocol: 'UDP' | 'TCP';
   codec: string;
-  stunServer: string;
   registerExpiry: number;
 }
 
@@ -335,7 +334,6 @@ const defaultSipConfig: SipConfig = {
   authUsername: '',
   protocol: 'UDP',
   codec: 'G.711u',
-  stunServer: 'stun.l.google.com',
   registerExpiry: 300,
   ...(persistedUi.sipConfig || {}),
 };

@@ -69,7 +69,6 @@ export function Dashboard() {
           <DetailRow label="SIP Server" value={sipConfig.server || '—'} />
           <DetailRow label="Protocol" value={`${sipConfig.protocol} : ${sipConfig.port}`} />
           <DetailRow label="Codec" value={sipConfig.codec} />
-          <DetailRow label="STUN" value={sipConfig.stunServer || '—'} />
           <DetailRow label="Registration" value={sipRegistered ? `Active (${sipConfig.registerExpiry}s)` : 'Inactive'} />
           <DetailRow label="Encryption" value={sipConfig.protocol === 'TCP' ? 'None (TCP transport)' : 'None'} />
         </div>

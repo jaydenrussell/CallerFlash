@@ -675,29 +675,58 @@ impl SipClient {
                             match resp.status_code {
                                 StatusCode::Unauthorized
                                 | StatusCode::ProxyAuthenticationRequired => {
-                                    if auth_sent {
-                                        let reason = resp.reason_phrase().unwrap_or("").to_string();
-                                        log::error!(
-                                            "[sip] Auth retry failed: {} {}",
-                                            resp.status_code.code(),
-                                            reason
-                                        );
-                                        safe_emit(
-                                            handle,
-                                            "sip:status",
-                                            SipStatus {
-                                                status: "error".to_string(),
-                                                message: Some(format!(
-                                                    "Authentication retry failed: {} {}",
-                                                    resp.status_code.code(),
-                                                    reason
-                                                )),
-                                            },
-                                        );
-                                        *consecutive_failures += 1;
-                                        return false;
+if auth_sent {
+                                    let reason = resp.reason_phrase().unwrap_or("").to_string();
+                                    log::error!(
+                                        "[sip] Auth retry failed: {} {}",
+                                        resp.status_code.code(),
+                                        reason
+                                    );
+                                    safe_emit(
+                                        handle,
+                                        "sip:status",
+                                        SipStatus {
+                                            status: "error".to_string(),
+                                            message: Some(format!(
+                                                "Authentication retry failed: {} {}",
+                                                resp.status_code.code(),
+                                                reason
+                                            )),
+                                        },
+                                    );
+                                    *consecutive_failures += 1;
+                                    return false;
+                                }
+
+                                // Extract public address from 401 response top Via header (rport/received)
+                                // and update Contact header before authenticated retry.
+                                // This ensures the Contact uses the public IP:port instead of local LAN IP.
+                                if let Ok(via) = resp.top_via_header() {
+                                    if let Ok((_, public_addr)) = SipConnection::parse_target_from_via(&via) {
+                                        let public_addr_clone = public_addr.clone();
+                                        tx.original.headers.remove_first(|h| matches!(h, Header::Contact(_)));
+                                        // Find and parse the existing Contact to preserve params
+                                        let mut typed_contact = None;
+                                        for h in tx.original.headers.iter() {
+                                            if let Header::Contact(contact) = h {
+                                                if let Ok(tc) = contact.typed() {
+                                                    typed_contact = Some(tc);
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        if let Some(mut tc) = typed_contact {
+                                            tc.uri.host_with_port = public_addr;
+                                            tx.original.headers.unique_push(tc.into());
+                                            log::info!(
+                                                "[sip] Updated Contact header with public address: {}",
+                                                public_addr_clone
+                                            );
+                                        }
                                     }
-                                    *cseq += 1;
+                                }
+
+                                *cseq += 1;
                                     match handle_client_authenticate(*cseq, &tx, resp, credential)
                                         .await
                                     {
