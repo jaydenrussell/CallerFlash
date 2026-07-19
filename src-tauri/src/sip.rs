@@ -843,11 +843,11 @@ if auth_sent {
                     return;
                 }
 
-                // TCP/TLS keepalive: send CRLF every 20s to keep the router's NAT
-                // mapping alive.  Consumer routers drop idle TCP NAT mappings in
-                // 60-120 seconds, so VoIP.ms INVITEs sent back to our public
-                // IP:port get silently dropped by the router.
+                // TCP/TLS/UDP keepalive: send CRLF every 20s to keep the router's NAT
+                // mapping alive. Consumer routers drop idle NAT mappings in 30-120
+                // seconds depending on transport (UDP is typically ~30s, TCP ~60-120s).
                 let keepalive_transport = transport.clone();
+                let keepalive_server_addr = SipAddr::from(server_addr);
                 let keepalive_cancel = cancel_token.child_token();
                 tokio::spawn(async move {
                     let mut interval =
@@ -861,6 +861,7 @@ if auth_sent {
                                 let result = match &keepalive_transport {
                                     SipConnection::Tcp(tcp) => tcp.send_raw(ka).await,
                                     SipConnection::Tls(tls) => tls.send_raw(ka).await,
+                                    SipConnection::Udp(udp) => udp.send_raw(ka, &keepalive_server_addr).await,
                                     _ => Ok(()),
                                 };
                                 if let Err(e) = result {
@@ -878,7 +879,7 @@ if auth_sent {
                 loop {
                     let base_ms = refresh_ms;
                     let backoff_ms = base_ms * 2u64.pow(consecutive_failures.min(6));
-                    let delay_ms = backoff_ms.min(3_600_000);
+                    let delay_ms = backoff_ms.min(60_000);
 
                     tokio::select! {
                         Some(mut tx) = incoming.recv() => {
