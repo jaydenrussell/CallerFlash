@@ -672,6 +672,7 @@ impl SipClient {
                             }
                         };
                         if let SipMessage::Response(resp) = msg {
+                            log::info!("[sip] REGISTER response: {} {}", resp.status_code.code(), resp.reason_phrase().unwrap_or(""));
                             match resp.status_code {
                                 StatusCode::Unauthorized
                                 | StatusCode::ProxyAuthenticationRequired => {
@@ -855,6 +856,7 @@ if auth_sent {
                     loop {
                         tokio::select! {
                             _ = interval.tick() => {
+                                log::debug!("[sip] Sending keepalive...");
                                 let ka = b"\r\n\r\n";
                                 let result = match &keepalive_transport {
                                     SipConnection::Tcp(tcp) => tcp.send_raw(ka).await,
@@ -864,6 +866,8 @@ if auth_sent {
                                 };
                                 if let Err(e) = result {
                                     log::error!("[sip] Keepalive send failed: {}", e);
+                                } else {
+                                    log::debug!("[sip] Keepalive sent OK");
                                 }
                             }
                             _ = keepalive_cancel.cancelled() => break,
@@ -881,7 +885,9 @@ if auth_sent {
 
                     tokio::select! {
                         Some(mut tx) = incoming.recv() => {
+                            log::info!("[sip] Incoming transaction: method={}", tx.original.method);
                             if tx.original.method == Method::Invite {
+                                log::info!("[sip] INVITE received — emitting sip:invite");
                                 let (caller_number, caller_name) =
                                     extract_invite_caller(&SipMessage::Request(tx.original.clone()));
 
@@ -893,7 +899,11 @@ if auth_sent {
 
                                 if let Err(e) = tx.reply(StatusCode::BusyHere).await {
                                     log::error!("[sip] Failed to reply to INVITE: {}", e);
+                                } else {
+                                    log::info!("[sip] Replied to INVITE with 486 Busy Here");
                                 }
+                            } else {
+                                log::info!("[sip] Other incoming method: {}", tx.original.method);
                             }
                         }
                         _ = tokio::time::sleep(std::time::Duration::from_millis(delay_ms)) => {
@@ -901,6 +911,7 @@ if auth_sent {
                                 break;
                             }
 
+                            log::info!("[sip] Registration refresh due (expiry={}s)", expiry);
                             let still_registered = do_register(
                                 &endpoint_inner,
                                 &server_uri,
