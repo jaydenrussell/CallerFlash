@@ -327,7 +327,7 @@ export interface AppState {
 
 // ── Defaults ─────────────────────────────────────────────────────────
 const defaultSipConfig: SipConfig = {
-  server: 'atlanta1.voip.ms',
+  server: 'atlanta.voip.ms',
   port: 5060,
   username: '',
   password: '',
