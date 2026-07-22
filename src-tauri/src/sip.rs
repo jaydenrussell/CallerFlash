@@ -704,18 +704,16 @@ if auth_sent {
                                 if let Ok(via) = resp.top_via_header() {
                                     if let Ok((_, public_addr)) = SipConnection::parse_target_from_via(&via) {
                                         let public_addr_clone = public_addr.clone();
-                                        tx.original.headers.remove_first(|h| matches!(h, Header::Contact(_)));
-                                        // Find and parse the existing Contact to preserve params
-                                        let mut typed_contact = None;
-                                        for h in tx.original.headers.iter() {
+                                        // Parse the existing Contact to preserve params BEFORE removing it
+                                        let existing_contact = tx.original.headers.iter().find_map(|h| {
                                             if let Header::Contact(contact) = h {
-                                                if let Ok(tc) = contact.typed() {
-                                                    typed_contact = Some(tc);
-                                                    break;
-                                                }
+                                                contact.typed().ok()
+                                            } else {
+                                                None
                                             }
-                                        }
-                                        if let Some(mut tc) = typed_contact {
+                                        });
+                                        tx.original.headers.remove_first(|h| matches!(h, Header::Contact(_)));
+                                        if let Some(mut tc) = existing_contact {
                                             tc.uri.host_with_port = public_addr;
                                             tx.original.headers.unique_push(tc.into());
                                             log::info!(
