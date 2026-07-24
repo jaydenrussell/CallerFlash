@@ -198,23 +198,6 @@ fn sanitize_caller_id(s: &str) -> String {
         .collect()
 }
 
-/// Determine the local IP address that the OS will use for outbound traffic
-/// to the given server address. Creates a temporary UDP socket — no actual
-/// data is sent; only local OS syscalls are made.
-fn get_local_ip_for(server_addr: std::net::SocketAddr) -> std::net::IpAddr {
-    if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
-        if socket.connect(server_addr).is_ok() {
-            if let Ok(local) = socket.local_addr() {
-                let ip = local.ip();
-                if !ip.is_unspecified() && !ip.is_loopback() {
-                    return ip;
-                }
-            }
-        }
-    }
-    // Fallback — some servers accept this, others use the source IP anyway.
-    std::net::IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0))
-}
 
 fn safe_emit(handle: &AppHandle, event: &str, payload: impl serde::Serialize + Clone) {
     if let Err(e) = handle.emit(event, payload) {
@@ -499,12 +482,21 @@ impl SipClient {
                         return;
                     }
                 };
-                // Determine the local IP for the Contact header. The SIP server uses
-                // this to route incoming calls back to us; it must be our address,
-                // not the server's.
-                let local_ip = get_local_ip_for(std::net::SocketAddr::new(server_addr.ip(), port));
-                let local_ip_str = local_ip.to_string();
-                let contact_uri = match Uri::try_from({
+                // Determine the host for the Contact header.
+                //
+                // Strategy: Use the SIP server's address as the Contact host. VoIP.ms
+                // routes incoming calls to the address that sent the REGISTER, so using
+                // the server's address ensures call delivery works even when behind NAT
+                // and the server doesn't send received/rport in the Via header (which
+                // would allow us to detect our public IP).
+                //
+                // This matches the working fmt_fix3 version's behavior.
+                let contact_host = config.server.clone();
+                log::info!(
+                    "[sip] Using server address as Contact host: {} (NAT traversal strategy)",
+                    contact_host
+                );
+                let mut contact_uri = match Uri::try_from({
                     let transport_param = match protocol.as_str() {
                         "TCP" => ";transport=tcp",
                         "TLS" => ";transport=tls",
@@ -512,7 +504,7 @@ impl SipClient {
                     };
                     format!(
                         "sip:{}@{}:{}{}",
-                        config.username, local_ip_str, local_port, transport_param
+                        config.username, contact_host, local_port, transport_param
                     )
                     .as_str()
                 }) {
@@ -528,6 +520,10 @@ impl SipClient {
                 let _ = handle.emit(
                     "sip:log",
                     serde_json::json!({"message": format!("[SIP] Starting registration — server: {}:{}, expiry: {}, protocol: {}", config.server, port, expiry, protocol)}),
+                );
+                let _ = handle.emit(
+                    "sip:log",
+                    serde_json::json!({"message": format!("[SIP] Contact URI: {} (server: {}, local port: {})", contact_uri, contact_host, local_port)}),
                 );
 
                 #[allow(clippy::too_many_arguments)]
