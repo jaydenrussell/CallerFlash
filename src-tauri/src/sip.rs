@@ -822,39 +822,6 @@ if auth_sent {
                     return;
                 }
 
-                // TCP/TLS/UDP keepalive: send CRLF every 20s to keep the router's NAT
-                // mapping alive. Consumer routers drop idle NAT mappings in 30-120
-                // seconds depending on transport (UDP is typically ~30s, TCP ~60-120s).
-                let keepalive_transport = transport.clone();
-                let keepalive_server_addr = SipAddr::from(server_addr);
-                let keepalive_cancel = cancel_token.child_token();
-                tokio::spawn(async move {
-                    let mut interval =
-                        tokio::time::interval(std::time::Duration::from_secs(20));
-                    // Skip the immediate first tick
-                    interval.tick().await;
-                    loop {
-                        tokio::select! {
-                            _ = interval.tick() => {
-                                log::debug!("[sip] Sending keepalive...");
-                                let ka = b"\r\n\r\n";
-                                let result = match &keepalive_transport {
-                                    SipConnection::Tcp(tcp) => tcp.send_raw(ka).await,
-                                    SipConnection::Tls(tls) => tls.send_raw(ka).await,
-                                    SipConnection::Udp(udp) => udp.send_raw(ka, &keepalive_server_addr).await,
-                                    _ => Ok(()),
-                                };
-                                if let Err(e) = result {
-                                    log::error!("[sip] Keepalive send failed: {}", e);
-                                } else {
-                                    log::debug!("[sip] Keepalive sent OK");
-                                }
-                            }
-                            _ = keepalive_cancel.cancelled() => break,
-                        }
-                    }
-                });
-
                 // Main loop: re-registration + INVITE listener.
                 // This loop only runs when the initial registration succeeded
                 // (the !registered check above exits on failure).
