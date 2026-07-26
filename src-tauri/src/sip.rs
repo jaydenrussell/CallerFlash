@@ -496,7 +496,7 @@ impl SipClient {
                     "[sip] Using server address as Contact host: {} (NAT traversal strategy)",
                     contact_host
                 );
-                let mut contact_uri = match Uri::try_from({
+                let contact_uri = match Uri::try_from({
                     let transport_param = match protocol.as_str() {
                         "TCP" => ";transport=tcp",
                         "TLS" => ";transport=tls",
@@ -539,10 +539,9 @@ impl SipClient {
                     handle: &AppHandle,
                     connected: &Arc<Mutex<bool>>,
                     consecutive_failures: &mut u32,
-                    local_sip_addr: &SipAddr,
                 ) -> bool {
                     *cseq += 1;
-                    let via = match endpoint_inner.get_via(Some(local_sip_addr.clone()), None) {
+                    let via = match endpoint_inner.get_via(None, None) {
                         Ok(v) => v,
                         Err(e) => {
                             log::error!("[sip] Failed to create Via: {}", e);
@@ -801,20 +800,6 @@ if auth_sent {
                 // Initial registration — its return value is NOT discarded anymore.
                 // If it fails, we abort the task immediately (do_register already
                 // emitted a sip:status error event).
-                let local_sip_addr = match &transport {
-                    // Use the transport's own address as-is so get_via can find it
-                    // in the transport layer. For UDP the host will be 0.0.0.0 but
-                    // the SIP server sends responses to the UDP packet's source IP.
-                    SipConnection::Udp(u) => u.get_addr().clone(),
-                    SipConnection::Tcp(t) => t.get_addr().clone(),
-                    SipConnection::Tls(t) => t.get_addr().clone(),
-                    _ => {
-                        log::error!("[sip] Unsupported transport type for Via");
-                        cancel_token.cancel();
-                        endpoint_serve.abort();
-                        return;
-                    }
-                };
                 let registered = do_register(
                     &endpoint_inner,
                     &server_uri,
@@ -827,7 +812,6 @@ if auth_sent {
                     &handle,
                     &connected,
                     &mut consecutive_failures,
-                    &local_sip_addr,
                 )
                 .await;
 
@@ -920,7 +904,6 @@ if auth_sent {
                                 &handle,
                                 &connected,
                                 &mut consecutive_failures,
-                                &local_sip_addr,
                             ).await;
 
                             if !still_registered {
