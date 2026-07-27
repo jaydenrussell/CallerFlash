@@ -46,16 +46,19 @@ jobs:
           echo "value=$ver" >> $env:GITHUB_OUTPUT
           echo "Resolved version: $ver"
 
-          # If we bumped, update only the [package] version in Cargo.toml and package.json (first match each)
+          # If we bumped, update only the [package] version in Cargo.toml, package.json, and tauri.conf.json (first match each)
           if ($patch -ne [int]$match.Groups[3].Value) {
             $newContent = [regex]::Replace($content, '(?m)^version = "\d+\.\d+\.\d+"', "version = `"$ver`"", 1)
             Set-Content -Path src-tauri/Cargo.toml -Value $newContent -Encoding utf8NoBOM
             $pkg = Get-Content package.json -Raw | ConvertFrom-Json
             $pkg.version = $ver
             $pkg | ConvertTo-Json -Depth 10 | Set-Content -Path package.json -Encoding utf8NoBOM
+            $tauriConf = Get-Content src-tauri/tauri.conf.json -Raw
+            $tauriConf = [regex]::Replace($tauriConf, '(?m)^(\s*"?version"?\s*:\s*")\d+\.\d+\.\d+(")', "`$1$ver`$2", 1)
+            Set-Content -Path src-tauri/tauri.conf.json -Value $tauriConf -Encoding utf8NoBOM
             git config user.name "callerflash-bot"
             git config user.email "bot@callerflash.app"
-            git add src-tauri/Cargo.toml package.json
+            git add src-tauri/Cargo.toml package.json src-tauri/tauri.conf.json
             git commit -m "chore: auto-bump version to $ver (previous tag already existed)"
             git push
           }
@@ -72,6 +75,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: stable
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable

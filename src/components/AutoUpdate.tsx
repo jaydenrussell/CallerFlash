@@ -399,6 +399,16 @@ export function AutoUpdate() {
     if (window.callerflash?.updater?.check) {
       const result = await window.callerflash.updater.check(updateInfo.updateChannel);
       if (id !== checkIdRef.current) return; // Stale response — channel changed
+      // Reject updates that don't match the current channel (e.g. stable
+      // release found while on beta). The Tauri updater endpoint is shared,
+      // so we filter client-side.
+      if (result?.version && !versionMatchesChannel(result.version, updateInfo.updateChannel)) {
+        setOutcome({ kind: 'no-update', message: `No ${updateInfo.updateChannel} updates available.` });
+        setUpdateInfo({ updateAvailable: false, latestVersion: '', lastChecked: new Date() });
+        setDownloadUrl(null);
+        setPhase('idle');
+        return;
+      }
       if (result?.upToDate) {
         // Clear any stale update state — we are on the latest version
         setOutcome({ kind: 'no-update', message: `You're running the latest version (${formatVersion(updateInfo.currentVersion)}).` });
