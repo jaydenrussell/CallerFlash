@@ -46,9 +46,9 @@ jobs:
           echo "value=$ver" >> $env:GITHUB_OUTPUT
           echo "Resolved version: $ver"
 
-          # If we bumped, update Cargo.toml and commit
+          # If we bumped, update only the [package] version in Cargo.toml (first match)
           if ($patch -ne [int]$match.Groups[3].Value) {
-            $newContent = $content -replace 'version = "\d+\.\d+\.\d+"', "version = `"$ver`""
+            $newContent = [regex]::Replace($content, 'version = "\d+\.\d+\.\d+"', "version = `"$ver`"", 1)
             Set-Content -Path src-tauri/Cargo.toml -Value $newContent -Encoding utf8NoBOM
             git config user.name "callerflash-bot"
             git config user.email "bot@callerflash.app"
