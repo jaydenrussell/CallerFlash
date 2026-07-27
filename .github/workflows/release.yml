@@ -48,7 +48,7 @@ jobs:
 
           # If we bumped, update only the [package] version in Cargo.toml and package.json (first match each)
           if ($patch -ne [int]$match.Groups[3].Value) {
-            $newContent = [regex]::Replace($content, 'version = "\d+\.\d+\.\d+"', "version = `"$ver`"", 1)
+            $newContent = [regex]::Replace($content, '(?m)^version = "\d+\.\d+\.\d+"', "version = `"$ver`"", 1)
             Set-Content -Path src-tauri/Cargo.toml -Value $newContent -Encoding utf8NoBOM
             $pkg = Get-Content package.json -Raw | ConvertFrom-Json
             $pkg.version = $ver
