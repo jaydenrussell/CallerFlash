@@ -46,13 +46,16 @@ jobs:
           echo "value=$ver" >> $env:GITHUB_OUTPUT
           echo "Resolved version: $ver"
 
-          # If we bumped, update only the [package] version in Cargo.toml (first match)
+          # If we bumped, update only the [package] version in Cargo.toml and package.json (first match each)
           if ($patch -ne [int]$match.Groups[3].Value) {
             $newContent = [regex]::Replace($content, 'version = "\d+\.\d+\.\d+"', "version = `"$ver`"", 1)
             Set-Content -Path src-tauri/Cargo.toml -Value $newContent -Encoding utf8NoBOM
+            $pkg = Get-Content package.json -Raw | ConvertFrom-Json
+            $pkg.version = $ver
+            $pkg | ConvertTo-Json -Depth 10 | Set-Content -Path package.json -Encoding utf8NoBOM
             git config user.name "callerflash-bot"
             git config user.email "bot@callerflash.app"
-            git add src-tauri/Cargo.toml
+            git add src-tauri/Cargo.toml package.json
             git commit -m "chore: auto-bump version to $ver (previous tag already existed)"
             git push
           }
