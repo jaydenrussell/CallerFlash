@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.value }}
+      created: ${{ steps.tag.outputs.created }}
     steps:
       - uses: actions/checkout@v4
 
@@ -35,14 +36,23 @@ jobs:
           echo "value=$ver" >> $env:GITHUB_OUTPUT
 
       - name: Create git tag
+        id: tag
         run: |
+          TAG="v${{ steps.version.outputs.value }}"
           git config user.name "callerflash-bot"
           git config user.email "bot@callerflash.app"
-          git tag "v${{ steps.version.outputs.value }}"
-          git push origin "v${{ steps.version.outputs.value }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists — skipping."
+            echo "created=false" >> $GITHUB_OUTPUT
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
+            echo "created=true" >> $GITHUB_OUTPUT
+          fi
 
   build:
     needs: tag
+    if: needs.tag.outputs.created == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
