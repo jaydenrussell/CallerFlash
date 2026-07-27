@@ -482,32 +482,19 @@ impl SipClient {
                         return;
                     }
                 };
-                // Determine the host for the Contact header.
+                // Build Contact URI matching the working sip.js library format.
                 //
-                // Strategy: Use the SIP server's address as the Contact host. VoIP.ms
-                // routes incoming calls to the address that sent the REGISTER, so using
-                // the server's address ensures call delivery works even when behind NAT
-                // and the server doesn't send received/rport in the Via header (which
-                // would allow us to detect our public IP).
-                //
-                // This matches the working fmt_fix3 version's behavior.
-                let contact_host = config.server.clone();
-                log::info!(
-                    "[sip] Using server address as Contact host: {} (NAT traversal strategy)",
-                    contact_host
-                );
-                let contact_uri = match Uri::try_from({
-                    let transport_param = match protocol.as_str() {
-                        "TCP" => ";transport=tcp",
-                        "TLS" => ";transport=tls",
-                        _ => "",
-                    };
-                    format!(
-                        "sip:{}@{}:{}{}",
-                        config.username, contact_host, local_port, transport_param
-                    )
-                    .as_str()
-                }) {
+                // The Contact MUST omit the local port and transport parameter.
+                // VoIP.ms routes incoming INVITEs based on the transport source
+                // address of the REGISTER, not the Contact host:port. Including
+                // the local port on the server hostname (e.g.
+                // "toronto6.voip.ms:51616") causes VoIP.ms to attempt connecting
+                // to itself, which fails. The sip.js library uses
+                // "sip:username@domain" and lets the server derive the address
+                // from the REGISTER transport.
+                let contact_uri = match Uri::try_from(
+                    format!("sip:{}@{}", config.username, config.server).as_str(),
+                ) {
                     Ok(u) => u,
                     Err(e) => {
                         log::error!("[sip] Invalid Contact URI: {}", e);
@@ -523,7 +510,7 @@ impl SipClient {
                 );
                 let _ = handle.emit(
                     "sip:log",
-                    serde_json::json!({"message": format!("[SIP] Contact URI: {} (server: {}, local port: {})", contact_uri, contact_host, local_port)}),
+                    serde_json::json!({"message": format!("[SIP] Contact URI: {} (server: {}, local port: {}, protocol: {})", contact_uri, config.server, local_port, protocol)}),
                 );
 
                 #[allow(clippy::too_many_arguments)]
@@ -697,10 +684,11 @@ if auth_sent {
                                 // Extract public address from 401 response top Via header (rport/received)
                                 // and update Contact header before authenticated retry.
                                 // This ensures the Contact uses the public IP:port instead of local LAN IP.
+                                // NOTE: VoIP.ms does NOT send received/rport, so this branch is effectively
+                                // dead code. Kept as a safety net for providers that do support RFC 3581.
                                 if let Ok(via) = resp.top_via_header() {
                                     if let Ok((_, public_addr)) = SipConnection::parse_target_from_via(&via) {
                                         let public_addr_clone = public_addr.clone();
-                                        // Parse the existing Contact to preserve params BEFORE removing it
                                         let existing_contact = tx.original.headers.iter().find_map(|h| {
                                             if let Header::Contact(contact) = h {
                                                 contact.typed().ok()
