@@ -54,7 +54,7 @@ jobs:
             $pkg.version = $ver
             $pkg | ConvertTo-Json -Depth 10 | Set-Content -Path package.json -Encoding utf8NoBOM
             $tauriConf = Get-Content src-tauri/tauri.conf.json -Raw
-            $tauriConf = [regex]::Replace($tauriConf, '(?m)^(\s*"?version"?\s*:\s*")\d+\.\d+\.\d+(")', "`$1$ver`$2", 1)
+            $tauriConf = [regex]::Replace($tauriConf, '(?m)^(\s*"?version"?\s*:\s*")\d+\.\d+\.\d+(")', "`${1}$ver`${2}", 1)
             Set-Content -Path src-tauri/tauri.conf.json -Value $tauriConf -Encoding utf8NoBOM
             git config user.name "callerflash-bot"
             git config user.email "bot@callerflash.app"
