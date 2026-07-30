@@ -285,10 +285,8 @@ function setup(): void {
              logError('sip.call.hangup', e);
              return { success: false, error: String(e) };
            }
-         },
-       },
-     },
-    },
+          },
+        },
 
     onToastDiagnostic: (callback: (data: { level: string; message: string; details?: string }) => void) => {
       const unlisten: Promise<() => void> = listen('toast:diagnostic', (event) => {
@@ -296,8 +294,9 @@ function setup(): void {
       }).catch((e) => { logError('onToastDiagnostic', e); return () => {}; });
       return () => { unlisten.then((fn) => fn()).catch((e) => logError('onToastDiagnostic cleanup', e)); };
     },
+  },
 
-    diagnostics: {
+  diagnostics: {
       append: (entry: { id: string; timestamp: Date | string; level: string; category: string; message: string; details?: string | null }) => {
         invoke('diagnostics_append', { entry }).catch((e) => logError('diagnostics.append', e));
       },
