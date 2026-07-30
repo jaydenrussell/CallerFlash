@@ -64,8 +64,8 @@ jobs:
           git clone https://github.com/pjsip/pjproject.git /tmp/pjproject
           cd /tmp/pjproject
           ./configure --prefix=/mingw64 --enable-shared=no
-          mingw32-make dep -j$(nproc)
-          mingw32-make -j$(nproc)
+          mingw32-make dep -j4
+          mingw32-make -j4
           mingw32-make install
 
       - name: Setup Rust (GNU target, compatible with MSYS2 PJSIP)
