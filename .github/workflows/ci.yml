@@ -62,6 +62,10 @@ jobs:
         shell: msys2 {0}
         run: pacman -S --noconfirm mingw-w64-x86_64-pkgconf
 
+      - name: Create pkg-config symlink
+        shell: msys2 {0}
+        run: ln -s /mingw64/bin/pkgconf /mingw64/bin/pkg-config
+
       - name: Build and install PJSIP from source
         shell: msys2 {0}
         run: |
