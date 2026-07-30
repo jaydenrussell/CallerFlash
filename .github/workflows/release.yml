@@ -99,7 +99,6 @@ jobs:
           make dep -j$(nproc)
           make -j$(nproc)
           make install
-          ldconfig
 
       - name: Setup Rust (GNU target, compatible with MSYS2 PJSIP)
         uses: dtolnay/rust-toolchain@stable
