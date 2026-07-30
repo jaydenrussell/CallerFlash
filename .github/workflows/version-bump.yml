@@ -38,7 +38,7 @@ jobs:
         shell: pwsh
         run: |
           $content = Get-Content src-tauri/Cargo.toml -Raw
-          $match = [regex]::Match($content, 'version = "(\d+)\.(\d+)\.(\d+)"')
+          $match = [regex]::Match($content, '(?m)^version = "(\d+)\.(\d+)\.(\d+)"')
           if (-not $match.Success) {
             Write-Error "Cannot parse version from Cargo.toml"
             exit 1

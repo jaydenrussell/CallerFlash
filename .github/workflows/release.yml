@@ -17,7 +17,7 @@ jobs:
     name: Tag version
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.version.outputs.value }}
+      version: ${{ steps.version.outputs.next }}
     steps:
       - uses: actions/checkout@v4
 
@@ -26,7 +26,7 @@ jobs:
         shell: pwsh
         run: |
           $content = Get-Content src-tauri/Cargo.toml -Raw
-          $match = [regex]::Match($content, 'version = "(\d+)\.(\d+)\.(\d+)"')
+          $match = [regex]::Match($content, '(?m)^version = "(\d+)\.(\d+)\.(\d+)"')
           if (-not $match.Success) {
             Write-Error "Cannot parse version from Cargo.toml"
             exit 1
@@ -89,8 +89,8 @@ jobs:
         run: |
           git config user.name "callerflash-bot"
           git config user.email "bot@callerflash.app"
-          git tag "v${{ steps.version.outputs.value }}"
-          git push origin "v${{ steps.version.outputs.value }}"
+          git tag "v${{ steps.version.outputs.next }}"
+          git push origin "v${{ steps.version.outputs.next }}"
 
   build:
     needs: tag
