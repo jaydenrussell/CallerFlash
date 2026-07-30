@@ -1,8 +1,8 @@
 mod diagnostics;
 mod error;
 mod migrate;
+mod pjsip;
 mod ratelimit;
-mod sip;
 mod startup;
 mod storage;
 mod tray;
@@ -10,12 +10,16 @@ mod update;
 
 use diagnostics::{diagnostics_append, diagnostics_export, diagnostics_load};
 use error::CommandError;
+use pjsip::client::PjsipClient;
+use pjsip::types::{InviteData, SipStatus};
 use ratelimit::RATE_LIMITER;
-use sip::SipClient;
 use std::sync::Mutex;
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Listener, Manager};
 
-pub use sip::{sip_connect, sip_disconnect, sip_test_connection};
+pub use pjsip::client::PjsipClient;
+pub use pjsip::config::PjsipSipConfig;
+pub use pjsip::types::{CallerInfo, InviteData, SipStatus};
 pub use storage::{storage_load, storage_save};
 pub use tray::{tray_set_sip_status, tray_set_update_available};
 pub use update::cmd_verify_update;
@@ -336,7 +340,77 @@ fn run_startup_checks(app: AppHandle) -> error::StartupReport {
 
 // ── App entry point ────────────────────────────────────────────────
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[tauri::command]
+async fn pjsip_connect(
+    app: AppHandle,
+    config: serde_json::Value,
+) -> Result<(), CommandError> {
+    let pjsip_client = app.state::<PjsipClient>();
+    let sip_config: PjsipSipConfig = serde_json::from_value(config)
+        .map_err(|e| CommandError::invalid_input(format!("Invalid SIP config: {}", e)))?;
+    sip_config.validate()?;
+    pjsip_client.connect(sip_config).await.map_err(|e| {
+        CommandError::unknown(format!("SIP connection failed: {}", e))
+    })?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn pjsip_disconnect(app: AppHandle) -> Result<(), CommandError> {
+    let pjsip_client = app.state::<PjsipClient>();
+    pjsip_client.disconnect().await.map_err(|e| {
+        CommandError::unknown(format!("SIP disconnection failed: {}", e))
+    })?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn pjsip_test_connection(app: AppHandle) -> Result<serde_json::Value, CommandError> {
+    let pjsip_client = app.state::<PjsipClient>();
+    let is_connected = pjsip_client.is_connected();
+    Ok(serde_json::json!({
+        "connected": is_connected,
+        "engine": "pjsip",
+    }))
+}
+
+#[tauri::command]
+async fn pjsip_invite(
+    app: AppHandle,
+    target: String,
+) -> Result<(), CommandError> {
+    let pjsip_client = app.state::<PjsipClient>();
+    pjsip_client.make_call(&target).await.map_err(|e| {
+        CommandError::unknown(format!("Call failed: {}", e))
+    })?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn pjsip_answer(
+    app: AppHandle,
+    call_id: u32,
+) -> Result<(), CommandError> {
+    let pjsip_client = app.state::<PjsipClient>();
+    pjsip_client.answer_call(call_id).await.map_err(|e| {
+        CommandError::unknown(format!("Answer failed: {}", e))
+    })?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn pjsip_hangup(
+    app: AppHandle,
+    call_id: u32,
+) -> Result<(), CommandError> {
+    let pjsip_client = app.state::<PjsipClient>();
+    pjsip_client.hangup_call(call_id).await.map_err(|e| {
+        CommandError::unknown(format!("Hangup failed: {}", e))
+    })?;
+    Ok(())
+}
+
+    #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -350,7 +424,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::default().build())
         .setup(|app| {
-            app.manage(SipClient::new(app.handle().clone()));
+            app.manage(PjsipClient::new(app.handle().clone()));
             app.manage(ToastState {
                 pending_data: Mutex::new(None),
             });
@@ -436,9 +510,12 @@ pub fn run() {
             diagnostics_load,
             shell_open_external,
             notify_show,
-            sip_connect,
-            sip_disconnect,
-            sip_test_connection,
+            pjsip_connect,
+            pjsip_disconnect,
+            pjsip_test_connection,
+            pjsip_invite,
+            pjsip_answer,
+            pjsip_hangup,
             tray_set_sip_status,
             tray_set_update_available,
             toast_show,

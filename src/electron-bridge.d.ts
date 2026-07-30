@@ -121,14 +121,19 @@ declare global {
     onBackgroundCheck: (callback: (data: { version?: string; upToDate?: boolean }) => void) => () => void;
   }
 
-  interface CallerFlashSipApi {
-    connect: (config: Record<string, unknown>) => Promise<{ success: boolean; message?: string }>;
-    disconnect: () => Promise<{ success: boolean }>;
-    testConnection: (config: Record<string, unknown>) => Promise<Record<string, unknown>>;
-    onStatus: (callback: (data: { status: string; message?: string }) => void) => () => void;
-    onLog: (callback: (data: { message: string }) => void) => () => void;
-    onInvite: (callback: (data: { callerNumber: string; callerName: string }) => void) => () => void;
-  }
+   interface CallerFlashSipApi {
+     connect: (config: Record<string, unknown>) => Promise<{ success: boolean; message?: string }>;
+     disconnect: () => Promise<{ success: boolean }>;
+     testConnection: (config: Record<string, unknown>) => Promise<Record<string, unknown>>;
+     onStatus: (callback: (data: { status: string; message?: string }) => void) => () => void;
+     onLog: (callback: (data: { message: string }) => void) => () => void;
+     onInvite: (callback: (data: { callerNumber: string; callerName: string }) => void) => () => void;
+     call: {
+       invite: (target: string) => Promise<{ success: boolean; error?: string }>;
+       answer: (callId: number) => Promise<{ success: boolean; error?: string }>;
+       hangup: (callId: number) => Promise<{ success: boolean; error?: string }>;
+     };
+   }
 
   interface CallerFlashPlatformInfo {
     isElectron: true;

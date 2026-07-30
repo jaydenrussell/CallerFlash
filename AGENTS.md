@@ -13,7 +13,7 @@ CallerFlash: a Windows SIP caller-ID app (registers to a SIP trunk, shows toast 
 ## Architecture map
 
 - `src-tauri/src/` — Rust backend (compiled with `cargo`):
-  - `sip.rs` — SIP client via `rsipstack`; emits `sip:status` events with states `connecting` / `registered` / `error` / `disconnected`; `sip_connect`, `sip_disconnect`, `sip_test_connection` commands.
+  - `pjsip/` — SIP client via `pjsua-rust` wrapper around PJSIP C library; emits `sip:status` events with states `connecting` / `registered` / `error` / `disconnected`; `pjsip_connect`, `pjsip_disconnect`, `pjsip_test_connection`, `pjsip_invite`, `pjsip_answer`, `pjsip_hangup` commands.
   - `tray.rs` — system tray. Icon/tooltip are driven by a backend listener on `sip:status` (status→color: green=registered, red=error, amber=connecting, blue=idle). `tray_set_sip_status` updates the tooltip only.
   - `diagnostics.rs` — append/load diagnostic log store.
   - `lib.rs` — Tauri builder + `invoke_handler` registration (every new `#[tauri::command]` must be added here and re-exported via `pub use`).
@@ -23,6 +23,7 @@ CallerFlash: a Windows SIP caller-ID app (registers to a SIP trunk, shows toast 
   - `store/useAppStore.ts` — app state; `sipConnected` / `sipRegistered` / `isConnecting` drive the UI.
   - `components/SipSettings.tsx`, `Sidebar.tsx`, `Dashboard.tsx`, `Diagnostics.tsx` — UI.
 - `src-tauri/Cargo.toml` — Tauri `2.11.x`; tray features require `"tray-icon"` + `"image-png"`.
+- **pjsua-rust prerequisite**: The `pjsua-rust` crate requires `pkg-config` + PJSIP C libraries installed on the build system. On Windows, this means installing PJSIP via MSYS2/vcpkg or pre-built binaries and ensuring `pkg-config` is in PATH.
 
 ## SIP status gotchas
 

@@ -210,8 +210,8 @@ function setup(): void {
           cfg.server = sanitizeSipServer(cfg.server);
         }
         try {
-          const result = safeJsonResponse(await invoke('sip_connect', { config }));
-          return { success: result.success === true, message: typeof result.message === 'string' ? result.message : undefined };
+          const result = safeJsonResponse(await invoke('pjsip_connect', { config }));
+          return { success: true, message: undefined };
         } catch (e) {
           const msg = (e && typeof e === 'object' && 'message' in e) ? String((e as Record<string, unknown>).message) : String(e);
           logError('sip.connect invoke failed:', e);
@@ -220,8 +220,8 @@ function setup(): void {
       },
       disconnect: async () => {
         try {
-          const result = safeJsonResponse(await invoke('sip_disconnect'));
-          return { success: result.success === true };
+          safeJsonResponse(await invoke('pjsip_disconnect'));
+          return { success: true };
         } catch (e) {
           logError('sip.disconnect', e);
           return { success: false };
@@ -229,7 +229,11 @@ function setup(): void {
       },
       testConnection: async (config: unknown) => {
         try {
-          const result = safeJsonResponse(await invoke('sip_test_connection', { config }));
+          const cfg = config as Record<string, unknown>;
+          if (typeof cfg.server === 'string') {
+            cfg.server = sanitizeSipServer(cfg.server);
+          }
+          const result = safeJsonResponse(await invoke('pjsip_test_connection', { config }));
           return result;
         } catch (e) {
           logError('sip.testConnection', e);
@@ -248,12 +252,42 @@ function setup(): void {
         }).catch((e) => { logError('sip.onLog', e); return () => {}; });
         return () => { unlisten.then((fn) => fn()).catch((e) => logError('sip.onLog cleanup', e)); };
       },
-      onInvite: (callback: (data: { callerNumber: string; callerName: string }) => void) => {
-        const unlisten: Promise<() => void> = listen('sip:invite', (event) => {
-          callback(event.payload as { callerNumber: string; callerName: string });
-        }).catch((e) => { logError('sip.onInvite', e); return () => {}; });
-        return () => { unlisten.then((fn) => fn()).catch((e) => logError('sip.onInvite cleanup', e)); };
-      },
+       onInvite: (callback: (data: { callerNumber: string; callerName: string }) => void) => {
+         const unlisten: Promise<() => void> = listen('sip:invite', (event) => {
+           callback(event.payload as { callerNumber: string; callerName: string });
+         }).catch((e) => { logError('sip.onInvite', e); return () => {}; });
+         return () => { unlisten.then((fn) => fn()).catch((e) => logError('sip.onInvite cleanup', e)); };
+       },
+       call: {
+         invite: async (target: string) => {
+           try {
+             await invoke('pjsip_invite', { target });
+             return { success: true };
+           } catch (e) {
+             logError('sip.call.invite', e);
+             return { success: false, error: String(e) };
+           }
+         },
+         answer: async (callId: number) => {
+           try {
+             await invoke('pjsip_answer', { callId });
+             return { success: true };
+           } catch (e) {
+             logError('sip.call.answer', e);
+             return { success: false, error: String(e) };
+           }
+         },
+         hangup: async (callId: number) => {
+           try {
+             await invoke('pjsip_hangup', { callId });
+             return { success: true };
+           } catch (e) {
+             logError('sip.call.hangup', e);
+             return { success: false, error: String(e) };
+           }
+         },
+       },
+     },
     },
 
     onToastDiagnostic: (callback: (data: { level: string; message: string; details?: string }) => void) => {

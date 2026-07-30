@@ -78,10 +78,33 @@ jobs:
         with:
           ref: stable
 
-      - name: Setup Rust
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-pkg-config
+            mingw-w64-x86_64-make
+            mingw-w64-x86_64-git
+          release: false
+
+      - name: Build and install PJSIP from source
+        shell: msys2 {0}
+        run: |
+          git clone https://github.com/pjsip/pjproject.git /tmp/pjproject
+          cd /tmp/pjproject
+          ./configure --enable-shared=no
+          make dep -j$(nproc)
+          make -j$(nproc)
+          make install
+          ldconfig
+
+      - name: Setup Rust (GNU target, compatible with MSYS2 PJSIP)
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-pc-windows-msvc
+          targets: x86_64-pc-windows-gnu
 
       - name: Setup Node
         uses: actions/setup-node@v4
