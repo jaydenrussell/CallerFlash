@@ -75,6 +75,9 @@ jobs:
           mingw32-make -j4 || true
           mingw32-make install
 
+      - name: Add MSYS2 to PATH
+        run: echo "C:\\msys64\\mingw64\\bin;C:\\msys64\\usr\\bin;${{ env.PATH }}" >> $GITHUB_PATH
+
       - name: Setup Rust (GNU target, compatible with MSYS2 PJSIP)
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -86,13 +89,10 @@ jobs:
           workspaces: src-tauri
 
       - name: Format check
-        shell: msys2 {0}
         run: cargo fmt --check --manifest-path src-tauri/Cargo.toml
 
       - name: Clippy
-        shell: msys2 {0}
         run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 
       - name: Run tests
-        shell: msys2 {0}
         run: cargo test --manifest-path src-tauri/Cargo.toml
