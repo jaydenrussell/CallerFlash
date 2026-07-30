@@ -88,7 +88,7 @@ jobs:
       - name: Create git tag
         run: |
           git config user.name "callerflash-bot"
-          git config user.email "bot@callerflash.app"
+          git config user.email "bot@callerflash-bot"
           git tag "v${{ steps.version.outputs.next }}"
           git push origin "v${{ steps.version.outputs.next }}"
 
@@ -137,6 +137,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-gnu
+
+      - name: Set GNU as default toolchain
+        run: rustup default stable-x86_64-pc-windows-gnu
 
       - name: Setup Node
         uses: actions/setup-node@v4

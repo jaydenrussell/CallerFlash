@@ -83,6 +83,9 @@ jobs:
         with:
           targets: x86_64-pc-windows-gnu
 
+      - name: Set GNU as default toolchain
+        run: rustup default stable-x86_64-pc-windows-gnu
+
       - name: Cache cargo
         uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
         with:
