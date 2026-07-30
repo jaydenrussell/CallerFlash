@@ -62,7 +62,7 @@ jobs:
         run: |
           git clone https://github.com/pjsip/pjproject.git /tmp/pjproject
           cd /tmp/pjproject
-          ./configure --enable-shared=no
+          ./configure --prefix=/mingw64 --enable-shared=no
           make dep -j$(nproc)
           make -j$(nproc)
           make install
