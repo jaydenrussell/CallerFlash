@@ -107,7 +107,7 @@ jobs:
           update: true
           install: >-
             mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-pkgconf
+            pkgconf
             mingw-w64-x86_64-make
             make
             mingw-w64-x86_64-git
@@ -115,13 +115,11 @@ jobs:
 
       - name: Install pkg-config explicitly
         shell: msys2 {0}
-        run: pacman -S --noconfirm mingw-w64-x86_64-pkgconf
+        run: pacman -S --noconfirm pkgconf
 
       - name: Create pkg-config symlink
         shell: msys2 {0}
-        run: |
-          ln -s /mingw64/bin/pkgconf /mingw64/bin/pkg-config
-          ln -s /usr/bin/pkgconf /usr/bin/pkg-config
+        run: ln -s /usr/bin/pkgconf /usr/bin/pkg-config
 
       - name: Build and install PJSIP from source
         shell: msys2 {0}
