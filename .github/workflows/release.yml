@@ -34,34 +34,56 @@ jobs:
           $major = [int]$match.Groups[1].Value
           $minor = [int]$match.Groups[2].Value
           $patch = [int]$match.Groups[3].Value
+          $current = "$major.$minor.$patch"
 
-          # Bump patch until the tag doesn't already exist
-          do {
-            $patch++
-            $ver = "$major.$minor.$patch"
-            $tag = "v$ver"
-            $exists = (git tag -l "$tag") -eq $tag
-          } while ($exists)
-
-          echo "value=$ver" >> $env:GITHUB_OUTPUT
-          echo "Resolved version: $ver"
-
-          # If we bumped, update only the [package] version in Cargo.toml, package.json, and tauri.conf.json (first match each)
-          if ($patch -ne [int]$match.Groups[3].Value) {
-            $newContent = [regex]::Replace($content, '(?m)^version = "\d+\.\d+\.\d+"', "version = `"$ver`"", 1)
-            Set-Content -Path src-tauri/Cargo.toml -Value $newContent -Encoding utf8NoBOM
-            $pkg = Get-Content package.json -Raw | ConvertFrom-Json
-            $pkg.version = $ver
-            $pkg | ConvertTo-Json -Depth 10 | Set-Content -Path package.json -Encoding utf8NoBOM
-            $tauriConf = Get-Content src-tauri/tauri.conf.json -Raw
-            $tauriConf = [regex]::Replace($tauriConf, '(?m)^(\s*"?version"?\s*:\s*")\d+\.\d+\.\d+(")', "`${1}$ver`${2}", 1)
-            Set-Content -Path src-tauri/tauri.conf.json -Value $tauriConf -Encoding utf8NoBOM
-            git config user.name "callerflash-bot"
-            git config user.email "bot@callerflash.app"
-            git add src-tauri/Cargo.toml package.json src-tauri/tauri.conf.json
-            git commit -m "chore: auto-bump version to $ver (previous tag already existed)"
-            git push
+          # z (patch) can never reach 10 — roll into minor
+          if ($patch -ge 9) {
+            $minor += 1
+            $patch = 0
+          } else {
+            $patch += 1
           }
+
+          $new = "$major.$minor.$patch"
+          echo "current=$current" >> $env:GITHUB_OUTPUT
+          echo "next=$new" >> $env:GITHUB_OUTPUT
+
+      - name: Update version in all manifests
+        if: steps.version.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          $cur = "${{ steps.version.outputs.current }}"
+          $nxt = "${{ steps.version.outputs.next }}"
+
+          # Cargo.toml — use .Replace() for literal string replacement (no regex)
+          $cargo = Get-Content src-tauri/Cargo.toml -Raw
+          $oldVer = 'version = "' + $cur + '"'
+          $newVer = 'version = "' + $nxt + '"'
+          if ($cargo -notmatch [regex]::Escape($oldVer)) {
+            Write-Error "Could not find '$oldVer' in Cargo.toml"
+            exit 1
+          }
+          $cargo = $cargo.Replace($oldVer, $newVer)
+          Set-Content -Path src-tauri/Cargo.toml -Value $cargo -Encoding utf8 -NoNewline
+
+          # package.json
+          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
+          $pkg.version = $nxt
+          $pkg | ConvertTo-Json -Depth 32 | Set-Content package.json -Encoding utf8
+
+          # tauri.conf.json
+          $tauri = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $tauri.version = $nxt
+          $tauri | ConvertTo-Json -Depth 32 | Set-Content src-tauri/tauri.conf.json -Encoding utf8
+
+      - name: Commit and push
+        if: steps.version.outputs.skip != 'true'
+        run: |
+          git config user.name "callerflash-bot"
+          git config user.email "bot@callerflash.app"
+          git add src-tauri/Cargo.toml package.json src-tauri/tauri.conf.json
+          git commit -m "chore: bump version to ${{ steps.version.outputs.next }}"
+          git push
 
       - name: Create git tag
         run: |
@@ -90,6 +112,10 @@ jobs:
             make
             mingw-w64-x86_64-git
           release: false
+
+      - name: Install pkg-config explicitly
+        shell: msys2 {0}
+        run: pacman -S --noconfirm mingw-w64-x86_64-pkgconf
 
       - name: Build and install PJSIP from source
         shell: msys2 {0}

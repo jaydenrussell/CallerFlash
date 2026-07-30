@@ -58,6 +58,10 @@ jobs:
             mingw-w64-x86_64-git
           release: false
 
+      - name: Install pkg-config explicitly
+        shell: msys2 {0}
+        run: pacman -S --noconfirm mingw-w64-x86_64-pkgconf
+
       - name: Build and install PJSIP from source
         shell: msys2 {0}
         run: |
