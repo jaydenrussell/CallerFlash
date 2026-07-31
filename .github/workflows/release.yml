@@ -16,7 +16,7 @@ jobs:
       with:
         fetch-depth: 0
 
-    - name: Setup MSYS2 and dependencies
+    - name: Setup MSYS2
       run: |
         choco install msys2 -y
         choco install mingw -y
@@ -24,11 +24,14 @@ jobs:
         choco install git -y
         choco install make -y
         choco install python -y
-        # Install Node.js directly (npm included)
-        Invoke-WebRequest -Uri "https://nodejs.org/dist/v20.17.0/node-v20.17.0-x64.msi" -OutFile "node.msi"
-        Start-Process -Wait -FilePath "node.msi" -ArgumentList "/quiet"
-        Remove-Item "node.msi"
-        # Verify installations
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+
+    - name: Verify installations
+      run: |
         make --version
         pkg-config --version
         node --version
@@ -49,12 +52,7 @@ jobs:
         PKG_CONFIG_PATH: C:\\msys64\\mingw64\\lib\\pkgconfig
         TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-      run: |
-        if ("${{ github.ref_type }}" -eq "tag") {
-          npm run build:tauri -- --beta
-        } else {
-          npm run build:tauri
-        }
+      run: npm run build:tauri
 
   release:
     needs: build
