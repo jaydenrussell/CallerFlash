@@ -80,7 +80,7 @@ jobs:
         if: steps.version.outputs.skip != 'true'
         run: |
           git config user.name "callerflash-bot"
-          git config user.email "bot@callerflash.app"
+          git config user.email "bot@callerflash-bot"
           git add src-tauri/Cargo.toml package.json src-tauri/tauri.conf.json
           git commit -m "chore: bump version to ${{ steps.version.outputs.next }}"
           git push
@@ -130,13 +130,12 @@ jobs:
           mingw32-make -j4 || true
           mingw32-make install
 
-      - name: Set environment variables for MSYS2
+      - name: Set environment variables for pkg-config
         shell: pwsh
         run: |
-          $msys2Bin = "C:\\msys64\\usr\\bin"
-          $mingwBin = "C:\\msys64\\mingw64\\bin"
+          $pkgConfigExe = "C:\\msys64\\usr\\bin\\pkgconf.exe"
           $pkgConfigPath = "C:\\msys64\\mingw64\\lib\\pkgconfig"
-          echo "PATH=$msys2Bin;$mingwBin;$env:PATH" >> $GITHUB_ENV
+          echo "PKG_CONFIG=$pkgConfigExe" >> $GITHUB_ENV
           echo "PKG_CONFIG_PATH=$pkgConfigPath" >> $GITHUB_ENV
 
       - name: Setup Rust (GNU target, compatible with MSYS2 PJSIP)
