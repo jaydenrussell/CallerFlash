@@ -42,13 +42,14 @@ jobs:
         mingw32-make --version
 
     - name: Build PJSIP from source
-      shell: msys2 {0}
       run: |
-        git clone https://github.com/pjsip/pjproject.git /tmp/pjproject
-        cd /tmp/pjproject
-        ./configure --prefix=/mingw64 --disable-video --enable-shared=no --enable-pkg-config
-        mingw32-make -j4
-        mingw32-make install
+        C:\msys64\usr\bin\bash -lc "
+          git clone https://github.com/pjsip/pjproject.git /tmp/pjproject &&
+          cd /tmp/pjproject &&
+          ./configure --prefix=/mingw64 --disable-video --enable-shared=no --enable-pkg-config &&
+          mingw32-make -j4 &&
+          mingw32-make install
+        "
 
     - name: Build Tauri app
       env:
