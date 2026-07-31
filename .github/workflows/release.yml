@@ -130,14 +130,6 @@ jobs:
           mingw32-make -j4 || true
           mingw32-make install
 
-      - name: Set environment variables for pkg-config
-        shell: pwsh
-        run: |
-          $pkgConfigExe = "C:\\msys64\\usr\\bin\\pkgconf.exe"
-          $pkgConfigPath = "C:\\msys64\\mingw64\\lib\\pkgconfig"
-          echo "PKG_CONFIG=$pkgConfigExe" >> $GITHUB_ENV
-          echo "PKG_CONFIG_PATH=$pkgConfigPath" >> $GITHUB_ENV
-
       - name: Setup Rust (GNU target, compatible with MSYS2 PJSIP)
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -156,6 +148,9 @@ jobs:
         run: npm ci
 
       - name: Build Tauri app
+        env:
+          PKG_CONFIG: C:\\msys64\\usr\\bin\\pkgconf.exe
+          PKG_CONFIG_PATH: C:\\msys64\\mingw64\\lib\\pkgconfig
         run: npm run build:tauri
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}

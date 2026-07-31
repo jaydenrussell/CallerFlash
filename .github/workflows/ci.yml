@@ -75,14 +75,6 @@ jobs:
           mingw32-make -j4 || true
           mingw32-make install
 
-      - name: Set environment variables for pkg-config
-        shell: pwsh
-        run: |
-          $pkgConfigExe = "C:\\msys64\\usr\\bin\\pkgconf.exe"
-          $pkgConfigPath = "C:\\msys64\\mingw64\\lib\\pkgconfig"
-          echo "PKG_CONFIG=$pkgConfigExe" >> $GITHUB_ENV
-          echo "PKG_CONFIG_PATH=$pkgConfigPath" >> $GITHUB_ENV
-
       - name: Setup Rust (GNU target, compatible with MSYS2 PJSIP)
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -97,10 +89,19 @@ jobs:
           workspaces: src-tauri
 
       - name: Format check
+        env:
+          PKG_CONFIG: C:\\msys64\\usr\\bin\\pkgconf.exe
+          PKG_CONFIG_PATH: C:\\msys64\\mingw64\\lib\\pkgconfig
         run: cargo fmt --check --manifest-path src-tauri/Cargo.toml
 
       - name: Clippy
+        env:
+          PKG_CONFIG: C:\\msys64\\usr\\bin\\pkgconf.exe
+          PKG_CONFIG_PATH: C:\\msys64\\mingw64\\lib\\pkgconfig
         run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 
       - name: Run tests
+        env:
+          PKG_CONFIG: C:\\msys64\\usr\\bin\\pkgconf.exe
+          PKG_CONFIG_PATH: C:\\msys64\\mingw64\\lib\\pkgconfig
         run: cargo test --manifest-path src-tauri/Cargo.toml
