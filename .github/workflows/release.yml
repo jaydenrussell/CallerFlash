@@ -3,6 +3,9 @@ name: Release
 on:
   push:
     branches: [ main ]
+    tags:
+      - 'v*'
+      - 'beta*'
 
 jobs:
   build:
@@ -10,6 +13,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
 
     - name: Setup MSYS2
       run: |
@@ -17,6 +22,7 @@ jobs:
         choco install mingw -y
         choco install pkg-config -y
         choco install git -y
+        choco install make -y
         choco install python -y
         choco install npm -y
 
@@ -35,4 +41,40 @@ jobs:
         PKG_CONFIG_PATH: C:\\msys64\\mingw64\\lib\\pkgconfig
         TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-      run: npm run build:tauri
+      run: |
+        if [ "${{ github.ref_type }}" = "tag" ]; then
+          npm run build:tauri -- --beta
+        else
+          npm run build:tauri
+        fi
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Create Beta Release
+        if: startsWith(github.ref, 'refs/tags/beta')
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Beta Release ${{ github.ref_name }}
+          draft: false
+          prerelease: true
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Stable Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
