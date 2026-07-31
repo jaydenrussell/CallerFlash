@@ -16,7 +16,7 @@ jobs:
       with:
         fetch-depth: 0
 
-    - name: Setup MSYS2
+    - name: Setup MSYS2 and dependencies
       run: |
         choco install msys2 -y
         choco install mingw -y
@@ -24,6 +24,9 @@ jobs:
         choco install git -y
         choco install make -y
         choco install python -y
+        # Add MSYS2 to PATH
+        echo "C:\msys64\usr\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+        echo "C:\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
 
     - name: Setup Node.js
       uses: actions/setup-node@v4
@@ -36,6 +39,7 @@ jobs:
         pkg-config --version
         node --version
         npm --version
+        mingw32-make --version
 
     - name: Build PJSIP from source
       shell: msys2 {0}
