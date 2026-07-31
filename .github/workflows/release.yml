@@ -131,10 +131,13 @@ jobs:
           mingw32-make install
 
       - name: Set environment variables for MSYS2
+        shell: pwsh
         run: |
-          echo "MSYS2_PATH=C:\\msys64\\mingw64\\bin;C:\\msys64\\usr\\bin" >> $GITHUB_ENV
-          echo "PKG_CONFIG_PATH=C:\\msys64\\mingw64\\lib\\pkgconfig" >> $GITHUB_ENV
-          echo "C:\\msys64\\mingw64\\bin;C:\\msys64\\usr\\bin" >> $GITHUB_PATH
+          $msys2Bin = "C:\\msys64\\usr\\bin"
+          $mingwBin = "C:\\msys64\\mingw64\\bin"
+          $pkgConfigPath = "C:\\msys64\\mingw64\\lib\\pkgconfig"
+          echo "PATH=$msys2Bin;$mingwBin;$env:PATH" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=$pkgConfigPath" >> $GITHUB_ENV
 
       - name: Setup Rust (GNU target, compatible with MSYS2 PJSIP)
         uses: dtolnay/rust-toolchain@stable
