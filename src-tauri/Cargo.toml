@@ -1,6 +1,6 @@
 [package]
 name = "callerflash"
-version = "1.7.1"
+version = "1.7.2"
 description = "SIP-compliant client with toast notifications for any standard SIP provider"
 authors = ["CallerFlash"]
 license = "MIT"
