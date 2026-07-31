@@ -1,7 +1,7 @@
 {
   "name": "callerflash",
   "private": true,
-  "version": "1.7.6",
+  "version": "1.7.7",
   "author": "CallerFlash",
   "description": "SIP-compliant client with toast notifications for any standard SIP provider",
   "license": "MIT",
