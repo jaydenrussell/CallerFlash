@@ -589,7 +589,7 @@ dependencies = [
 
 [[package]]
 name = "callerflash"
-version = "1.7.9-beta.1"
+version = "1.8.0-beta"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
