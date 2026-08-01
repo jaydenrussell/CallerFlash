@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import path from "path";
 import { fileURLToPath } from "url";
 import { readFileSync } from "fs";

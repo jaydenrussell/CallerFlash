@@ -32,7 +32,6 @@ declare global {
 
   interface CallerFlashNotifyApi {
     /** Show a native OS notification. No-op in web demo. */
-    show(title: string, body: string): void;
     show(data: { title: string; body: string; urgency?: 'critical' | 'normal' | 'low'; timeoutType?: 'default' | 'never'; soundEnabled?: boolean }): void;
     /** Request notification permission from the OS. Returns 'granted' | 'denied'. */
     requestPermission?: () => Promise<string>;
@@ -111,11 +110,13 @@ declare global {
   interface CallerFlashUpdaterApi {
     check: (channel: string) => Promise<UpdaterResult>;
     download: (channel: string, version: string, downloadUrl: string) => Promise<{ status: string; version?: string; error?: string }>;
-    install: (version: string) => Promise<{ status: string }>;
+    install: (version: string) => Promise<{ status: string; error?: string }>;
     show: () => void;
     setChannel: (channel: string) => void;
     getDownloadState: () => Promise<{ status: string; version: string | null; path: string | null; error: string | null }>;
-    onStatus: (callback: (data: { status: string; version?: string; progress?: number }) => void) => () => void;
+    /** Notify the backend that update settings changed so any periodic check reschedules. */
+    notifySettingsChanged?: () => void;
+    onStatus: (callback: (data: { status: string; version?: string; progress?: number; downloadUrl?: string; message?: string }) => void) => () => void;
     onProgress: (callback: (data: { percent: number }) => void) => () => void;
     onDiagnostic: (callback: (data: { level: string; message: string; details?: string }) => void) => () => void;
     onBackgroundCheck: (callback: (data: { version?: string; upToDate?: boolean }) => void) => () => void;
@@ -131,7 +132,7 @@ declare global {
   }
 
   interface CallerFlashPlatformInfo {
-    isElectron: true;
+    isElectron: boolean;
     arch: string;
     version: string;
   }
@@ -155,6 +156,10 @@ declare global {
       setStartWithWindows: (enabled: boolean) => void;
       getStartWithWindows: () => Promise<boolean | null>;
       setStartMinimized: (enabled: boolean) => void;
+    };
+    storage: {
+      load: () => Promise<Record<string, unknown>>;
+      save: (data: Record<string, unknown>) => Promise<{ success: boolean }>;
     };
     startup: {
       runChecks: () => Promise<{

@@ -108,7 +108,7 @@ function setup(): void {
     },
 
     notify: {
-      show: (data: { title: string; body: string; urgency?: string; timeoutType?: string; soundEnabled?: boolean }) => {
+      show: (data: { title: string; body: string; urgency?: 'critical' | 'normal' | 'low'; timeoutType?: 'default' | 'never'; soundEnabled?: boolean }) => {
         invoke('notify_show', { title: data.title, body: data.body }).catch((e) => logError('notify.show', e));
       },
     },
@@ -126,12 +126,12 @@ function setup(): void {
       getPosition: async (): Promise<{ x: number; y: number } | null> => {
         return (await invoke('toast_get_position').catch((e) => { logError('toast.getPosition', e); return null; })) as { x: number; y: number } | null;
       },
-      getInitial: async (): Promise<unknown> => {
-        return (await invoke('toast_get_initial').catch((e) => { logError('toast.getInitial', e); return null; })) as unknown;
+      getInitial: async (): Promise<CallerFlashToastEventData | null> => {
+        return (await invoke('toast_get_initial').catch((e) => { logError('toast.getInitial', e); return null; })) as CallerFlashToastEventData | null;
       },
-      onShow: (callback: (data: unknown) => void) => {
+      onShow: (callback: (data: CallerFlashToastEventData) => void) => {
         const unlisten: Promise<() => void> = listen('toast:show:event', (event) => {
-          callback(event.payload);
+          callback(event.payload as CallerFlashToastEventData);
         }).catch((e) => { logError('toast.onShow', e); return () => {}; });
         return () => { unlisten.then((fn) => fn()).catch((e) => logError('toast.onShow cleanup', e)); };
       },
@@ -218,25 +218,25 @@ function setup(): void {
       getDownloadState: async function () {
         return { status: currentUpdate ? 'available' : 'idle', version: currentUpdate?.version || null, path: null, error: null };
       },
-      onStatus: function (callback: (data: unknown) => void) {
+      onStatus: function (callback: (data: { status: string; version?: string; progress?: number; downloadUrl?: string; message?: string }) => void) {
         const unlisten: Promise<() => void> = listen('updater:status', function (event) {
-          callback(event.payload);
+          callback(event.payload as { status: string; version?: string; progress?: number; downloadUrl?: string; message?: string });
         }).catch(function (e) { logError('updater.onStatus', e); return function () {}; });
         return function () { void unlisten.then(function (fn) { return fn(); }).catch(function (e) { logError('updater.onStatus cleanup', e); }); };
       },
-      onProgress: function (callback: (data: unknown) => void) {
+      onProgress: function (callback: (data: { percent: number }) => void) {
         const unlisten: Promise<() => void> = listen('updater:progress', function (event) {
-          callback(event.payload);
+          callback(event.payload as { percent: number });
         }).catch(function (e) { logError('updater.onProgress', e); return function () {}; });
         return function () { void unlisten.then(function (fn) { return fn(); }).catch(function (e) { logError('updater.onProgress cleanup', e); }); };
       },
-      onDiagnostic: function (callback: (data: unknown) => void) {
+      onDiagnostic: function (callback: (data: { level: string; message: string; details?: string }) => void) {
         const unlisten: Promise<() => void> = listen('updater:diagnostic', function (event) {
-          callback(event.payload);
+          callback(event.payload as { level: string; message: string; details?: string });
         }).catch(function (e) { logError('updater.onDiagnostic', e); return function () {}; });
         return function () { void unlisten.then(function (fn) { return fn(); }).catch(function (e) { logError('updater.onDiagnostic cleanup', e); }); };
       },
-      onBackgroundCheck: function (_callback: (data: unknown) => void) {
+      onBackgroundCheck: function (_callback: (data: { version?: string; upToDate?: boolean }) => void) {
         return function () {};
       },
     },

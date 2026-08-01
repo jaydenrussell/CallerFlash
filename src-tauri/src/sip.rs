@@ -672,60 +672,69 @@ impl SipClient {
                             }
                         };
                         if let SipMessage::Response(resp) = msg {
-                            log::info!("[sip] REGISTER response: {} {}", resp.status_code.code(), resp.reason_phrase().unwrap_or(""));
+                            log::info!(
+                                "[sip] REGISTER response: {} {}",
+                                resp.status_code.code(),
+                                resp.reason_phrase().unwrap_or("")
+                            );
                             match resp.status_code {
                                 StatusCode::Unauthorized
                                 | StatusCode::ProxyAuthenticationRequired => {
-if auth_sent {
-                                    let reason = resp.reason_phrase().unwrap_or("").to_string();
-                                    log::error!(
-                                        "[sip] Auth retry failed: {} {}",
-                                        resp.status_code.code(),
-                                        reason
-                                    );
-                                    safe_emit(
-                                        handle,
-                                        "sip:status",
-                                        SipStatus {
-                                            status: "error".to_string(),
-                                            message: Some(format!(
-                                                "Authentication retry failed: {} {}",
-                                                resp.status_code.code(),
-                                                reason
-                                            )),
-                                        },
-                                    );
-                                    *consecutive_failures += 1;
-                                    return false;
-                                }
+                                    if auth_sent {
+                                        let reason = resp.reason_phrase().unwrap_or("").to_string();
+                                        log::error!(
+                                            "[sip] Auth retry failed: {} {}",
+                                            resp.status_code.code(),
+                                            reason
+                                        );
+                                        safe_emit(
+                                            handle,
+                                            "sip:status",
+                                            SipStatus {
+                                                status: "error".to_string(),
+                                                message: Some(format!(
+                                                    "Authentication retry failed: {} {}",
+                                                    resp.status_code.code(),
+                                                    reason
+                                                )),
+                                            },
+                                        );
+                                        *consecutive_failures += 1;
+                                        return false;
+                                    }
 
-                                // Extract public address from 401 response top Via header (rport/received)
-                                // and update Contact header before authenticated retry.
-                                // This ensures the Contact uses the public IP:port instead of local LAN IP.
-                                if let Ok(via) = resp.top_via_header() {
-                                    if let Ok((_, public_addr)) = SipConnection::parse_target_from_via(&via) {
-                                        let public_addr_clone = public_addr.clone();
-                                        // Parse the existing Contact to preserve params BEFORE removing it
-                                        let existing_contact = tx.original.headers.iter().find_map(|h| {
-                                            if let Header::Contact(contact) = h {
-                                                contact.typed().ok()
-                                            } else {
-                                                None
-                                            }
-                                        });
-                                        tx.original.headers.remove_first(|h| matches!(h, Header::Contact(_)));
-                                        if let Some(mut tc) = existing_contact {
-                                            tc.uri.host_with_port = public_addr;
-                                            tx.original.headers.unique_push(tc.into());
-                                            log::info!(
+                                    // Extract public address from 401 response top Via header (rport/received)
+                                    // and update Contact header before authenticated retry.
+                                    // This ensures the Contact uses the public IP:port instead of local LAN IP.
+                                    if let Ok(via) = resp.top_via_header() {
+                                        if let Ok((_, public_addr)) =
+                                            SipConnection::parse_target_from_via(&via)
+                                        {
+                                            let public_addr_clone = public_addr.clone();
+                                            // Parse the existing Contact to preserve params BEFORE removing it
+                                            let existing_contact =
+                                                tx.original.headers.iter().find_map(|h| {
+                                                    if let Header::Contact(contact) = h {
+                                                        contact.typed().ok()
+                                                    } else {
+                                                        None
+                                                    }
+                                                });
+                                            tx.original
+                                                .headers
+                                                .remove_first(|h| matches!(h, Header::Contact(_)));
+                                            if let Some(mut tc) = existing_contact {
+                                                tc.uri.host_with_port = public_addr;
+                                                tx.original.headers.unique_push(tc.into());
+                                                log::info!(
                                                 "[sip] Updated Contact header with public address: {}",
                                                 public_addr_clone
                                             );
+                                            }
                                         }
                                     }
-                                }
 
-                                *cseq += 1;
+                                    *cseq += 1;
                                     match handle_client_authenticate(*cseq, &tx, resp, credential)
                                         .await
                                     {
@@ -849,8 +858,7 @@ if auth_sent {
                 let keepalive_server_addr = SipAddr::from(server_addr);
                 let keepalive_cancel = cancel_token.child_token();
                 tokio::spawn(async move {
-                    let mut interval =
-                        tokio::time::interval(std::time::Duration::from_secs(20));
+                    let mut interval = tokio::time::interval(std::time::Duration::from_secs(20));
                     // Skip the immediate first tick
                     interval.tick().await;
                     loop {

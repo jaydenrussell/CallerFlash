@@ -152,7 +152,7 @@ class SecureStorage {
     return data;
   }
 
-  async save(settings: PersistedUiSettings): Promise<void> {
+  async save(settings: Partial<PersistedUiSettings>): Promise<void> {
     // Queue writes to prevent race conditions.
     // Catch rejections to prevent the chain from breaking — if one save
     // fails, subsequent saves must still be able to execute.
@@ -164,7 +164,7 @@ class SecureStorage {
     return this.writeQueue;
   }
 
-  private async doSave(settings: PersistedUiSettings): Promise<void> {
+  private async doSave(settings: Partial<PersistedUiSettings>): Promise<void> {
     const toSave = { ...settings, version: STORAGE_VERSION };
     this._cache = toSave;
 
@@ -240,13 +240,13 @@ secureStorage.onNativeSaveError = (e) => {
 async function initStorageMigration() {
   try {
     if (typeof window !== 'undefined' && window.callerflash?.storage?.load) {
-      const fileData = await window.callerflash.storage.load();
-      if (fileData && Object.keys(fileData).length > 0 && fileData.version >= 2) {
+      const fileData = (await window.callerflash.storage.load()) as Partial<PersistedUiSettings>;
+      if (fileData && Object.keys(fileData).length > 0 && (fileData.version ?? 0) >= 2) {
         // File storage is authoritative — update cache and hydrate store
-        secureStorage.initCache({ ...fileData });
-        const mergedToast = { ...defaultToastConfig, ...fileData.toastConfig };
-        const mergedPrefs = { ...defaultAppPreferences, ...fileData.appPreferences };
-        const mergedSip = { ...defaultSipConfig, ...fileData.sipConfig };
+        secureStorage.initCache(fileData as PersistedUiSettings);
+        const mergedToast = { ...defaultToastConfig, ...(fileData.toastConfig ?? {}) };
+        const mergedPrefs = { ...defaultAppPreferences, ...(fileData.appPreferences ?? {}) };
+        const mergedSip = { ...defaultSipConfig, ...(fileData.sipConfig ?? {}) };
         const mergedUpdate = { ...defaultUpdateInfo };
         if (fileData.updateChannel) mergedUpdate.updateChannel = fileData.updateChannel;
         if (fileData.autoUpdate !== undefined) mergedUpdate.autoUpdate = fileData.autoUpdate;
@@ -269,11 +269,11 @@ async function initStorageMigration() {
     const localData = loadSettingsSync();
     if (localData && Object.keys(localData).length > 1) {
       if (window.callerflash?.storage?.save) {
-        await window.callerflash.storage.save(localData);
+        await window.callerflash.storage.save({ ...localData });
       }
     }
-  } catch (e) {
-      // initStorageMigration failure is non-fatal — localStorage fallback still works
+  } catch {
+    // initStorageMigration failure is non-fatal — localStorage fallback still works
     // Ignore — localStorage data is still valid
   }
 }
@@ -399,9 +399,8 @@ export const useAppStore = create<AppState>((set) => ({
         ...secureStorage.cache,
         sipConfig: next,
       });
-    } catch (e) {
+    } catch {
       // SIP config save failure is non-fatal — localStorage fallback persists
-      const _ = e;
     }
   },
   setSipConnected: (connected) => set({ sipConnected: connected }),
@@ -416,7 +415,7 @@ export const useAppStore = create<AppState>((set) => ({
     s.addDiagnosticLog({ level: 'info', category: 'SIP', message: 'Initiating SIP connection…' });
 
     if (window.callerflash?.sip?.connect) {
-      window.callerflash.sip.connect(s.sipConfig).then((res) => {
+      window.callerflash.sip.connect({ ...s.sipConfig }).then((res) => {
         if (!res.success) {
           useAppStore.setState({ sipConnected: false, isConnecting: false });
           s.addDiagnosticLog({ level: 'error', category: 'SIP', message: `Connection failed: ${res.message || 'Unknown error'}` });

@@ -4,11 +4,46 @@ use tauri::AppHandle;
 use tauri::Manager;
 
 use crate::error::CommandError;
+use crate::secure;
 
 pub struct SecureStorage {
     settings_path: PathBuf,
     backup_path: PathBuf,
     tmp_path: PathBuf,
+}
+
+fn encrypt_password_field(data: &mut serde_json::Value) {
+    if let Some(password) = data.get_mut("sip").and_then(|s| s.get_mut("password")) {
+        if let Some(value) = password.as_str() {
+            if !value.is_empty() && !secure::is_encrypted(value) {
+                match secure::encrypt_string(value) {
+                    Ok(encrypted) => {
+                        *password = serde_json::Value::String(encrypted);
+                    }
+                    Err(e) => {
+                        log::error!("[storage] Failed to encrypt SIP password at rest: {}", e);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn decrypt_password_field(data: &mut serde_json::Value) {
+    if let Some(password) = data.get_mut("sip").and_then(|s| s.get_mut("password")) {
+        if let Some(value) = password.as_str() {
+            if value.starts_with("dpapi:") {
+                match secure::decrypt_string(value) {
+                    Ok(plain) => {
+                        *password = serde_json::Value::String(plain);
+                    }
+                    Err(e) => {
+                        log::error!("[storage] Failed to decrypt SIP password at rest: {}", e);
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl SecureStorage {
@@ -21,24 +56,28 @@ impl SecureStorage {
     }
 
     pub fn load_data(&self) -> serde_json::Value {
-        if let Ok(raw) = fs::read_to_string(&self.settings_path) {
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) {
-                return parsed;
+        let mut parsed = fs::read_to_string(&self.settings_path)
+            .ok()
+            .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok());
+
+        if parsed.is_none() {
+            if let Ok(raw) = fs::read_to_string(&self.backup_path) {
+                if let Ok(p) = serde_json::from_str::<serde_json::Value>(&raw) {
+                    let _ = fs::copy(&self.backup_path, &self.settings_path);
+                    parsed = Some(p);
+                }
             }
         }
 
-        if let Ok(raw) = fs::read_to_string(&self.backup_path) {
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) {
-                let _ = fs::copy(&self.backup_path, &self.settings_path);
-                return parsed;
-            }
-        }
-
-        serde_json::Value::Object(serde_json::Map::new())
+        let mut data = parsed.unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new()));
+        decrypt_password_field(&mut data);
+        data
     }
 
     pub fn save_data(&self, data: &serde_json::Value) -> Result<(), CommandError> {
-        let output = serde_json::to_string_pretty(data)
+        let mut data = data.clone();
+        encrypt_password_field(&mut data);
+        let output = serde_json::to_string_pretty(&data)
             .map_err(|e| CommandError::config(format!("Serialize: {}", e)))?;
 
         if self.settings_path.exists() {
@@ -111,6 +150,49 @@ mod tests {
         storage.save_data(&data).unwrap();
         let loaded = storage.load_data();
         assert_eq!(loaded, data);
+    }
+
+    #[test]
+    fn test_password_is_encrypted_at_rest() {
+        let (storage, _dir) = temp_storage();
+        let data = serde_json::json!({"sip": {"server": "sip.example.com", "password": "hunter2"}});
+        storage.save_data(&data).unwrap();
+        let raw = fs::read_to_string(&storage.settings_path).unwrap();
+        let on_disk: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let password = on_disk["sip"]["password"].as_str().unwrap();
+        assert!(password.starts_with("dpapi:"), "got: {}", password);
+        assert_ne!(password, "hunter2");
+    }
+
+    #[test]
+    fn test_password_is_decrypted_on_load() {
+        let (storage, _dir) = temp_storage();
+        let data = serde_json::json!({"sip": {"server": "sip.example.com", "password": "hunter2"}});
+        storage.save_data(&data).unwrap();
+        let loaded = storage.load_data();
+        assert_eq!(loaded["sip"]["password"], serde_json::json!("hunter2"));
+    }
+
+    #[test]
+    fn test_already_encrypted_password_is_not_double_encrypted() {
+        let (storage, _dir) = temp_storage();
+        let data = serde_json::json!({"sip": {"password": "dpapi:QWJjZA=="}});
+        storage.save_data(&data).unwrap();
+        let raw = fs::read_to_string(&storage.settings_path).unwrap();
+        let on_disk: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(
+            on_disk["sip"]["password"],
+            serde_json::json!("dpapi:QWJjZA==")
+        );
+    }
+
+    #[test]
+    fn test_empty_password_stays_empty() {
+        let (storage, _dir) = temp_storage();
+        let data = serde_json::json!({"sip": {"password": ""}});
+        storage.save_data(&data).unwrap();
+        let loaded = storage.load_data();
+        assert_eq!(loaded["sip"]["password"], serde_json::json!(""));
     }
 
     #[test]

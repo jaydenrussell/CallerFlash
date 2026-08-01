@@ -99,9 +99,7 @@ export function Diagnostics() {
           addLog({ level: 'error', category: 'SIP', message: `${protocol} exception: ${String(e)}` });
         }
         // Rate limit: SIP_RATE_LIMITER = 2 calls/sec, so wait 600ms between tests
-        if (protocol !== 'TLS') {
-          await new Promise((r) => setTimeout(r, 600));
-        }
+        await new Promise((r) => setTimeout(r, 600));
       }
     }
 

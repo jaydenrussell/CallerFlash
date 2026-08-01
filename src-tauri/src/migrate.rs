@@ -10,10 +10,18 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::error::CommandError;
+use crate::secure;
 
 const SALT_LENGTH: usize = 32;
 const IV_LENGTH: usize = 16;
 const TAG_LENGTH: usize = 16;
+
+// Electron safeStorage (Chromium OSCrypt v10) layout used by Sip-Toast:
+//   "v10" || nonce[12] || AES-256-GCM ciphertext with tag
+const OSCRYPT_V10_PREFIX: &[u8] = b"v10";
+const OSCRYPT_NONCE_LENGTH: usize = 12;
+const OSCRYPT_KEY_LENGTH: usize = 32;
+const OSCRYPT_KEY_PREFIX: &[u8] = b"DPAPI";
 
 const MIGRATION_MARKER: &str = ".migrated_from_sip_toast";
 
@@ -140,7 +148,85 @@ fn decrypt_fb_format(data: &str) -> Result<String, CommandError> {
         .map_err(|_| CommandError::crypto("Decrypted data is not valid UTF-8"))
 }
 
-fn decrypt_password(encrypted: &str) -> Result<String, CommandError> {
+/// Reads the AES-256-GCM master key that Electron's safeStorage (Chromium
+/// OSCrypt) wrapped with DPAPI and stored in `<userData>\Local State` under
+/// `os_crypt.encrypted_key`.
+fn load_oscrypt_master_key(
+    old_config_path: &Path,
+) -> Result<[u8; OSCRYPT_KEY_LENGTH], CommandError> {
+    let local_state_path = old_config_path
+        .parent()
+        .ok_or_else(|| CommandError::crypto("Cannot determine config directory"))?
+        .join("Local State");
+
+    let raw = fs::read_to_string(&local_state_path).map_err(|e| {
+        CommandError::crypto(format!(
+            "Cannot read Local State ({}): {}",
+            local_state_path.display(),
+            e
+        ))
+    })?;
+
+    let json: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| CommandError::crypto(format!("Cannot parse Local State: {}", e)))?;
+
+    let encrypted_key = json
+        .get("os_crypt")
+        .and_then(|o| o.get("encrypted_key"))
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| CommandError::crypto("Local State has no os_crypt.encrypted_key"))?;
+
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(encrypted_key)
+        .map_err(|e| CommandError::crypto(format!("Base64 decode: {}", e)))?;
+
+    let blob = decoded
+        .strip_prefix(OSCRYPT_KEY_PREFIX)
+        .ok_or_else(|| CommandError::crypto("Encrypted key missing DPAPI prefix"))?;
+
+    let key = secure::dpapi_unprotect(blob)?;
+    let key: [u8; OSCRYPT_KEY_LENGTH] = key
+        .try_into()
+        .map_err(|_| CommandError::crypto("Unexpected key length from Local State"))?;
+    Ok(key)
+}
+
+fn decrypt_ss_format(
+    encrypted: &str,
+    key: &[u8; OSCRYPT_KEY_LENGTH],
+) -> Result<String, CommandError> {
+    let data = encrypted.strip_prefix("ss:").unwrap_or(encrypted);
+    let combined = base64::engine::general_purpose::STANDARD
+        .decode(data)
+        .map_err(|e| CommandError::crypto(format!("Base64 decode: {}", e)))?;
+
+    if !combined.starts_with(OSCRYPT_V10_PREFIX) {
+        return Err(CommandError::crypto(
+            "Unsupported safeStorage version (expected v10)",
+        ));
+    }
+
+    let body = &combined[OSCRYPT_V10_PREFIX.len()..];
+    if body.len() <= OSCRYPT_NONCE_LENGTH {
+        return Err(CommandError::crypto("safeStorage data too short"));
+    }
+
+    let nonce = &body[..OSCRYPT_NONCE_LENGTH];
+    let encrypted_with_tag = &body[OSCRYPT_NONCE_LENGTH..];
+
+    let cipher = Aes256Gcm::new_from_slice(key)
+        .map_err(|e| CommandError::crypto(format!("AES init: {}", e)))?;
+    let nonce = Nonce::from_slice(nonce);
+
+    let plaintext = cipher
+        .decrypt(nonce, encrypted_with_tag.as_ref())
+        .map_err(|e| CommandError::crypto(format!("AES-GCM decrypt: {}", e)))?;
+
+    String::from_utf8(plaintext)
+        .map_err(|_| CommandError::crypto("Decrypted data is not valid UTF-8"))
+}
+
+fn decrypt_password_once(encrypted: &str, old_config_path: &Path) -> Result<String, CommandError> {
     if !encrypted.starts_with("enc:")
         && !encrypted.starts_with("fb:")
         && !encrypted.starts_with("ss:")
@@ -164,9 +250,29 @@ fn decrypt_password(encrypted: &str) -> Result<String, CommandError> {
         return decrypt_fb_format(data);
     }
 
-    Err(CommandError::crypto(
-        "Cannot decrypt safeStorage format from Sip-Toast",
-    ))
+    if encrypted.starts_with("ss:") {
+        let key = load_oscrypt_master_key(old_config_path)?;
+        return decrypt_ss_format(encrypted, &key);
+    }
+
+    Err(CommandError::crypto("Unknown encryption format"))
+}
+
+/// Decrypt a Sip-Toast password. Handles `enc:`, `fb:`, and `ss:` formats.
+///
+/// Older Sip-Toast versions re-wrapped undecryptable `ss:` literals inside an
+/// `enc:` envelope, so decryption is repeated (bounded) until the value stops
+/// changing.
+fn decrypt_password(encrypted: &str, old_config_path: &Path) -> Result<String, CommandError> {
+    let mut current = encrypted.to_string();
+    for _ in 0..3 {
+        let next = decrypt_password_once(&current, old_config_path)?;
+        if next == current {
+            return Ok(next);
+        }
+        current = next;
+    }
+    Ok(current)
 }
 
 fn find_old_config(app_data_dir: &Path) -> Option<PathBuf> {
@@ -175,6 +281,7 @@ fn find_old_config(app_data_dir: &Path) -> Option<PathBuf> {
     for name in PREVIOUS_APP_NAMES {
         let paths = vec![
             parent.join(name).join(format!("{}.json", name)),
+            parent.join(name).join("SIP Caller ID.json"),
             parent.join(name).join("config.json"),
             parent
                 .join(name.to_lowercase())
@@ -182,6 +289,7 @@ fn find_old_config(app_data_dir: &Path) -> Option<PathBuf> {
             parent
                 .join(name.replace(' ', "-"))
                 .join(format!("{}.json", name.replace(' ', "-"))),
+            parent.join("sip-caller-id").join("SIP Caller ID.json"),
         ];
         for p in paths {
             if p.exists() {
@@ -250,18 +358,24 @@ pub fn run_migration(app_data_dir: &Path) {
     let username = sip.get("username").and_then(|v| v.as_str()).unwrap_or("");
     let password_enc = sip.get("password").and_then(|v| v.as_str()).unwrap_or("");
 
-    if server.is_empty() || username.is_empty() || password_enc.is_empty() {
+    if server.is_empty() || username.is_empty() {
         log::info!("[migrate] Incomplete SIP config in old settings, skipping");
         mark_migration_done(app_data_dir);
         return;
     }
 
-    let decrypted_password = match decrypt_password(password_enc) {
-        Ok(p) => p,
-        Err(e) => {
-            log::error!("[migrate] Failed to decrypt SIP password: {}", e);
-            mark_migration_done(app_data_dir);
-            return;
+    let decrypted_password = if password_enc.is_empty() {
+        String::new()
+    } else {
+        match decrypt_password(password_enc, &old_config_path) {
+            Ok(p) => p,
+            Err(e) => {
+                log::warn!(
+                    "[migrate] Could not decrypt SIP password ({}); importing the rest - user will need to re-enter the password",
+                    e
+                );
+                String::new()
+            }
         }
     };
 

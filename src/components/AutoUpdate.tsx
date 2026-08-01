@@ -172,7 +172,7 @@ type UpdatePhase =
 type CheckOutcome =
   | { kind: 'no-update'; message: string }
   | { kind: 'missing-assets'; message: string; release: GithubRelease }
-  | { kind: 'verification-failed'; message: string; release: GithubRelease }
+  | { kind: 'verification-failed'; message: string; release?: GithubRelease }
   | null;
 
 type UpdateFrequency = 'off' | 'daily' | 'weekly' | 'monthly';
@@ -447,7 +447,7 @@ export function AutoUpdate() {
         setPhase('idle');
       } else if (result?.version) {
         setUpdateInfo({ latestVersion: result.version, updateAvailable: true, lastChecked: new Date() });
-        setDownloadUrl(result.downloadUrl);
+        setDownloadUrl(result.downloadUrl ?? null);
         addDiagnosticLog({
           level: 'info',
           category: 'UPDATE',

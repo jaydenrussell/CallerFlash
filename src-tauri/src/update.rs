@@ -69,7 +69,10 @@ fn validate_update_endpoint(endpoint: &str) -> Result<String, String> {
     let host = url
         .host_str()
         .ok_or_else(|| "Update endpoint has no host".to_string())?;
-    if !matches!(host, "github.com" | "api.github.com" | "objects.githubusercontent.com") {
+    if !matches!(
+        host,
+        "github.com" | "api.github.com" | "objects.githubusercontent.com"
+    ) {
         return Err(format!("Update endpoint host not allowed: {host}"));
     }
     Ok(endpoint.to_string())
@@ -94,7 +97,7 @@ pub async fn cmd_check_update<R: Runtime>(
     let updater = webview
         .updater_builder()
         .endpoints(vec![
-            url::Url::parse(&endpoint).map_err(|e| format!("Invalid update endpoint URL: {e}"))?,
+            url::Url::parse(&endpoint).map_err(|e| format!("Invalid update endpoint URL: {e}"))?
         ])
         .map_err(|e| format!("Failed to configure updater: {e}"))?
         .timeout(std::time::Duration::from_secs(30))

@@ -9,7 +9,7 @@ import { Diagnostics } from './components/Diagnostics';
 import { AutoUpdate } from './components/AutoUpdate';
 import { About } from './components/About';
 import { ToastContainer } from './components/ToastNotification';
-import { useAppStore } from './store/useAppStore';
+import { useAppStore, type DiagnosticLog } from './store/useAppStore';
 import { sanitizeCallerNumberForClipboard, sanitizeCallerName } from './security/secretRedactor';
 
 // Threshold below which the sidebar collapses to icons only
@@ -131,7 +131,14 @@ export default function App() {
     if (typeof window !== 'undefined' && window.callerflash?.diagnostics) {
       window.callerflash.diagnostics.load().then((entries) => {
         if (entries && entries.length > 0) {
-          useAppStore.getState().loadPersistedDiagnostics(entries);
+          useAppStore.getState().loadPersistedDiagnostics(
+            entries.map((e) => ({
+              ...e,
+              level: e.level as DiagnosticLog['level'],
+              category: e.category as DiagnosticLog['category'],
+              details: e.details ?? undefined,
+            })),
+          );
         }
       }).catch((e) => addDiagnosticLog({ level: 'error', category: 'SYSTEM', message: `Failed to load diagnostics: ${e}` }));
     }

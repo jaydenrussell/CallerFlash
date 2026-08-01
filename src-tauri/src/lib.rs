@@ -2,6 +2,7 @@ mod diagnostics;
 mod error;
 mod migrate;
 mod ratelimit;
+mod secure;
 mod sip;
 mod startup;
 mod storage;
