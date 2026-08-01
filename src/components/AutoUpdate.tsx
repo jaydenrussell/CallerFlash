@@ -141,6 +141,29 @@ function versionMatchesChannel(version: string, channel: 'stable' | 'beta'): boo
   return false;
 }
 
+/**
+ * Fetch the newest GitHub release for a single channel.
+ *   stable → `/releases/latest` (GitHub's non-prerelease pointer).
+ *   beta   → the newest prerelease whose tag matches the beta pattern
+ *            (GitHub has no "latest prerelease" alias).
+ * Returns null when the channel has no matching release.
+ */
+async function fetchChannelLatest(
+  repoPath: string,
+  channel: 'stable' | 'beta'
+): Promise<GithubRelease | null> {
+  const headers = { Accept: 'application/vnd.github+json' };
+  if (channel === 'beta') {
+    const resp = await fetch(`https://api.github.com/repos/${repoPath}/releases?per_page=20`, { headers });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const list: GithubRelease[] = await resp.json();
+    return list.find((r) => r.prerelease && /-(beta|tauri)(\.|$)/i.test(r.tag_name)) ?? null;
+  }
+  const resp = await fetch(`https://api.github.com/repos/${repoPath}/releases/latest`, { headers });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json() as Promise<GithubRelease>;
+}
+
 type UpdatePhase =
   | 'idle'
   | 'checking'
@@ -378,13 +401,30 @@ export function AutoUpdate() {
     hasCheckedRef.current = true;
     handleCheckAndDownload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [updateInfo.updateCheckFrequency, updateInfo.updateChannel]);
+  }, [updateInfo.updateCheckFrequency]);
+
+  // Changing the update channel must immediately re-check the NEWLY selected
+  // channel only. This also invalidates any in-flight check from the previous
+  // channel so stale results can never leak into the new channel's UI.
+  const lastChannelRef = useRef(updateInfo.updateChannel);
+  useEffect(() => {
+    const prev = lastChannelRef.current;
+    lastChannelRef.current = updateInfo.updateChannel;
+    if (prev !== updateInfo.updateChannel) {
+      checkIdRef.current++; // drop any stale in-flight result from the old channel
+      handleCheckAndDownload(updateInfo.updateChannel);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [updateInfo.updateChannel]);
 
   /**
    * Check for updates — queries GitHub, does NOT download.
    * The user gets an "Update" button to download, then "Install" when ready.
+   * Always scoped to ONE channel: defaults to the currently selected one, but
+   * callers can pass an explicit channel (e.g. right after a channel switch).
    */
-  const handleCheckAndDownload = async () => {
+  const handleCheckAndDownload = async (channelOverride?: 'stable' | 'beta') => {
+    const channel: 'stable' | 'beta' = channelOverride ?? updateInfo.updateChannel;
     const id = ++checkIdRef.current;
     setPhase('checking');
     setVerification(null);
@@ -392,12 +432,12 @@ export function AutoUpdate() {
     addDiagnosticLog({
       level: 'info',
       category: 'UPDATE',
-      message: 'Checking GitHub for updates…',
+      message: `Checking GitHub for updates (${channel} channel)…`,
     });
 
     // Use Tauri updater to check
     if (window.callerflash?.updater?.check) {
-      const result = await window.callerflash.updater.check(updateInfo.updateChannel);
+      const result = await window.callerflash.updater.check(channel);
       if (id !== checkIdRef.current) return; // Stale response — channel changed
       if (result?.upToDate) {
         // Clear any stale update state — we are on the latest version
@@ -422,18 +462,21 @@ export function AutoUpdate() {
       return;
     }
 
-    // Web fallback
+    // Web fallback — also scoped to the active channel only.
     try {
       const repoPath = updateInfo.githubRepo.replace(/^https?:\/\/github\.com\//, '');
-      const resp = await fetch(`https://api.github.com/repos/${repoPath}/releases/latest`, {
-        headers: { Accept: 'application/vnd.github+json' },
-      });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
+      const latest = await fetchChannelLatest(repoPath, channel);
       if (id !== checkIdRef.current) return;
-      const latest = data.tag_name.replace(/^v/, '');
-      if (latest && latest !== updateInfo.currentVersion) {
-        setUpdateInfo({ latestVersion: latest, updateAvailable: true, releasePageUrl: data.html_url });
+      if (
+        latest &&
+        versionMatchesChannel(latest.tag_name, channel) &&
+        formatVersion(latest.tag_name) !== formatVersion(updateInfo.currentVersion)
+      ) {
+        setUpdateInfo({
+          latestVersion: formatVersion(latest.tag_name),
+          updateAvailable: true,
+          releasePageUrl: latest.html_url,
+        });
       } else {
         setOutcome({ kind: 'no-update', message: 'You are running the latest version.' });
         setUpdateInfo({ updateAvailable: false, latestVersion: '' });
@@ -569,7 +612,7 @@ export function AutoUpdate() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={handleCheckAndDownload}
+            onClick={() => handleCheckAndDownload()}
             disabled={isBusy}
             className="flex items-center gap-2 px-3.5 py-1.5 bg-win-accent hover:bg-win-accent-hover text-black rounded-lg text-sm font-semibold transition-colors disabled:opacity-50"
           >
@@ -738,6 +781,7 @@ export function AutoUpdate() {
                   key={channelOpt}
                   onClick={() => {
                     setUpdateInfo({ updateChannel: channelOpt, updateAvailable: false, latestVersion: '' });
+                    setDownloadUrl(null);
                     setOutcome(null);
                   }}
                   className={`flex-1 px-1.5 py-1 rounded-lg text-xs font-medium transition-all ${
