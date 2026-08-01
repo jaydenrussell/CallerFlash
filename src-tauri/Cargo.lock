@@ -589,7 +589,7 @@ dependencies = [
 
 [[package]]
 name = "callerflash"
-version = "1.6.4"
+version = "1.7.8"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
@@ -618,6 +618,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-util",
+ "url",
  "uuid",
  "winreg 0.52.0",
 ]

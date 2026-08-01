@@ -18,7 +18,7 @@ use tauri::{AppHandle, Emitter, Listener, Manager};
 pub use sip::{sip_connect, sip_disconnect, sip_test_connection};
 pub use storage::{storage_load, storage_save};
 pub use tray::{tray_set_sip_status, tray_set_update_available};
-pub use update::cmd_verify_update;
+pub use update::{cmd_check_update, cmd_verify_update};
 
 const MAX_NOTIFY_TITLE_LENGTH: usize = 256;
 const MAX_NOTIFY_BODY_LENGTH: usize = 1024;
@@ -450,6 +450,7 @@ pub fn run() {
             app_get_start_with_windows,
             run_startup_checks,
             cmd_verify_update,
+            cmd_check_update,
         ]);
 
     builder.run(tauri::generate_context!()).unwrap_or_else(|e| {

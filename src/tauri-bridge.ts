@@ -8,12 +8,49 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen, emit } from '@tauri-apps/api/event';
-import { check as updaterCheck } from '@tauri-apps/plugin-updater';
+import { Update } from '@tauri-apps/plugin-updater';
 import { sanitizeSipServer } from './security/secretRedactor';
 
 // Bridge logs only in dev mode — production builds tree-shake these.
 const log = (...args: unknown[]) => { if (import.meta.env.DEV) console.log('[tauri-bridge]', ...args); };
 const logError = (...args: unknown[]) => { if (import.meta.env.DEV) console.error('[tauri-bridge]', ...args); };
+
+/** Mirror of the plugin's `UpdateMetadata` payload returned by cmd_check_update. */
+interface UpdateMetadata {
+  rid: number;
+  currentVersion: string;
+  version: string;
+  date?: string;
+  body?: string;
+  rawJson: Record<string, unknown>;
+}
+
+// Hard-coded so the beta endpoint can never be redirected to an attacker repo.
+const UPDATE_REPO = 'jaydenrussell/CallerFlash';
+const STABLE_UPDATE_ENDPOINT = `https://github.com/${UPDATE_REPO}/releases/latest/download/update.json`;
+
+/**
+ * Resolve the update.json endpoint for the active channel.
+ * stable → `releases/latest/download/update.json` (GitHub's "latest" always
+ * points at the newest non-prerelease release).
+ * beta   → the latest beta tag's release, since GitHub has no "latest
+ *          prerelease" alias. Falls back to stable if the list can't be read.
+ */
+async function resolveUpdateEndpoint(channel: string): Promise<string> {
+  if (channel !== 'beta') return STABLE_UPDATE_ENDPOINT;
+  try {
+    const response = await fetch(`https://api.github.com/repos/${UPDATE_REPO}/releases?per_page=20`, {
+      headers: { Accept: 'application/vnd.github+json' },
+    });
+    if (!response.ok) return STABLE_UPDATE_ENDPOINT;
+    const releases: Array<{ tag_name: string; prerelease: boolean }> = await response.json();
+    const tag = releases.find((r) => r.prerelease && /-(beta|tauri)(\.|$)/i.test(r.tag_name))?.tag_name;
+    if (!tag) return STABLE_UPDATE_ENDPOINT;
+    return `https://github.com/${UPDATE_REPO}/releases/download/${tag}/update.json`;
+  } catch {
+    return STABLE_UPDATE_ENDPOINT;
+  }
+}
 
 function safeJsonResponse(data: unknown): Record<string, unknown> {
   if (data === null || data === undefined || typeof data !== 'object') {
@@ -30,7 +67,7 @@ function setup(): void {
 
   log('setting up Tauri bridge');
 
-  let currentUpdate: Awaited<ReturnType<typeof updaterCheck>> = null;
+  let currentUpdate: Update | null = null;
   let totalContentLength = 0;
   let downloadedBytes = 0;
 
@@ -102,16 +139,17 @@ function setup(): void {
     },
 
     updater: {
-      check: async (_channel: string) => {
+      check: async (channel: string) => {
         try {
-          const update = await updaterCheck({ timeout: 30000 });
-          currentUpdate = update;
+          const endpoint = await resolveUpdateEndpoint(channel);
+          const metadata = await invoke<UpdateMetadata | null>('cmd_check_update', { endpoint });
+          currentUpdate = metadata ? new Update(metadata) : null;
           totalContentLength = 0;
           downloadedBytes = 0;
-          if (!update) {
+          if (!currentUpdate) {
             return { upToDate: true };
           }
-          const rawPlatforms: unknown = update.rawJson?.platforms;
+          const rawPlatforms: unknown = currentUpdate.rawJson?.platforms;
           const platforms = (typeof rawPlatforms === 'object' && rawPlatforms !== null ? rawPlatforms : {}) as Record<string, { url?: string }>;
           const win = platforms?.['windows-x86_64'];
           let downloadUrl = typeof win?.url === 'string' ? win.url : '';
@@ -119,10 +157,10 @@ function setup(): void {
             downloadUrl = '';
           }
           return {
-            version: typeof update.version === 'string' ? update.version : '',
+            version: typeof currentUpdate.version === 'string' ? currentUpdate.version : '',
             downloadUrl,
-            publishedAt: typeof update.date === 'string' ? update.date : '',
-            friendlyName: update.version,
+            publishedAt: typeof currentUpdate.date === 'string' ? currentUpdate.date : '',
+            friendlyName: currentUpdate.version,
           };
         } catch (e) {
           currentUpdate = null;
