@@ -6,6 +6,27 @@ on:
       - 'v*'
       - 'beta*'
 
+# ---------------------------------------------------------------------------
+# Cutting a beta (so beta -> beta auto-update works):
+#   The update.json generated here carries `version = <tag> minus "v"`, and the
+#   plugin only offers an update when that version is NEWER than the running
+#   build. The running build reports the version baked into package.json /
+#   src-tauri/Cargo.toml / src-tauri/tauri.conf.json at tag time, so the beta
+#   tag must carry a prerelease version, e.g. "1.7.9-beta.1".
+#
+#   Procedure:
+#     1. Set version = X.Y.Z-beta.N in all three manifests above (and run
+#        `cargo check` to sync Cargo.lock).
+#     2. Commit with a message starting with `chore: bump` (that prefix is the
+#        only thing that stops version-bump.yml from firing on the next main
+#        push).
+#     3. Push main, then tag it `vX.Y.Z-beta.N` and push the tag. This workflow
+#        runs the build; the app + update.json both report X.Y.Z-beta.N.
+#     4. When the beta is promoted, set the manifests to X.Y.Z (stable) and
+#        push a `vX.Y.Z` tag. Beta users then see X.Y.Z as an upgrade because
+#        a stable release sorts higher than the same-version prerelease.
+# ---------------------------------------------------------------------------
+
 permissions:
   contents: write
 

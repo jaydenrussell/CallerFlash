@@ -38,7 +38,10 @@ jobs:
         shell: pwsh
         run: |
           $content = Get-Content src-tauri/Cargo.toml -Raw
-          $match = [regex]::Match($content, 'version = "(\d+)\.(\d+)\.(\d+)"')
+          # Tolerate a prerelease suffix (e.g. 1.7.9-beta.1) so a beta version
+          # parked on main doesn't break the next auto-bump. Only the numeric
+          # core is used to compute the next version.
+          $match = [regex]::Match($content, 'version = "(\d+)\.(\d+)\.(\d+)(?:-\w[\w.]*)?"')
           if (-not $match.Success) {
             Write-Error "Cannot parse version from Cargo.toml"
             exit 1
@@ -67,15 +70,16 @@ jobs:
           $cur = "${{ steps.version.outputs.current }}"
           $nxt = "${{ steps.version.outputs.next }}"
 
-          # Cargo.toml — use .Replace() for literal string replacement (no regex)
+          # Cargo.toml — regex-replace the version entry so any prerelease
+          # suffix is dropped (the auto-bump always yields a plain numeric)
           $cargo = Get-Content src-tauri/Cargo.toml -Raw
-          $oldVer = 'version = "' + $cur + '"'
           $newVer = 'version = "' + $nxt + '"'
-          if ($cargo -notmatch [regex]::Escape($oldVer)) {
-            Write-Error "Could not find '$oldVer' in Cargo.toml"
+          $replaced = [regex]::Replace($cargo, 'version = "\d+\.\d+\.\d+(?:-\w[\w.]*)?"', $newVer)
+          if ($replaced -eq $cargo) {
+            Write-Error "Could not find a version entry in Cargo.toml"
             exit 1
           }
-          $cargo = $cargo.Replace($oldVer, $newVer)
+          $cargo = $replaced
           Set-Content -Path src-tauri/Cargo.toml -Value $cargo -Encoding utf8 -NoNewline
 
           # package.json
