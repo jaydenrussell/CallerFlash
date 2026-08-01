@@ -6,14 +6,14 @@ authors = ["CallerFlash"]
 license = "MIT"
 repository = "https://github.com/jaydenrussell/CallerFlash"
 edition = "2021"
-rust-version = "1.7.9"
+rust-version = "1.77.2"
 
 [lib]
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "1.7.9", features = [] }
+tauri-build = { version = "2.6.3", features = [] }
 embed-resource = "3"
 
 [features]
@@ -25,7 +25,7 @@ migration = ["dep:aes-gcm", "dep:hmac", "dep:sha2"]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "1.7.9", features = ["tray-icon", "image-png"] }
+tauri = { version = "2.11.3", features = ["tray-icon", "image-png"] }
 tauri-plugin-log = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-notification = "2"

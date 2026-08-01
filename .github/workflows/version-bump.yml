@@ -70,13 +70,16 @@ jobs:
           $cur = "${{ steps.version.outputs.current }}"
           $nxt = "${{ steps.version.outputs.next }}"
 
-          # Cargo.toml — regex-replace the version entry so any prerelease
-          # suffix is dropped (the auto-bump always yields a plain numeric)
+          # Cargo.toml — replace ONLY the package version. The pattern is
+          # anchored on the exact current numeric version (with an optional
+          # prerelease suffix) so rust-version / tauri / tauri-build / serde
+          # version entries are never touched.
           $cargo = Get-Content src-tauri/Cargo.toml -Raw
           $newVer = 'version = "' + $nxt + '"'
-          $replaced = [regex]::Replace($cargo, 'version = "\d+\.\d+\.\d+(?:-\w[\w.]*)?"', $newVer)
+          $pattern = 'version = "' + [regex]::Escape($cur) + '(?:-\w[\w.]*)?"'
+          $replaced = [regex]::Replace($cargo, $pattern, $newVer)
           if ($replaced -eq $cargo) {
-            Write-Error "Could not find a version entry in Cargo.toml"
+            Write-Error "Could not find version = `"$cur`" in Cargo.toml"
             exit 1
           }
           $cargo = $replaced
