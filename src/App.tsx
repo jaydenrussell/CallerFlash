@@ -249,7 +249,7 @@ export default function App() {
         timestamp: new Date(),
         duration: 0,
         direction: 'inbound' as const,
-        status: 'answered' as const,
+        status: 'rejected' as const,
       };
 
       useAppStore.getState().addCallRecord(record);
@@ -258,7 +258,7 @@ export default function App() {
         level: 'info',
         category: 'SIP',
         message: `INVITE received from ${safeNumber} (${safeName})`,
-        details: `Source: SIP Backend Network Engine`,
+        details: `Auto-declined (486 Busy Here)`,
       });
 
       // Show notification based on user's style preference
