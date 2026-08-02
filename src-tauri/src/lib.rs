@@ -346,11 +346,12 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
-        .plugin(tauri_plugin_log::Builder::default().build())
+        .plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Debug).build())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::default().build())
         .setup(|app| {
+            let _ = tracing_log::LogTracer::init();
             app.manage(SipClient::new(app.handle().clone()));
             app.manage(ToastState {
                 pending_data: Mutex::new(None),
