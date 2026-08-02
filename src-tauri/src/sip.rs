@@ -172,6 +172,7 @@ pub struct SipStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InviteData {
     pub caller_number: String,
     pub caller_name: String,

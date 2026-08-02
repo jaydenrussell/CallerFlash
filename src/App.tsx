@@ -239,7 +239,7 @@ export default function App() {
     if (!window.callerflash?.sip?.onInvite) return;
     return window.callerflash.sip.onInvite((callerData) => {
       const { toastConfig } = useAppStore.getState();
-      const safeNumber = sanitizeCallerNumberForClipboard(callerData.callerNumber);
+      const safeNumber = sanitizeCallerNumberForClipboard(callerData.callerNumber || '');
       const safeName = sanitizeCallerName(callerData.callerName || '');
 
       const record = {
