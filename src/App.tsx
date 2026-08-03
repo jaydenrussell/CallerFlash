@@ -249,7 +249,7 @@ export default function App() {
         timestamp: new Date(),
         duration: 0,
         direction: 'inbound' as const,
-        status: 'rejected' as const,
+        status: 'missed' as const,
       };
 
       useAppStore.getState().addCallRecord(record);
@@ -258,7 +258,7 @@ export default function App() {
         level: 'info',
         category: 'SIP',
         message: `INVITE received from ${safeNumber} (${safeName})`,
-        details: `Auto-declined (486 Busy Here)`,
+        details: `No response sent — CallerFlash does not answer calls`,
       });
 
       // Show notification based on user's style preference
@@ -289,6 +289,22 @@ export default function App() {
       } else if (toastConfig.style === 'native' && window.callerflash?.notify?.show) {
         window.callerflash.notify.show({ title: 'Incoming Call', body: `${safeNumber}${safeName ? ` - ${safeName}` : ''}`, urgency: 'critical', timeoutType: 'never', soundEnabled: toastConfig.soundEnabled });
       }
+    });
+  }, [addDiagnosticLog]);
+
+  // Finalize inbound call: voip.ms cancelled our branch (answered elsewhere / caller hung up)
+  useEffect(() => {
+    if (!window.callerflash?.sip?.onInviteEnded) return;
+    return window.callerflash.sip.onInviteEnded((data: { reason: string }) => {
+      addDiagnosticLog({
+        level: data.reason === 'timeout' ? 'warning' : 'info',
+        category: 'SIP',
+        message: 'Inbound call ended',
+        details:
+          data.reason === 'cancel'
+            ? 'voip.ms cancelled this device — call may have been answered by another sub-account, or the caller hung up'
+            : `No response sent; branch ended (${data.reason})`,
+      });
     });
   }, [addDiagnosticLog]);
 

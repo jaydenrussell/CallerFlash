@@ -178,6 +178,12 @@ pub struct InviteData {
     pub caller_name: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InviteEndData {
+    pub reason: String,
+}
+
 fn user_safe_sip_error(msg: &str) -> String {
     if msg.contains("Connection refused") || msg.contains("os error") {
         "Connection to SIP server failed. Check server address and port.".to_string()
@@ -906,11 +912,42 @@ impl SipClient {
                                 };
                                 safe_emit(&handle, "sip:invite", invite_data);
 
-                                if let Err(e) = tx.reply(StatusCode::BusyHere).await {
-                                    log::error!("[sip] Failed to reply to INVITE: {}", e);
-                                } else {
-                                    log::info!("[sip] Replied to INVITE with 486 Busy Here");
-                                }
+                                // No response is sent: CallerFlash is caller-ID only, so staying
+                                // silent lets voip.ms keep ringing/forwarding to other devices
+                                // registered on the DID. Watch the transaction until voip.ms
+                                // cancels it (branch ended — another device answered, or the
+                                // caller hung up) or until a timeout, then report the end.
+                                let end_handle = handle.clone();
+                                tokio::spawn(async move {
+                                    let outcome = tokio::time::timeout(
+                                        std::time::Duration::from_secs(90),
+                                        async {
+                                            loop {
+                                                match tx.receive().await {
+                                                    Some(SipMessage::Request(req))
+                                                        if req.method == Method::Cancel =>
+                                                    {
+                                                        break "cancel";
+                                                    }
+                                                    Some(_) => continue,
+                                                    None => break "closed",
+                                                }
+                                            }
+                                        },
+                                    )
+                                    .await;
+
+                                    let reason = match outcome {
+                                        Ok(r) => r.to_string(),
+                                        Err(_) => "timeout".to_string(),
+                                    };
+                                    log::info!("[sip] Inbound INVITE branch ended: {}", reason);
+                                    safe_emit(
+                                        &end_handle,
+                                        "sip:invite:ended",
+                                        InviteEndData { reason },
+                                    );
+                                });
                             } else {
                                 log::info!("[sip] Other incoming method: {}", tx.original.method);
                             }

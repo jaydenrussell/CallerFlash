@@ -129,6 +129,7 @@ declare global {
     onStatus: (callback: (data: { status: string; message?: string }) => void) => () => void;
     onLog: (callback: (data: { message: string }) => void) => () => void;
     onInvite: (callback: (data: { callerNumber: string; callerName: string }) => void) => () => void;
+    onInviteEnded: (callback: (data: { reason: string }) => void) => () => void;
   }
 
   interface CallerFlashPlatformInfo {

@@ -292,6 +292,12 @@ function setup(): void {
         }).catch((e) => { logError('sip.onInvite', e); return () => {}; });
         return () => { unlisten.then((fn) => fn()).catch((e) => logError('sip.onInvite cleanup', e)); };
       },
+      onInviteEnded: (callback: (data: { reason: string }) => void) => {
+        const unlisten: Promise<() => void> = listen('sip:invite:ended', (event) => {
+          callback(event.payload as { reason: string });
+        }).catch((e) => { logError('sip.onInviteEnded', e); return () => {}; });
+        return () => { unlisten.then((fn) => fn()).catch((e) => logError('sip.onInviteEnded cleanup', e)); };
+      },
     },
 
     onToastDiagnostic: (callback: (data: { level: string; message: string; details?: string }) => void) => {
