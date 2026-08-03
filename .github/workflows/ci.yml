@@ -65,9 +65,12 @@ jobs:
         run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 
       - name: Audit dependencies
+        working-directory: src-tauri
         run: |
           cargo install cargo-audit
-          cargo audit --manifest-path src-tauri/Cargo.toml
+          # RUSTSEC-2024-0429 (glib) is a Linux-only transitive dep (gtk/webkit2gtk);
+          # it is never compiled on Windows, matching the dependabot dismissal.
+          cargo audit --ignore RUSTSEC-2024-0429
 
       - name: Run tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
