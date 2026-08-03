@@ -3,7 +3,7 @@
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use base64::Engine;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit as HmacKeyInit, Mac};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
@@ -99,7 +99,7 @@ fn decrypt_enc_format(encrypted: &str) -> Result<String, CommandError> {
 
     let machine_key = derive_machine_key()?;
 
-    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(&machine_key)
+    let mut mac = <Hmac<Sha256> as HmacKeyInit>::new_from_slice(&machine_key)
         .map_err(|e| CommandError::crypto(format!("HMAC init: {}", e)))?;
     mac.update(salt);
     let derived_key = mac.finalize().into_bytes();
