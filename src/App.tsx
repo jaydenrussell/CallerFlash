@@ -101,30 +101,31 @@ export default function App() {
   }, []);
 
   // Check if this is the first run of a new update
-  const [isFirstRunAfterUpdate, setIsFirstRunAfterUpdate] = useState(false);
-  
-  useEffect(() => {
+  const [isFirstRunAfterUpdate] = useState(() => {
     // Only access localStorage on client side
-    if (typeof window !== 'undefined') {
-      try {
-        const raw = window.localStorage.getItem('callerflash-ui-settings');
-        if (raw) {
-          const settings = JSON.parse(raw);
-          if (settings.lastRunVersion !== __APP_VERSION__) {
-            setIsFirstRunAfterUpdate(true);
-            settings.lastRunVersion = __APP_VERSION__;
-            window.localStorage.setItem('callerflash-ui-settings', JSON.stringify(settings));
-          }
-        } else {
-          // Brand new install
-          setIsFirstRunAfterUpdate(true);
-          window.localStorage.setItem('callerflash-ui-settings', JSON.stringify({ lastRunVersion: __APP_VERSION__ }));
-        }
-      } catch (e) {
-        addDiagnosticLog({ level: 'error', category: 'SYSTEM', message: `Failed to read UI settings: ${e}` });
-      }
+    if (typeof window === 'undefined') return false;
+    try {
+      const raw = window.localStorage.getItem('callerflash-ui-settings');
+      if (!raw) return true; // Brand new install
+      const settings = JSON.parse(raw);
+      return settings.lastRunVersion !== __APP_VERSION__;
+    } catch (e) {
+      addDiagnosticLog({ level: 'error', category: 'SYSTEM', message: `Failed to read UI settings: ${e}` });
+      return false;
     }
-  }, []);
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !isFirstRunAfterUpdate) return;
+    try {
+      const raw = window.localStorage.getItem('callerflash-ui-settings');
+      const settings = raw ? JSON.parse(raw) : {};
+      settings.lastRunVersion = __APP_VERSION__;
+      window.localStorage.setItem('callerflash-ui-settings', JSON.stringify(settings));
+    } catch (e) {
+      addDiagnosticLog({ level: 'error', category: 'SYSTEM', message: `Failed to write UI settings: ${e}` });
+    }
+  }, [isFirstRunAfterUpdate]);
 
   // Load persisted diagnostics from disk (survives app restarts)
   useEffect(() => {

@@ -377,36 +377,6 @@ export function AutoUpdate() {
     }).catch((e) => addDiagnosticLog({ level: 'error', category: 'UPDATE', message: `Failed to get download state: ${e}` }));
   }, [updateInfo.updateChannel]);
 
-  // Auto-check on tab mount — ALWAYS run on first load regardless of
-  // last-checked time, so the user sees updates immediately when they
-  // open the app. After the first check, subsequent checks respect
-  // the frequency interval (daily/weekly/monthly).
-  const hasCheckedRef = useRef(false);
-  useEffect(() => {
-    if (phase !== 'idle') return;
-    if (!shouldAutoCheck(updateInfo.lastChecked, updateInfo.updateCheckFrequency)) return;
-    if (hasCheckedRef.current) {
-      if (!shouldAutoCheck(updateInfo.lastChecked, updateInfo.updateCheckFrequency)) return;
-    }
-    hasCheckedRef.current = true;
-    handleCheckAndDownload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [updateInfo.updateCheckFrequency]);
-
-  // Changing the update channel must immediately re-check the NEWLY selected
-  // channel only. This also invalidates any in-flight check from the previous
-  // channel so stale results can never leak into the new channel's UI.
-  const lastChannelRef = useRef(updateInfo.updateChannel);
-  useEffect(() => {
-    const prev = lastChannelRef.current;
-    lastChannelRef.current = updateInfo.updateChannel;
-    if (prev !== updateInfo.updateChannel) {
-      checkIdRef.current++; // drop any stale in-flight result from the old channel
-      handleCheckAndDownload(updateInfo.updateChannel);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [updateInfo.updateChannel]);
-
   /**
    * Check for updates — queries GitHub, does NOT download.
    * The user gets an "Update" button to download, then "Install" when ready.
@@ -478,6 +448,36 @@ export function AutoUpdate() {
     setPhase('idle');
   };
 
+  // Auto-check on tab mount — ALWAYS run on first load regardless of
+  // last-checked time, so the user sees updates immediately when they
+  // open the app. After the first check, subsequent checks respect
+  // the frequency interval (daily/weekly/monthly).
+  const hasCheckedRef = useRef(false);
+  useEffect(() => {
+    if (phase !== 'idle') return;
+    if (!shouldAutoCheck(updateInfo.lastChecked, updateInfo.updateCheckFrequency)) return;
+    if (hasCheckedRef.current) {
+      if (!shouldAutoCheck(updateInfo.lastChecked, updateInfo.updateCheckFrequency)) return;
+    }
+    hasCheckedRef.current = true;
+    handleCheckAndDownload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [updateInfo.updateCheckFrequency]);
+
+  // Changing the update channel must immediately re-check the NEWLY selected
+  // channel only. This also invalidates any in-flight check from the previous
+  // channel so stale results can never leak into the new channel's UI.
+  const lastChannelRef = useRef(updateInfo.updateChannel);
+  useEffect(() => {
+    const prev = lastChannelRef.current;
+    lastChannelRef.current = updateInfo.updateChannel;
+    if (prev !== updateInfo.updateChannel) {
+      checkIdRef.current++; // drop any stale in-flight result from the old channel
+      handleCheckAndDownload(updateInfo.updateChannel);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [updateInfo.updateChannel]);
+
   /**
    * Sequential update: 1) ensure URL, 2) download (await result),
    * 3) install (await result). Every step logged to Diagnostics.
@@ -528,7 +528,7 @@ export function AutoUpdate() {
       return;
     }
 
-    let dlResult: { status?: string; error?: string } | null = null;
+    let dlResult: { status?: string; error?: string } | null;
     try {
       const raw = await window.callerflash.updater.download(updateInfo.updateChannel, updateInfo.latestVersion, url);
       dlResult = raw as { status?: string; error?: string };

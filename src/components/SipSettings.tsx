@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   Server, Lock, Save, RotateCcw,
   ChevronDown, Eye, EyeOff, ShieldCheck, Wifi, WifiOff
@@ -186,15 +186,15 @@ export function SipSettings() {
   const [showPassword, setShowPassword] = useState(false);
   const [passwordDraft, setPasswordDraft] = useState('');
   const [saved, setSaved] = useState(false);
+  const [syncedPassword, setSyncedPassword] = useState('');
 
   // Sync password from store after async decryption completes. The secret is
   // held in `localConfig` only — it is never rendered into the input until the
   // user deliberately reveals it (see the eye toggle below).
-  useEffect(() => {
-    if (sipConfig.password) {
-      setLocalConfig(prev => ({ ...prev, password: sipConfig.password }));
-    }
-  }, [sipConfig.password]);
+  if (sipConfig.password && syncedPassword !== sipConfig.password) {
+    setLocalConfig(prev => ({ ...prev, password: sipConfig.password }));
+    setSyncedPassword(sipConfig.password);
+  }
 
   // Custom mode is on if the current server isn't in the known list
   const isCustomServer = !knownServerValues.has(localConfig.server);

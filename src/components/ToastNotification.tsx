@@ -23,7 +23,7 @@ export function ToastNotification({ call, onDismiss, stackIndex }: ToastNotifica
   const dragRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef<{ mouseX: number; mouseY: number; elX: number; elY: number } | null>(null);
   const isPausedRef = useRef(false);
-  const timerStartRef = useRef(Date.now());
+  const timerStartRef = useRef(0);
   const remainingRef = useRef(toastConfig.duration * 1000);
 
   // Timer & progress
