@@ -22,7 +22,7 @@ export interface SipConfig {
   username: string;
   password: string;
   authUsername: string;
-  protocol: 'UDP' | 'TCP';
+  protocol: 'UDP' | 'TCP' | 'TLS';
   codec: string;
   registerExpiry: number;
 }
@@ -195,7 +195,13 @@ class SecureStorage {
   private saveToLocalStorage(settings: PersistedUiSettings): void {
     if (typeof window === 'undefined') return;
     try {
-      window.localStorage.setItem(UI_STORAGE_KEY, JSON.stringify(settings));
+      // Never persist credentials in WebView localStorage — the SIP password
+      // lives only in the DPAPI-encrypted settings file on disk.
+      const sanitized = { ...settings };
+      if (sanitized.sipConfig) {
+        sanitized.sipConfig = { ...sanitized.sipConfig, password: '' };
+      }
+      window.localStorage.setItem(UI_STORAGE_KEY, JSON.stringify(sanitized));
     } catch {
       // Storage full or blocked — ignore
     }

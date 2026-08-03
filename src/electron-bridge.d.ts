@@ -1,6 +1,7 @@
-// Type declarations for the Electron preload bridge exposed via contextBridge.
-// Mirrors the surface defined in `electron/preload.cjs`. Keeping this in sync
-// with that file gives the renderer full type safety on `window.callerflash`.
+// Type declarations for the `window.callerflash` IPC bridge.
+// The surface is implemented by `src/tauri-bridge.ts`, which wraps the
+// Tauri invoke/listen APIs. Keeping this in sync with that file gives
+// the renderer full type safety on `window.callerflash`.
 
 export {};
 
@@ -71,12 +72,6 @@ declare global {
     setPosition: (x: number, y: number) => void;
     /** Get the current toast window position. */
     getPosition: () => Promise<{ x: number; y: number } | null>;
-    /** Get the initial call data for this toast window (called once on mount). */
-    getInitial: () => Promise<CallerFlashToastEventData | null>;
-    /** Subscribe to incoming toast events (renderer side of the bridge). */
-    onShow: (callback: (data: CallerFlashToastEventData) => void) => () => void;
-    /** Auto-resize the toast window to fit rendered content. */
-    resizeContent: () => void;
   }
 
   type UpdateChannel = 'stable' | 'beta' | 'alpha' | 'tauri';
@@ -111,15 +106,12 @@ declare global {
     check: (channel: string) => Promise<UpdaterResult>;
     download: (channel: string, version: string, downloadUrl: string) => Promise<{ status: string; version?: string; error?: string }>;
     install: (version: string) => Promise<{ status: string; error?: string }>;
-    show: () => void;
-    setChannel: (channel: string) => void;
     getDownloadState: () => Promise<{ status: string; version: string | null; path: string | null; error: string | null }>;
     /** Notify the backend that update settings changed so any periodic check reschedules. */
     notifySettingsChanged?: () => void;
     onStatus: (callback: (data: { status: string; version?: string; progress?: number; downloadUrl?: string; message?: string }) => void) => () => void;
     onProgress: (callback: (data: { percent: number }) => void) => () => void;
     onDiagnostic: (callback: (data: { level: string; message: string; details?: string }) => void) => () => void;
-    onBackgroundCheck: (callback: (data: { version?: string; upToDate?: boolean }) => void) => () => void;
   }
 
   interface CallerFlashSipApi {

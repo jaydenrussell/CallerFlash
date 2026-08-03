@@ -42,25 +42,56 @@ async fn shell_open_external(url: String) -> Result<(), CommandError> {
             "URL contains control characters",
         ));
     }
-    if let Some(host_start) = url.find("://") {
-        let after_protocol = &url[host_start + 3..];
-        if after_protocol.starts_with("localhost")
-            || after_protocol.starts_with("127.")
-            || after_protocol.starts_with("10.")
-            || after_protocol.starts_with("192.168.")
-            || after_protocol.starts_with("169.254.")
-            || after_protocol.starts_with("0.")
-            || after_protocol.starts_with("172.16.")
-            || after_protocol.starts_with("::1")
-            || after_protocol.starts_with("[::1]")
-        {
+    let parsed = url::Url::parse(&url)
+        .map_err(|e| CommandError::invalid_input(format!("Invalid URL: {}", e)))?;
+    if let Some(host) = parsed.host_str() {
+        if host_is_private(host) {
             return Err(CommandError::invalid_input(
                 "URL points to a private or loopback address",
             ));
         }
     }
-    open::that(&url).map_err(|e| CommandError::io(format!("Failed to open URL: {}", e)))?;
+    open::that(parsed.as_str())
+        .map_err(|e| CommandError::io(format!("Failed to open URL: {}", e)))?;
     Ok(())
+}
+
+fn host_is_private(host: &str) -> bool {
+    let check = |ip: std::net::IpAddr| match ip {
+        std::net::IpAddr::V4(v4) => {
+            v4.is_loopback()
+                || v4.is_private()
+                || v4.is_unspecified()
+                || v4.is_link_local()
+                || v4.is_multicast()
+        }
+        std::net::IpAddr::V6(v6) => {
+            let octets = v6.octets();
+            let is_unique_local = (octets[0] & 0xfe) == 0xfc;
+            let is_link_local = octets[0] == 0xfe && (octets[1] & 0xc0) == 0x80;
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_multicast()
+                || is_link_local
+                || is_unique_local
+        }
+    };
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        return check(ip);
+    }
+    // Reject host strings that a browser would normalize into a numeric
+    // address even though Rust's parser won't (e.g. decimal "2130706433",
+    // hex "0x7f000001", shorthand "127.1", octal "0177.0.0.1").
+    if host
+        .chars()
+        .all(|c| c.is_ascii_hexdigit() || matches!(c, '.' | 'x' | 'X' | ':'))
+    {
+        return true;
+    }
+    // Hostname (e.g. github.com) — reject if it resolves to a private address.
+    std::net::ToSocketAddrs::to_socket_addrs(&(host.to_string(), 443))
+        .map(|addrs| addrs.map(|a| a.ip()).any(check))
+        .unwrap_or(false)
 }
 
 #[tauri::command]
@@ -459,4 +490,56 @@ pub fn run() {
         log::error!("Failed to run application: {}", e);
         eprintln!("CallerFlash: Fatal error — {}", e);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::host_is_private;
+
+    #[test]
+    fn rejects_loopback_ipv4() {
+        assert!(host_is_private("127.0.0.1"));
+    }
+
+    #[test]
+    fn rejects_loopback_ipv6() {
+        assert!(host_is_private("::1"));
+    }
+
+    #[test]
+    fn rejects_private_ranges() {
+        assert!(host_is_private("10.0.0.1"));
+        assert!(host_is_private("192.168.1.100"));
+        assert!(host_is_private("172.16.5.5"));
+    }
+
+    #[test]
+    fn rejects_obfuscated_forms() {
+        assert!(host_is_private("2130706433"));
+        assert!(host_is_private("0x7f000001"));
+        assert!(host_is_private("127.1"));
+        assert!(host_is_private("0177.0.0.1"));
+    }
+
+    #[test]
+    fn rejects_link_local_and_multicast() {
+        assert!(host_is_private("169.254.10.10"));
+        assert!(host_is_private("224.0.0.1"));
+    }
+
+    #[test]
+    fn accepts_public_ipv4() {
+        assert!(!host_is_private("8.8.8.8"));
+        assert!(!host_is_private("1.1.1.1"));
+    }
+
+    #[test]
+    fn accepts_public_hostname() {
+        assert!(!host_is_private("github.com"));
+    }
+
+    #[test]
+    fn handles_unspecified() {
+        assert!(host_is_private("0.0.0.0"));
+    }
 }

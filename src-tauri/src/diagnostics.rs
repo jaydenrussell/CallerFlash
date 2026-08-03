@@ -60,22 +60,25 @@ impl Diagnostics {
     }
 
     pub fn append(&self, entry: &LogEntry) {
-        if let Ok(line) = serde_json::to_string(entry) {
-            if let Ok(mut contents) = fs::read_to_string(&self.path) {
-                contents.push_str(&line);
-                contents.push('\n');
-                if contents.len() as u64 > MAX_SIZE {
-                    let lines: Vec<&str> = contents.trim().split('\n').collect();
-                    if lines.len() > MAX_LINES {
-                        let keep = lines[lines.len().saturating_sub(MAX_LINES)..].join("\n");
-                        let _ = fs::write(&self.path, keep + "\n");
-                        return;
-                    }
+        let Ok(line) = serde_json::to_string(entry) else {
+            return;
+        };
+        if let Ok(meta) = fs::metadata(&self.path) {
+            if meta.len() + line.len() as u64 + 1 > MAX_SIZE {
+                if let Ok(contents) = fs::read_to_string(&self.path) {
+                    let lines: Vec<&str> = contents.split('\n').filter(|l| !l.is_empty()).collect();
+                    let start = lines.len().saturating_sub(MAX_LINES);
+                    let _ = fs::write(&self.path, lines[start..].join("\n") + "\n");
                 }
-                let _ = fs::write(&self.path, contents);
-            } else {
-                let _ = fs::write(&self.path, line + "\n");
             }
+        }
+        use std::io::Write;
+        if let Ok(mut f) = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.path)
+        {
+            let _ = writeln!(f, "{}", line);
         }
     }
 
@@ -124,8 +127,20 @@ pub fn diagnostics_append(
 
 #[tauri::command]
 pub fn diagnostics_export(text: String) -> Result<String, CommandError> {
+    if !RATE_LIMITER.check("diagnostics_export") {
+        return Err(CommandError::rate_limited());
+    }
+    if text.len() > MAX_SIZE as usize {
+        return Err(CommandError::invalid_input(
+            "Export text exceeds maximum size of 10MB",
+        ));
+    }
     let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
-    let filename = format!("callerflash-diagnostics-{}.log", timestamp);
+    let uniq = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_micros())
+        .unwrap_or(0);
+    let filename = format!("callerflash-diagnostics-{}-{:06}.log", timestamp, uniq);
     let path = std::env::temp_dir().join(&filename);
     fs::write(&path, &text).map_err(|e| CommandError::io(format!("Write failed: {}", e)))?;
     let display = path.to_string_lossy().to_string();

@@ -34,7 +34,7 @@ export function About() {
             <FeatureCard
               icon={<Phone className="w-3.5 h-3.5" />}
               title="Universal SIP"
-              description="UDP or TCP — works with any compliant SIP provider."
+              description="UDP, TCP, or TLS — works with any compliant SIP provider."
               color="#60cdff"
             />
             <FeatureCard
@@ -58,7 +58,7 @@ export function About() {
             <FeatureCard
               icon={<GitBranch className="w-3.5 h-3.5" />}
               title="Verified Updates"
-              description="Authenticode + SHA-256 + Ed25519 — three independent layers."
+              description="Signed releases verified with Ed25519 + SHA-256 before install."
               color="#34d399"
             />
             <FeatureCard

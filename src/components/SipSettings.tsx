@@ -184,9 +184,12 @@ export function SipSettings() {
   } = useAppStore();
   const [localConfig, setLocalConfig] = useState<SipConfig>({ ...sipConfig });
   const [showPassword, setShowPassword] = useState(false);
+  const [passwordDraft, setPasswordDraft] = useState('');
   const [saved, setSaved] = useState(false);
 
-  // Sync password from store after async decryption completes
+  // Sync password from store after async decryption completes. The secret is
+  // held in `localConfig` only — it is never rendered into the input until the
+  // user deliberately reveals it (see the eye toggle below).
   useEffect(() => {
     if (sipConfig.password) {
       setLocalConfig(prev => ({ ...prev, password: sipConfig.password }));
@@ -263,6 +266,8 @@ export function SipSettings() {
       registerExpiry: 300,
     };
     setLocalConfig(defaults);
+    setPasswordDraft('');
+    setShowPassword(false);
     setCustomMode(false);
     addDiagnosticLog({
       level: 'info',
@@ -407,9 +412,11 @@ export function SipSettings() {
                     value={localConfig.protocol}
                     onChange={(e) => {
                       const v = e.target.value;
-                      if (v === 'UDP' || v === 'TCP') {
+                      if (v === 'UDP' || v === 'TCP' || v === 'TLS') {
                         if ((v === 'UDP' || v === 'TCP') && localConfig.port === 5061) {
                           updateLocal({ protocol: v, port: 5060 });
+                        } else if (v === 'TLS' && localConfig.port === 5060) {
+                          updateLocal({ protocol: v, port: 5061 });
                         } else {
                           updateLocal({ protocol: v });
                         }
@@ -419,6 +426,7 @@ export function SipSettings() {
                   >
                     <option value="UDP">UDP</option>
                     <option value="TCP">TCP</option>
+                    <option value="TLS">TLS</option>
                   </select>
                   <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-win-text-tertiary pointer-events-none" />
                 </div>
@@ -482,9 +490,12 @@ export function SipSettings() {
                 <div className="relative">
                   <input
                     type={showPassword ? 'text' : 'password'}
-                    value={localConfig.password}
-                    onChange={(e) => updateLocal({ password: e.target.value })}
-                    placeholder="••••••••"
+                    value={passwordDraft}
+                    onChange={(e) => {
+                      setPasswordDraft(e.target.value);
+                      updateLocal({ password: e.target.value });
+                    }}
+                    placeholder={localConfig.password ? '••••••••' : 'Enter SIP password'}
                     name="sip-password"
                     autoComplete="off"
                     spellCheck={false}
@@ -492,7 +503,15 @@ export function SipSettings() {
                     className="w-full px-3 py-2 pr-10 bg-win-card border border-win-border rounded-lg text-sm text-win-text placeholder:text-win-text-tertiary focus:outline-none focus:border-win-accent transition-colors"
                   />
                   <button
-                    onClick={() => setShowPassword(!showPassword)}
+                    onClick={() => {
+                      if (showPassword) {
+                        setShowPassword(false);
+                        setPasswordDraft('');
+                      } else {
+                        setPasswordDraft(localConfig.password);
+                        setShowPassword(true);
+                      }
+                    }}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-win-text-tertiary hover:text-win-text transition-colors"
                     aria-label={showPassword ? 'Hide password' : 'Show password'}
                   >

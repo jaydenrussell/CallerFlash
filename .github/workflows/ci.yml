@@ -33,6 +33,9 @@ jobs:
       - name: ESLint
         run: npm run lint
 
+      - name: npm audit
+        run: npm audit --audit-level=high
+
       - name: Run tests
         run: npm test
 
@@ -60,6 +63,11 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+
+      - name: Audit dependencies
+        run: |
+          cargo install cargo-audit
+          cargo audit --manifest-path src-tauri/Cargo.toml
 
       - name: Run tests
         run: cargo test --manifest-path src-tauri/Cargo.toml

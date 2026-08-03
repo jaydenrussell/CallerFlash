@@ -12,8 +12,11 @@ pub struct SecureStorage {
     tmp_path: PathBuf,
 }
 
-fn encrypt_password_field(data: &mut serde_json::Value) {
-    if let Some(password) = data.get_mut("sip").and_then(|s| s.get_mut("password")) {
+/// Encrypt the password field under the given top-level key if present.
+/// Handles both the current (`sipConfig`) and legacy (`sip`) shapes so
+/// credentials are protected regardless of which the caller uses.
+fn encrypt_password_field_for_key(data: &mut serde_json::Value, key: &str) {
+    if let Some(password) = data.get_mut(key).and_then(|s| s.get_mut("password")) {
         if let Some(value) = password.as_str() {
             if !value.is_empty() && !secure::is_encrypted(value) {
                 match secure::encrypt_string(value) {
@@ -29,8 +32,14 @@ fn encrypt_password_field(data: &mut serde_json::Value) {
     }
 }
 
-fn decrypt_password_field(data: &mut serde_json::Value) {
-    if let Some(password) = data.get_mut("sip").and_then(|s| s.get_mut("password")) {
+fn encrypt_password_field(data: &mut serde_json::Value) {
+    encrypt_password_field_for_key(data, "sipConfig");
+    encrypt_password_field_for_key(data, "sip");
+}
+
+/// Decrypt the password field under the given top-level key if present.
+fn decrypt_password_field_for_key(data: &mut serde_json::Value, key: &str) {
+    if let Some(password) = data.get_mut(key).and_then(|s| s.get_mut("password")) {
         if let Some(value) = password.as_str() {
             if value.starts_with("dpapi:") {
                 match secure::decrypt_string(value) {
@@ -44,6 +53,11 @@ fn decrypt_password_field(data: &mut serde_json::Value) {
             }
         }
     }
+}
+
+fn decrypt_password_field(data: &mut serde_json::Value) {
+    decrypt_password_field_for_key(data, "sipConfig");
+    decrypt_password_field_for_key(data, "sip");
 }
 
 impl SecureStorage {
@@ -162,6 +176,32 @@ mod tests {
         let password = on_disk["sip"]["password"].as_str().unwrap();
         assert!(password.starts_with("dpapi:"), "got: {}", password);
         assert_ne!(password, "hunter2");
+    }
+
+    #[test]
+    fn test_password_is_encrypted_at_rest_under_sipconfig_key() {
+        let (storage, _dir) = temp_storage();
+        let data =
+            serde_json::json!({"sipConfig": {"server": "sip.example.com", "password": "hunter2"}});
+        storage.save_data(&data).unwrap();
+        let raw = fs::read_to_string(&storage.settings_path).unwrap();
+        let on_disk: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let password = on_disk["sipConfig"]["password"].as_str().unwrap();
+        assert!(password.starts_with("dpapi:"), "got: {}", password);
+        assert_ne!(password, "hunter2");
+    }
+
+    #[test]
+    fn test_password_is_decrypted_on_load_under_sipconfig_key() {
+        let (storage, _dir) = temp_storage();
+        let data =
+            serde_json::json!({"sipConfig": {"server": "sip.example.com", "password": "hunter2"}});
+        storage.save_data(&data).unwrap();
+        let loaded = storage.load_data();
+        assert_eq!(
+            loaded["sipConfig"]["password"],
+            serde_json::json!("hunter2")
+        );
     }
 
     #[test]

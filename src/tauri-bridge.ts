@@ -126,16 +126,6 @@ function setup(): void {
       getPosition: async (): Promise<{ x: number; y: number } | null> => {
         return (await invoke('toast_get_position').catch((e) => { logError('toast.getPosition', e); return null; })) as { x: number; y: number } | null;
       },
-      getInitial: async (): Promise<CallerFlashToastEventData | null> => {
-        return (await invoke('toast_get_initial').catch((e) => { logError('toast.getInitial', e); return null; })) as CallerFlashToastEventData | null;
-      },
-      onShow: (callback: (data: CallerFlashToastEventData) => void) => {
-        const unlisten: Promise<() => void> = listen('toast:show:event', (event) => {
-          callback(event.payload as CallerFlashToastEventData);
-        }).catch((e) => { logError('toast.onShow', e); return () => {}; });
-        return () => { unlisten.then((fn) => fn()).catch((e) => logError('toast.onShow cleanup', e)); };
-      },
-      resizeContent: () => {},
     },
 
     updater: {
@@ -209,12 +199,6 @@ function setup(): void {
           return { status: 'error', error: String(e) };
         }
       },
-      show: function () {
-        // Navigate to updates tab - handled by event
-      },
-      setChannel: function (_channel: string) {
-        // Handled by frontend
-      },
       getDownloadState: async function () {
         return { status: currentUpdate ? 'available' : 'idle', version: currentUpdate?.version || null, path: null, error: null };
       },
@@ -235,9 +219,6 @@ function setup(): void {
           callback(event.payload as { level: string; message: string; details?: string });
         }).catch(function (e) { logError('updater.onDiagnostic', e); return function () {}; });
         return function () { void unlisten.then(function (fn) { return fn(); }).catch(function (e) { logError('updater.onDiagnostic cleanup', e); }); };
-      },
-      onBackgroundCheck: function (_callback: (data: { version?: string; upToDate?: boolean }) => void) {
-        return function () {};
       },
     },
 

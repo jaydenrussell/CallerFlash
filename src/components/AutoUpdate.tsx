@@ -3,12 +3,9 @@ import {
   Download, RefreshCw,
   Shield, GitBranch,
   GitCommit, ChevronDown,
-  Check, X as XIcon, ShieldCheck, AlertTriangle
+  Check, X as XIcon, AlertTriangle
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
-import {
-  type VerificationResult,
-} from '../security/updateVerifier';
 
 import { formatVersion } from '../utils/formatVersion';
 
@@ -210,7 +207,6 @@ function formatRelativeLastCheck(lastChecked: Date | null): string {
 
 export function AutoUpdate() {
   const { updateInfo, setUpdateInfo, addDiagnosticLog } = useAppStore();
-  const [verification, setVerification] = useState<VerificationResult | null>(null);
   const [showReleaseNotes, setShowReleaseNotes] = useState(false);
   // Full unfiltered release list, fetched from GitHub.
   const [releases, setReleases] = useState<GithubRelease[]>([]);
@@ -274,15 +270,12 @@ export function AutoUpdate() {
     }
   }, [updateInfo.updateAvailable, updateInfo.latestVersion]);
 
-  // Listen for Electron main process updater status.
+  // Listen for updater status events from the backend.
   useEffect(() => {
     if (!window.callerflash?.updater?.onStatus) {
-      console.log('[UI] updater.onStatus NOT available');
       return;
     }
-    console.log('[UI] updater.onStatus listener registered');
     return window.callerflash.updater.onStatus((status) => {
-      console.log('[UI] updater:status received:', JSON.stringify(status));
       if (status.status === 'downloading') {
         setPhase('downloading');
         setUpdateInfo({ isDownloading: true });
@@ -336,12 +329,9 @@ export function AutoUpdate() {
   // Listen for download progress (percentage)
   useEffect(() => {
     if (!window.callerflash?.updater?.onProgress) {
-      console.log('[UI] updater.onProgress NOT available');
       return;
     }
-    console.log('[UI] updater.onProgress listener registered');
     return window.callerflash.updater.onProgress((data) => {
-      console.log('[UI] updater:progress received:', JSON.stringify(data));
       if (data.percent != null) {
         setUpdateInfo({ downloadProgress: data.percent });
       }
@@ -427,7 +417,6 @@ export function AutoUpdate() {
     const channel: 'stable' | 'beta' = channelOverride ?? updateInfo.updateChannel;
     const id = ++checkIdRef.current;
     setPhase('checking');
-    setVerification(null);
     setOutcome(null);
     addDiagnosticLog({
       level: 'info',
@@ -694,37 +683,6 @@ export function AutoUpdate() {
       )}
 
 
-
-      {/* Verification Audit Panel */}
-      {verification && (
-        <div className="bg-win-surface rounded-xl border border-win-border p-3 flex-shrink-0">
-          <div className="flex items-center gap-2 mb-2">
-            {verification.approved ? (
-              <ShieldCheck className="w-4 h-4 text-win-success" />
-            ) : (
-              <XIcon className="w-4 h-4 text-win-error" />
-            )}
-            <h3 className="text-sm font-semibold text-win-text">
-              Verification {verification.approved ? 'Passed' : 'Failed'}
-            </h3>
-          </div>
-          <div className="space-y-1">
-            {verification.steps.map((step, i) => (
-              <div key={i} className="flex items-start gap-2 px-2.5 py-1.5 rounded-lg bg-win-card border border-win-border/50">
-                {step.passed ? (
-                  <Check className="w-3 h-3 text-win-success flex-shrink-0 mt-0.5" />
-                ) : (
-                  <XIcon className="w-3 h-3 text-win-error flex-shrink-0 mt-0.5" />
-                )}
-                <div className="min-w-0">
-                  <p className="text-xs font-medium text-win-text">{step.name}</p>
-                  <p className="text-[11px] text-win-text-tertiary">{step.detail}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Download Progress */}
       {phase === 'downloading' && (

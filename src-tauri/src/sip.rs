@@ -11,7 +11,7 @@ use rsipstack::transport::udp::UdpConnection;
 use rsipstack::transport::{SipAddr, SipConnection, TransportLayer};
 use rsipstack::EndpointBuilder as RsEndpointBuilder;
 use secrecy::{ExposeSecret, SecretString};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Mutex;
@@ -35,21 +35,6 @@ pub struct SipConfig {
     pub protocol: Option<String>,
     pub auth_username: Option<String>,
     pub register_expiry: Option<u32>,
-}
-
-impl Serialize for SipConfig {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeStruct;
-        let mut st = s.serialize_struct("SipConfig", 7)?;
-        st.serialize_field("username", &self.username)?;
-        st.serialize_field("password", self.password.expose_secret())?;
-        st.serialize_field("server", &self.server)?;
-        st.serialize_field("port", &self.port)?;
-        st.serialize_field("protocol", &self.protocol)?;
-        st.serialize_field("authUsername", &self.auth_username)?;
-        st.serialize_field("registerExpiry", &self.register_expiry)?;
-        st.end()
-    }
 }
 
 impl<'de> Deserialize<'de> for SipConfig {
@@ -345,7 +330,7 @@ impl SipClient {
         let join_handle = tokio::spawn(async move {
             let future = std::panic::AssertUnwindSafe(async move {
                 let server = config.server.clone();
-                let protocol = config.protocol.as_deref().unwrap_or("UDP").to_string();
+                let protocol = config.protocol.as_deref().unwrap_or("UDP").to_uppercase();
                 let port = config
                     .port
                     .unwrap_or(if protocol == "TLS" { 5061 } else { 5060 });

@@ -72,8 +72,8 @@ The **trust boundary** sits at the IPC layer. The frontend is treated as untrust
 - Notification titles/bodies have length limits (256/1024 bytes)
 - Toast data is verified to be a JSON object before access
 - SIP config is validated (username, server required; port, protocol, expiry range-checked)
-- Storage data is size-limited (5MB max) and must be a JSON object
-- URLs for `shell_open_external` are restricted to `http://` and `https://` only, max 2048 chars
+- Storage data must be a JSON object (validated on the Rust side)
+- URLs for `shell_open_external` must be `http://`/`https://` (≤2048 chars) and must not resolve to a private or loopback address
 
 ### Module Layout
 
@@ -82,10 +82,10 @@ src-tauri/src/
 ├── main.rs          # Entry point, windows_subsystem attribute
 ├── lib.rs           # App setup, command registration, window management
 ├── error.rs         # Structured error types (CommandError, ErrorKind, StartupReport)
-├── startup.rs       # Self-check routine (directories, keyring, Win11 detection)
-├── storage.rs       # AES-256-GCM encrypted settings, keyring-backed key storage
+├── startup.rs       # Self-check routine (directories, settings integrity, Win11 detection)
+├── storage.rs       # Atomic settings store; SIP password encrypted at rest via DPAPI
 ├── diagnostics.rs   # Rolling log file, bounded at 10K lines/10MB
-├── sip.rs           # UDP SIP client, MD5 digest auth, INVITE parsing
+├── sip.rs           # UDP/TCP/TLS SIP client, MD5 digest auth, INVITE parsing
 └── tray.rs          # System tray menu, icon, event handlers
 ```
 
@@ -113,27 +113,28 @@ The app requests only the minimum permissions needed (see `src-tauri/capabilitie
 - `shell:allow-execute` — no arbitrary binary execution
 - `fs:*` — no filesystem access from frontend
 - `dialog:*` — no file dialogs
-- `clipboard:*` — clipboard is read-only via `tauri-bridge.ts`
+- `clipboard:*` — not requested; auto-copy uses the WebView2 `navigator.clipboard` API directly
 
 ### Content Security Policy
 
-The CSP in `tauri.conf.json` restricts:
-- `script-src 'self'` — no inline scripts or eval
-- `style-src 'self' 'unsafe-inline'` — required for Tailwind/React inline styles
-- `connect-src 'self' ws: wss:` — IPC and WebSocket connections
+The CSP in `tauri.conf.json` (and mirrored in `index.html`) restricts:
+- `script-src 'self' 'wasm-unsafe-eval'` — no inline scripts
+- `style-src 'self' https://fonts.googleapis.com 'unsafe-inline'` — Tailwind/React inline styles + font CDN
+- `font-src 'self' https://fonts.gstatic.com data:` — bundled + Google Fonts
+- `connect-src 'self' https://api.github.com https://github.com https://objects.githubusercontent.com` — IPC + update checks
 - `img-src 'self' data:` — images from bundle or data URIs
 - `form-action 'none'`, `object-src 'none'`, `frame-ancestors 'none'`
 
-The toast window (`toast.html`) has a separate, permissive CSP that allows its inline script (`'unsafe-inline'`). This is necessary because the toast script is embedded (no build step) and runs in an isolated webview with no user input surface.
+The toast window (`toast.html`) has its own strict `<meta>` CSP (`script-src 'self'`) and is compiled from `src/toast/main.ts` by the same Vite build; it runs in an isolated webview with no user input surface.
 
 ### Credential Storage
 
-SIP passwords are encrypted at rest using AES-256-GCM:
-- Encryption key is stored in the Windows Credential Manager via the `keyring` crate
-- Key is generated once on first use (OS-level RNG)
-- Settings file uses a versioned envelope format (`_version: 3`, `_encrypted: true`)
+SIP passwords are encrypted at rest using Windows DPAPI (`CryptProtectData`, current-user scope):
+- Stored value is a `dpapi:<base64>` blob — tied to the machine and user, no key to manage
+- The settings file is plain JSON with only the password field encrypted (other fields are not secret)
+- Credentials are never written to WebView `localStorage` — the password lives only in the DPAPI-encrypted file
+- Atomic temp-file + rename writes with a `settings.json.bak` backup protect against corruption
 - Decryption failures produce user-safe messages ("A secure storage error occurred")
-- Fallback: if keyring is unavailable, the app continues with in-memory-only operation
 
 ### Input Validation
 
@@ -143,8 +144,8 @@ Every IPC command validates its inputs:
 |---|---|
 | `sip_connect` | Username required (≤128), server required (≤256), port (1–65535), protocol (UDP/TCP/TLS), expiry (30–86400) |
 | `notify_show` | Title required (≤256), body (≤1024) |
-| `shell_open_external` | Must start with `http://` or `https://`, ≤2048 chars |
-| `storage_save` | Must be JSON object, ≤5MB serialized |
+| `shell_open_external` | Must start with `http://` or `https://`, ≤2048 chars, no control chars, host must not resolve to private/loopback |
+| `storage_save` | Must be a JSON object |
 | `diagnostics_append` | Schema-validated via serde, field length limits |
 | `toast_show` | Must be JSON object |
 | `toast_set_position` | i32 values (safe by type) |
@@ -169,7 +170,7 @@ The app is designed to work identically on Windows 11 Home and Pro. No features 
 | Feature | Home | Pro | Notes |
 |---|---|---|---|
 | WebView2 runtime | ✓ | ✓ | Bundled with Windows 11, auto-installed if missing |
-| System keyring | ✓ | ✓ | Windows Credential Manager available on both |
+| System keyring | ✓ | ✓ | DPAPI is built into Windows — credential storage works on both |
 | Auto-start (registry) | ✓ | ✓ | Uses HKEY_CURRENT_USER, no elevation needed |
 | NSIS per-user install | ✓ | ✓ | No admin required |
 | Toast notifications | ✓ | ✓ | Uses Tauri notification plugin |
@@ -200,28 +201,24 @@ On every launch, `run_self_check()` in `startup.rs` verifies:
 
 1. **App data directory** — exists or is created, reports failure path
 2. **Settings file** — reads and validates JSON, logs warnings for corruption
-3. **System keyring** — checks accessibility, reports degraded/fallback state
-4. **OS version and edition** — detects Windows 11 vs pre-Win11, Home vs Pro
+3. **OS version and edition** — detects Windows 11 vs pre-Win11, Home vs Pro
 
 Results are logged via `log` crate and available to the frontend via `run_startup_checks` command (returns `StartupReport`).
 
 ## Known Limitations
 
-- **TCP/TLS SIP**: TCP and TLS transport are not yet implemented. UDP is used for all connections.
-- **Multiple calls**: Only one incoming call is handled at a time. The SIP `486 Busy Here` response is sent for subsequent calls.
+- **Multiple calls**: Only one incoming call is handled at a time; subsequent calls are ignored (the app never answers or sends responses).
 - **No call rejection**: There is no way to reject a call from the toast notification itself.
 - **Single SIP account**: Only one SIP account can be configured at a time.
 - **No DTMF**: In-call DTMF tone sending is not supported.
-- **Registration on port 5060**: The app binds to UDP port 5060, which may conflict with other SIP software. A configurable bind port is planned.
 
 ## Risk Register
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| Keyring service unavailable (headless/CI) | Low | Cannot store encryption key | Falls back to in-memory storage; warning logged |
-| Settings file corruption | Low | Lost settings, re-encrypts with new key | Backup file exists; old format still readable |
-| SIP password compromise via keyring theft | Low | Credential exposure | AES-256-GCM at rest; attacker needs both file + keyring access |
-| UDP port 5060 conflict | Medium | Registration fails | Error emitted to frontend; configurable port planned |
+| DPAPI encryption failure (rare) | Very Low | SIP password saved without encryption | Error logged; value left as-is, never double-encrypted |
+| Settings file corruption | Low | Lost settings | Backup file (`settings.json.bak`) auto-restored |
+| SIP password compromise via credential theft | Low | Credential exposure | DPAPI (current-user, machine-bound) at rest; attacker needs the same Windows session |
 | Frontend sends malicious IPC payload | Very Low | Rejected at trust boundary | Every command validates input; oversized/invalid inputs rejected |
 | Auto-update MITM | Very Low | Malicious payload | Ed25519 signature verification; pinned public key |
 | WebView2 runtime missing | Low | App won't launch | Installer includes bootstrapper; clear error message |
@@ -233,7 +230,7 @@ Results are logged via `log` crate and available to the frontend via `run_startu
 
 ```bash
 cd src-tauri
-cargo test                    # Run all 25 unit tests
+cargo test                    # Run all 30 unit tests
 cargo fmt --check             # Format check
 cargo clippy -- -D warnings   # Lint check
 cargo build --release         # Release build verification
@@ -242,21 +239,17 @@ cargo build --release         # Release build verification
 ### Frontend Tests
 
 ```bash
-npm test                      # 21 vitest tests
+npm test                      # 42 vitest tests
 npm run lint                  # ESLint
 ```
 
 ### CI Checks (GitHub Actions)
 
-Both `ci.yml` and `tauri.yml` run:
-- `cargo fmt --check`
-- `cargo clippy -- -D warnings`
-- `cargo test`
-- `cargo audit`
-- `npm test`
-- `npm audit`
-- `tsc --noEmit`
-- ESLint + Prettier
+`ci.yml` runs on pull requests and `feature/**`/`fix/**` branches:
+- `tsc --noEmit`, ESLint, Vitest, `vite build`, `npm audit`
+- `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`, `cargo audit`
+
+`codeql.yml` runs GitHub CodeQL static analysis. `release.yml` builds and signs the NSIS installer on release tags. `version-bump.yml` automates `chore: bump` PRs.
 
 ## Release Hardening Checklist
 
@@ -264,8 +257,8 @@ Before tagging a release:
 
 - [ ] `cargo fmt --check` passes
 - [ ] `cargo clippy -- -D warnings` passes
-- [ ] `cargo test` passes (all 25 tests)
-- [ ] `npm test` passes (all 21 frontend tests)
+- [ ] `cargo test` passes (all 30 tests)
+- [ ] `npm test` passes (all 42 frontend tests)
 - [ ] `npm run lint` passes
 - [ ] `cargo audit` has no vulnerabilities
 - [ ] `npm audit` has no vulnerabilities
@@ -286,8 +279,8 @@ Before tagging a release:
 - [ ] User-safe error messages don't leak internal paths/state
 - [ ] Frontend treated as untrusted — no `#[tauri::command]` without input validation
 - [ ] No shell execution or filesystem access exposed to frontend
-- [ ] SIP passwords encrypted at rest (AES-256-GCM + keyring)
-- [ ] CSP restricts script sources to `'self'` for main window
+- [ ] SIP passwords encrypted at rest (DPAPI, `dpapi:` prefix in settings.json)
+- [ ] CSP restricts script sources to `'self' 'wasm-unsafe-eval'` for the main window
 - [ ] Capabilities use least-privilege (no `shell:default`, no `fs:*`, no `dialog:*`)
 - [ ] URL open restricted to `https:` and `http:` only
 - [ ] Storage data is size-limited and schema-validated

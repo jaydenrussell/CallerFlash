@@ -86,11 +86,29 @@ describe("SipSettings", () => {
     expect(mockStore.disconnectSip).toHaveBeenCalled();
   });
 
-  it("renders protocol select with UDP/TCP options", () => {
+  it("renders protocol select with UDP/TCP/TLS options", () => {
     render(<SipSettings />);
     const selects = screen.getAllByRole("combobox");
     // The protocol select is the second combobox (first is SIP provider)
     expect(selects.length).toBeGreaterThanOrEqual(2);
+    const protocolSelect = selects[1] as HTMLSelectElement;
+    expect(Array.from(protocolSelect.options).map((o) => o.value)).toEqual(["UDP", "TCP", "TLS"]);
+  });
+
+  it("auto-swaps port to 5061 when switching to TLS", () => {
+    render(<SipSettings />);
+    const protocolSelect = screen.getAllByRole("combobox")[1] as HTMLSelectElement;
+    fireEvent.change(protocolSelect, { target: { value: "TLS" } });
+    expect(screen.getByDisplayValue("5061")).toBeInTheDocument();
+  });
+
+  it("auto-swaps port back to 5060 when leaving TLS", () => {
+    (mockStore.sipConfig as { protocol: string }).protocol = "TLS";
+    mockStore.sipConfig.port = 5061;
+    render(<SipSettings />);
+    const protocolSelect = screen.getAllByRole("combobox")[1] as HTMLSelectElement;
+    fireEvent.change(protocolSelect, { target: { value: "UDP" } });
+    expect(screen.getByDisplayValue("5060")).toBeInTheDocument();
   });
 
   it("calls setSipConfig with updated fields on save", () => {
@@ -105,5 +123,15 @@ describe("SipSettings", () => {
     mockStore.sipConfig.server = "sip.test.com";
     render(<SipSettings />);
     expect(screen.getByDisplayValue("sip.test.com")).toBeInTheDocument();
+  });
+
+  it("only reveals the password after the user clicks show", () => {
+    mockStore.sipConfig = { ...mockStore.sipConfig, password: "secret123" };
+    render(<SipSettings />);
+    const input = screen.getByPlaceholderText(/••••••••/) as HTMLInputElement;
+    expect(input.value).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: /show password/i }));
+    expect(input.value).toBe("secret123");
+    expect(input.type).toBe("text");
   });
 });

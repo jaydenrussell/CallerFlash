@@ -50,15 +50,6 @@ html, body {
   min-height: 400px;
 }
 
-/* When the renderer is mounted as the dedicated toast window
-   (?toast=1 query param) the OS chrome is hidden and the body must
-   be transparent so only the toast cards paint pixels. */
-body.toast-window,
-body.toast-window html {
-  background-color: transparent !important;
-  overflow: hidden;
-}
-
 #root {
   width: 100%;
   height: 100vh;

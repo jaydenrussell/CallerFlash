@@ -70,7 +70,7 @@ export function Dashboard() {
           <DetailRow label="Protocol" value={`${sipConfig.protocol} : ${sipConfig.port}`} />
           <DetailRow label="Codec" value={sipConfig.codec} />
           <DetailRow label="Registration" value={sipRegistered ? `Active (${sipConfig.registerExpiry}s)` : 'Inactive'} />
-          <DetailRow label="Encryption" value={sipConfig.protocol === 'TCP' ? 'None (TCP transport)' : 'None'} />
+          <DetailRow label="Encryption" value={sipConfig.protocol === 'TLS' ? 'TLS (encrypted)' : 'None'} />
         </div>
         <div className="mt-2 flex items-center gap-2">
           <InfoButton

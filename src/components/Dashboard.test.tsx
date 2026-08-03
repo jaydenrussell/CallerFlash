@@ -73,10 +73,10 @@ describe("Dashboard", () => {
     expect(screen.getByText(/none/i)).toBeInTheDocument();
   });
 
-  it("shows encryption label for TCP", () => {
-    (mockStore.sipConfig as { protocol: string }).protocol = "TCP";
+  it("shows TLS encryption label when protocol is TLS", () => {
+    (mockStore.sipConfig as { protocol: string }).protocol = "TLS";
     render(<Dashboard />);
-    expect(screen.getByText(/TCP transport/i)).toBeInTheDocument();
+    expect(screen.getByText(/TLS \(encrypted\)/i)).toBeInTheDocument();
   });
 
   it("renders without crashing when no server is configured", () => {

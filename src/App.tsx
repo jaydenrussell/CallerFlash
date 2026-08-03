@@ -262,7 +262,6 @@ export default function App() {
       });
 
       // Show notification based on user's style preference
-      console.log('[App] SIP invite handler, toastConfig.style:', toastConfig.style, 'toast.show:', typeof window.callerflash?.toast?.show);
       if (toastConfig.style === 'custom' && window.callerflash?.toast?.show) {
         window.callerflash.toast.show({
           id: record.id,
