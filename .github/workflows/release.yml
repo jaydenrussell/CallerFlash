@@ -59,6 +59,7 @@ jobs:
             if ($v.Build -ne 0) { throw "First release must be a stable tag (patch 0), got '$tag'" }
             $releaseType = 'stable'
             $targetBranch = 'stable'
+            $manifestVersion = $version
           } else {
             $latest = [version]($latestTag -replace '^v', '')
             if ($v -le $latest) {
@@ -68,16 +69,18 @@ jobs:
               if ($v.Build -gt 99) { throw "Beta patch must be <= 99, got '$tag'" }
               $releaseType = 'beta'
               $targetBranch = 'beta'
+              $manifestVersion = "${version}-beta.${v.Build}"
             } elseif ($v.Build -eq 0) {
               $releaseType = 'stable'
               $targetBranch = 'stable'
+              $manifestVersion = $version
             } else {
               throw "Invalid version '$tag': patch must be 0 (stable) or share the current stable's minor (beta)"
             }
           }
 
           "release_type=$releaseType" >> $env:GITHUB_OUTPUT
-          "version=$version" >> $env:GITHUB_OUTPUT
+          "version=$manifestVersion" >> $env:GITHUB_OUTPUT
           "target_branch=$targetBranch" >> $env:GITHUB_OUTPUT
 
       - name: Write version into manifests
