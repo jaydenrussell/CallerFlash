@@ -245,7 +245,7 @@ async fn create_transport(
     port: u16,
     server_hostname: &str,
     cancel_token: CancellationToken,
-) -> Result<(SipConnection, u16), String> {
+) -> Result<(SipConnection, u16, Option<TlsConfig>), String> {
     match protocol {
         "TCP" => {
             let target = SipAddr {
@@ -259,7 +259,7 @@ async fn create_transport(
                 .await
                 .map_err(|e| format!("TCP connect failed: {}", e))?;
             let local_port = tcp.get_addr().addr.port.map(|p| p.value()).unwrap_or(0);
-            Ok((SipConnection::Tcp(tcp), local_port))
+            Ok((SipConnection::Tcp(tcp), local_port, None))
         }
         "TLS" => {
             let target = SipAddr {
@@ -290,7 +290,7 @@ async fn create_transport(
                 .await
                 .map_err(|e| format!("TLS connect failed: {}", e))?;
             let local_port = tls.get_addr().addr.port.map(|p| p.value()).unwrap_or(0);
-            Ok((SipConnection::Tls(tls), local_port))
+            Ok((SipConnection::Tls(tls), local_port, Some(tls_config)))
         }
         _ => {
             let udp = UdpConnection::create_connection(
@@ -303,7 +303,7 @@ async fn create_transport(
             .await
             .map_err(|e| format!("Failed to bind UDP: {}", e))?;
             let local_port = udp.get_addr().addr.port.map(|p| p.value()).unwrap_or(5060);
-            Ok((SipConnection::Udp(udp), local_port))
+            Ok((SipConnection::Udp(udp), local_port, None))
         }
     }
 }
@@ -371,7 +371,7 @@ impl SipClient {
                     };
 
                 let cancel_token = CancellationToken::new();
-                let (transport, local_port) = match create_transport(
+                let (transport, local_port, tls_config) = match create_transport(
                     &protocol,
                     server_addr.ip(),
                     port,
@@ -408,6 +408,14 @@ impl SipClient {
                 // add_transport also registers UDP (no remote address) into the
                 // listen set that serve_listens() and lookup() traverse.
                 let transport_layer = TransportLayer::new(cancel_token.child_token());
+                if let Some(tls_config) = tls_config {
+                    // Ensure any TLS connection created by the transport layer's
+                    // lookup() (which re-resolves the domain and may create a fresh
+                    // connection instead of reusing the pre-connected one) has the
+                    // same CA roots + SNI. Without this, the fallback connection
+                    // uses an empty TlsConfig and the TLS handshake fails.
+                    transport_layer.set_tls_config(tls_config);
+                }
                 transport_layer.add_connection(transport.clone());
                 transport_layer.add_transport(transport.clone());
 
