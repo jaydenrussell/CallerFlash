@@ -1,0 +1,312 @@
+{
+  "meta": {
+    "tool": "opencode production-readiness audit",
+    "repository": "jaydenrussell/CallerFlash",
+    "branch": "main",
+    "commit": "2c479e9",
+    "version": "1.9.6-beta",
+    "date": "2026-08-04",
+    "scope": [
+      "rust-backend",
+      "typescript-frontend",
+      "config-capabilities",
+      "ci-cd",
+      "packaging",
+      "update-channel",
+      "threat-model",
+      "compliance"
+    ],
+    "method": "source-review, config-review, workflow-review, gh-api-repo-inspection, live-npm-audit",
+    "replaces": "previous AUDIT.md (early Electron-era, stale)",
+    "format": "findings explained by severity with concrete remediation recommendations (mirrors AUDIT.md)"
+  },
+  "scores": {
+    "code_quality_maintainability": 80,
+    "ci_cd_supply_chain": 55,
+    "iac_runtime_packaging": 68,
+    "application_security": 84,
+    "compliance_governance": 60,
+    "release_readiness": 65,
+    "overall": 72,
+    "scale": "0-100"
+  },
+  "verdict": {
+    "result": "CONDITIONAL_GO",
+    "summary": "No known exploitable application-level vulnerability. Credential storage fix verified and shipped. Release gate requires the 7-day pipeline-hardening items (branch protection, approval-gated signed release publishing, SHA-pinned release actions, signing-key isolation, docs refresh).",
+    "gate_requirements": [
+      "enable-branch-protection-on-main",
+      "approval-gated-release-publishing",
+      "pin-release-actions-by-sha",
+      "signing-key-isolation",
+      "merge-dependabot-undici-pr",
+      "refresh-SECURITY.md-and-AGENTS.md-CRITICAL.md"
+    ]
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "CRITICAL",
+      "status": "open",
+      "title": "No branch protection on main + zero-approval signed release publishing",
+      "files": [".github/workflows/version-bump.yml", ".github/workflows/release.yml"],
+      "evidence": "branch protection API returns 404; version-bump.yml has permissions contents:write and auto-pushes to main; release.yml auto-publishes signed release on any v*/beta* tag push",
+      "explanation": "Three facts combine into one exploit chain: (1) gh api repos/jaydenrussell/CallerFlash/branches/main/protection returns 404, so main has no branch protection, required PR, status check, signature requirement, or push restriction; (2) version-bump.yml runs on every push to main with contents:write and pushes a 'chore: bump' commit itself, so any actor who can push to main can also push a v*/beta* tag; (3) release.yml triggers on any such tag and auto-publishes a public release with draft:false, no environment, and no approval gate, generating the minisign signature and update.json the updater trusts. Because update artifacts are signed with TAURI_SIGNING_PRIVATE_KEY (a repo secret), an attacker who compromises the GitHub account or a maintainer PAT can land malicious code, push a tag, auto-publish a signed malicious installer, and all users auto-update to it. Write access additionally permits editing release.yml itself to exfiltrate the signing key: full, silent supply-chain takeover.",
+      "recommendation": "Do all together: (1) enable branch protection on main: gh api -X PUT repos/jaydenrussell/CallerFlash/branches/main/protection -f required_status_checks[strict]=true -f required_status_checks[contexts][]=lint-build -f required_status_checks[contexts][]=rust -f required_pull_request_reviews[required_approving_review_count]=1 -f enforce_admins=true -f required_signatures=true -f allow_force_pushes=false -f allow_deletions=false; then restrict direct pushes so only a callerflash-bot fine-grained least-privilege PAT scoped to this repo can push bump commits. (2) Move TAURI_SIGNING_PRIVATE_KEY + password into a GitHub environment named 'release' with required_reviewers and reference it from the release job (environment: release + contents: write). (3) Publish as draft and promote manually, or keep auto-publish behind the approval environment. (4) Add actions/attest-build-provenance (SHA-pinned) to bind artifacts to the exact run. (5) Rotate the minisign signing key after the environment is in place. (6) Prefer gh release create over softprops/action-gh-release to remove the third-party action: gh release create \"$GITHUB_REF_NAME\" artifacts/** --generate-notes --verify-tag (add --prerelease only when the tag contains -beta).",
+      "effort": "M"
+    },
+    {
+      "id": "F2",
+      "severity": "HIGH",
+      "status": "open",
+      "title": "release.yml unpinned actions, broad permissions, non-reproducible build",
+      "files": [".github/workflows/release.yml"],
+      "evidence": "checkout@v3, setup-node@v4, softprops/action-gh-release@v1 floating tags; workflow-level contents:write; choco packages unpinned; PJSIP built from moving HEAD git clone",
+      "explanation": "ci.yml correctly pins checkout and setup-node by SHA, but release.yml uses floating tags (actions/checkout@v3, actions/setup-node@v4, softprops/action-gh-release@v1, upload/download-artifact@v4). A floating tag can be silently repointed by its upstream owner, changing what the release build runs. The workflow also grants workflow-level contents:write (the build job needs none), choco install pulls unpinned package versions, and PJSIP is built from git clone https://github.com/pjsip/pjproject.git, i.e. the moving HEAD of the upstream repo, making every release build non-reproducible and exposed to upstream compromise.",
+      "recommendation": "(1) Pin every action by SHA, reusing the pins proven in ci.yml and resolving the rest via dependabot update-types:[pin] or gh api: - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 (v4); - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 (v4). (2) Scope permissions to jobs: build -> contents: read; only the release job gets contents: write. (3) Pin PJSIP to a released tag/commit: git clone --branch <pjsip-release-tag> --depth 1 https://github.com/pjsip/pjproject.git /tmp/pjproject; pin choco versions (choco install msys2 --version=X.Y); cache the PJSIP build output with actions/cache.",
+      "effort": "M"
+    },
+    {
+      "id": "F3",
+      "severity": "HIGH",
+      "status": "open",
+      "title": "Windows Authenticode signing configured but not wired into release.yml",
+      "files": ["src-tauri/tauri.conf.json", ".github/workflows/release.yml"],
+      "evidence": "WIN_CSC_LINK and WIN_CSC_KEY_PASSWORD secrets present but no signCommand and no signing env in release.yml",
+      "explanation": "WIN_CSC_LINK and WIN_CSC_KEY_PASSWORD secrets exist, but the Tauri build step never uses them: tauri.conf.json has no signCommand and release.yml sets only the updater-signing env. The shipped .exe is therefore not Authenticode-signed: Windows shows a SmartScreen 'unknown publisher' warning, the installer's only authenticity is the minisign signature the updater verifies, enterprises cannot deploy via MDM, and a tampered installer downloaded outside the updater is indistinguishable from a legit one.",
+      "recommendation": "Sign the installer during bundling. In tauri.conf.json bundle.windows.nsis add: \"signCommand\": \"signtool sign /fd SHA256 /f \\\"%WIN_CSC_LINK%\\\" /p \\\"%WIN_CSC_KEY_PASSWORD%\\\" /tr http://timestamp.digicert.com /td SHA256 \\\"%1\\\"\". Keep TAURI_SIGNING_* for updater signatures (the two layers are independent). Validate on a test release before the next stable.",
+      "effort": "M"
+    },
+    {
+      "id": "F4",
+      "severity": "HIGH",
+      "status": "open",
+      "title": "WebView CSP defense-in-depth gaps",
+      "files": ["src-tauri/tauri.conf.json", "toast.html"],
+      "evidence": "style-src 'unsafe-inline'; script-src 'wasm-unsafe-eval' with no wasm bundle; connect-src includes github hosts only needed for beta endpoint fetch; no CSP violation reporting",
+      "explanation": "The CSP allows style-src 'self' https://fonts.googleapis.com 'unsafe-inline', which inline styles can abuse for data-exfiltration via CSS attribute selectors + background:url(...) if any script injection occurs; script-src 'self' 'wasm-unsafe-eval' permits wasm compilation although the production bundle contains no wasm, so the allowance is pure risk; connect-src 'self' https://api.github.com https://github.com https://objects.githubusercontent.com exists only for the beta-endpoint fetch in tauri-bridge.ts (the real update check runs in Rust), so these hosts become an exfiltration sink if a renderer script ever runs; and there is no report-to, so injection attempts and policy violations are invisible. The toast window (toast.html) keeps 'unsafe-inline' for its inline <style>; it is an isolated webview with no user input, so this is acceptable but closable by moving styles to an external file.",
+      "recommendation": "(1) Move beta-endpoint resolution into a Rust command (cmd_check_update already has a validated endpoint). (2) Tighten the CSP to: default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data:; connect-src 'self'; form-action 'none'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'. Verify the Tailwind build emits only external CSS. (3) Add CSP violation reporting routed to the diagnostics log (Tauri supports a custom CSP handler). (4) Optionally move toast.html's <style> block to external CSS and drop 'unsafe-inline' there too.",
+      "effort": "M"
+    },
+    {
+      "id": "F5",
+      "severity": "HIGH",
+      "status": "open",
+      "title": "Security documentation describes a different app than shipped",
+      "files": ["SECURITY.md", "src-tauri/src/update.rs"],
+      "evidence": "SECURITY.md documents keyring AES-256-GCM + openssl Ed25519 signing; reality is DPAPI + minisign. cmd_verify_update and VERIFY_PUBLIC_KEY_B64 are dead code (no frontend caller); RELEASE_SIGNING_PRIVATE_KEY unused",
+      "explanation": "SECURITY.md says credentials are AES-256-GCM under a keyring and releases are signed with OpenSSL Ed25519 detached signatures. Shipped reality: credentials are DPAPI-encrypted (storage.rs/secure.rs) and releases are minisign-signed via tauri-plugin-updater. cmd_verify_update and its hard-coded Ed25519 key are dead code with no frontend caller, and RELEASE_SIGNING_PRIVATE_KEY is unused. Anyone reading the docs (auditor, researcher, future agent) will model the wrong trust root and may miss the real one (the minisign key).",
+      "recommendation": "(1) Rewrite SECURITY.md to match reality: DPAPI at rest (Windows-only, user-bound), minisign updater signing with the pinned pubkey in tauri.conf.json, version monotonicity. (2) Delete cmd_verify_update, VERIFY_PUBLIC_KEY_B64, the pub use in lib.rs, and the unused RELEASE_SIGNING_PRIVATE_KEY secret. (3) Document the minisign key as the single release trust root plus its rotation/recovery procedure.",
+      "effort": "S"
+    },
+    {
+      "id": "F6",
+      "severity": "MEDIUM",
+      "status": "in-progress",
+      "title": "Raw error tails still reach the renderer",
+      "files": ["src-tauri/src/sip.rs"],
+      "evidence": "user_safe_sip_error fallback returns 'SIP error: <raw up to 128 chars>'",
+      "explanation": "user_safe_sip_error maps common OS/DNS errors to friendly text, but the fallback branch returns 'SIP error: {raw up to 128 chars}', so unmapped errors can expose host/IP/port/OS details in the UI and in the on-disk diagnostics file.",
+      "recommendation": "Make the fallback fully generic (e.g. 'SIP registration failed - check server and port'); keep the raw detail only in the Rust-side log::error!; remove the 'SIP error: {}' format entirely.",
+      "effort": "S"
+    },
+    {
+      "id": "F7",
+      "severity": "MEDIUM",
+      "status": "open",
+      "title": "Legacy migration key derivation not secret",
+      "files": ["src-tauri/src/migrate.rs"],
+      "evidence": "derive_machine_key derives AES key from hostname+arch+cpu (non-secret) for enc:/fb: formats",
+      "explanation": "Legacy Sip-Toast enc:/fb: formats derive the AES key from non-secret values (hostname + platform + arch + CPU model). Anyone with the ciphertext can recompute the key and decrypt old passwords. This only affects one-time migration of legacy data; new data is DPAPI-protected, but it should never be presented as secure.",
+      "recommendation": "Document the limitation in SECURITY.md; after a successful migration delete the legacy config file(s) (run_migration is idempotent via the marker file); never log plaintext (already enforced by the redaction chokepoint).",
+      "effort": "S"
+    },
+    {
+      "id": "F8",
+      "severity": "MEDIUM",
+      "status": "open",
+      "title": "No coverage gate; thin bridge/IPC test coverage",
+      "files": [".github/workflows/ci.yml", "src/security/secretRedactor.test.ts"],
+      "evidence": "unit tests for storage/sip/startup/redaction exist; no coverage threshold; tauri-bridge.ts untested",
+      "explanation": "Unit tests exist for storage, SIP config validation, startup, host_is_private, and redaction, but there is no coverage threshold and the IPC layer (tauri-bridge.ts: sanitizers, endpoint resolution, error mapping, SecureStorage) has no tests - the exact layer where the 1.9.5 regression lived.",
+      "recommendation": "Add a coverage job with a threshold (cargo llvm-cov for Rust, vitest --coverage with a floor for TS) and add unit tests for sanitizeSipServer, resolveUpdateEndpoint (stable/beta), bridge error mapping, and SecureStorage write-queue behavior.",
+      "effort": "M"
+    },
+    {
+      "id": "F9",
+      "severity": "MEDIUM",
+      "status": "open",
+      "title": "Panic hook writes raw panic payload to plaintext files",
+      "files": ["src-tauri/src/crash.rs"],
+      "evidence": "writes raw panic message + process args to %APPDATA% and %TEMP%",
+      "explanation": "The global panic hook writes the raw panic message and process args to %APPDATA%\\CallerFlash\\crashes\\ and %TEMP%. If a future panic ever formats a secret (e.g. a debug {:?} of a config), it would persist to disk in plaintext. There is also no crash-collection path.",
+      "recommendation": "Run the panic text through a redaction pass before writing; drop the %TEMP% copy (or restrict it to debug builds); consider optional, consent-based crash reporting later.",
+      "effort": "S"
+    },
+    {
+      "id": "F10",
+      "severity": "MEDIUM",
+      "status": "open",
+      "title": "Rate limiter mutex poisoning + in-memory only",
+      "files": ["src-tauri/src/ratelimit.rs"],
+      "evidence": "Mutex::unwrap() panics on poisoning; per-process in-memory buckets",
+      "explanation": "self.buckets.lock().unwrap() will panic if a thread panics while holding the lock, turning a benign failure into a crash. The limiter is per-process and in-memory, which is fine for a single-user desktop app (its job is to stop a compromised renderer from spamming IPC) but should be documented as such.",
+      "recommendation": "Use self.buckets.lock().unwrap_or_else(|e| e.into_inner()); add a comment that the limiter's scope is renderer-spam containment.",
+      "effort": "S"
+    },
+    {
+      "id": "F11",
+      "severity": "MEDIUM",
+      "status": "open",
+      "title": "No integrity check on settings.json non-secret fields",
+      "files": ["src-tauri/src/storage.rs", "src-tauri/src/startup.rs"],
+      "evidence": "only JSON-parse validation; no HMAC",
+      "explanation": "settings.json has atomic writes, a backup file, and JSON-parse validation, but no integrity/HMAC over non-secret fields. A local actor could edit e.g. toastConfig or appPreferences undetected. Impact is limited to the same OS user (who can already operate as that user) and credentials stay DPAPI-protected, so this is an accepted-risk candidate.",
+      "recommendation": "Either document as accepted (preferred) or add an HMAC over non-secret fields, with the explicit constraint that the HMAC key must not be weaker than DPAPI, otherwise it adds nothing.",
+      "effort": "M"
+    },
+    {
+      "id": "F12",
+      "severity": "MEDIUM",
+      "status": "in-progress",
+      "title": "npm audit gate only at high; current tree has 1 high dev vuln",
+      "files": [".github/workflows/ci.yml", "package-lock.json"],
+      "evidence": "undici 7.28.0 high (dev-only via jsdom); dependabot PR to 7.29.0 open and CI-green",
+      "explanation": "npm audit --audit-level=high ignores moderate/low advisories. A live audit of main reports undici 7.28.0 high (dev-only, pulled in by jsdom); a dependabot PR bumping to 7.29.0 is open and CI-green. Runtime impact is nil (dev-only), but the gate would currently pass despite a pending high advisory.",
+      "recommendation": "Merge the dependabot PR; consider --audit-level=moderate once dev advisories are auto-managed; keep npm audit failing-fast so pending advisories surface.",
+      "effort": "S"
+    },
+    {
+      "id": "F13",
+      "severity": "MEDIUM",
+      "status": "open",
+      "title": "Auto version bump does not sync Cargo.lock",
+      "files": [".github/workflows/version-bump.yml"],
+      "evidence": "bumps Cargo.toml/package.json/tauri.conf.json only; root-package version in Cargo.lock drifts",
+      "explanation": "The auto-bump rewrites Cargo.toml, package.json, and tauri.conf.json but not the root-package version entry in Cargo.lock, so the committed lockfile drifts from the manifest after every bump (the release build rewrites it in-place on the runner, hiding the drift).",
+      "recommendation": "In the bump step, also replace the root package version in Cargo.lock (or run cargo check --locked on the runner and commit the result).",
+      "effort": "S"
+    },
+    {
+      "id": "F14",
+      "severity": "LOW",
+      "status": "open",
+      "title": "Stale governance artifacts contradict real workflow",
+      "files": ["AGENTS.md", "CRITICAL.md"],
+      "evidence": "describe refactor/tauri branch, gh-API-only edits, NO LOCAL BUILDS, temp working dir; actual ops are main + local checkout + local tsc/lint",
+      "explanation": "Both AGENTS.md and CRITICAL.md describe a nonexistent model (refactor/tauri branch, gh-API-only edits, NO LOCAL BUILDS, temp working dir). Actual operations use main, a direct local checkout, and local tsc/lint. Agents and contributors following the docs will take wrong actions.",
+      "recommendation": "Rewrite both to the real operating model (main branch, local checkout, tsc --noEmit / npm run lint / cargo test allowed, builds validated by CI).",
+      "effort": "S"
+    },
+    {
+      "id": "F15",
+      "severity": "LOW",
+      "status": "open",
+      "title": "Diagnostics file persists server host/port and SIP usernames",
+      "files": ["src-tauri/src/sip.rs", "src-tauri/src/migrate.rs"],
+      "evidence": "sip:log and migration messages include server:port and usernames (never passwords)",
+      "explanation": "The on-disk diagnostics log intentionally stores support-relevant detail (server:port, usernames) but never passwords (redaction chokepoint). The exported log is therefore sensitive and may contain the account owner's PII.",
+      "recommendation": "Add a 'clear diagnostics' action that also deletes the on-disk diagnostics.log; document the file's contents in the UI.",
+      "effort": "S"
+    },
+    {
+      "id": "F16",
+      "severity": "LOW",
+      "status": "note",
+      "title": "Update endpoint is a mutable GitHub pointer",
+      "files": ["src-tauri/src/update.rs", "src-tauri/tauri.conf.json"],
+      "evidence": "releases/latest/download/update.json; integrity preserved by minisign verification",
+      "explanation": "releases/latest/download/update.json is a mutable pointer: GitHub's 'latest' can be re-pointed or a release replaced. Integrity is preserved because the updater verifies the minisign signature against the pinned pubkey - defense-in-depth, not a bypass. Worth hardening for a mature product.",
+      "recommendation": "Serve update.json and installers from immutable storage or a dedicated endpoint (per the releases.callerflash.app intent in SECURITY.md), and publish a documented minisign key-rotation/recovery procedure.",
+      "effort": "L"
+    }
+  ],
+  "resolved_since_last_audit": [
+    "C1 plaintext password -> DPAPI at rest",
+    "C2 0.0.0.0:5060 bind -> ephemeral 0.0.0.0:0",
+    "C3 SIP header injection -> dangerous-char validation",
+    "C4 CSV formula injection -> sanitizeCSV",
+    "C5 unsanitized caller name -> sanitizeCallerName + parser-exit sanitizer",
+    "C6 document.write dead code -> removed",
+    "C7 withGlobalTauri -> false",
+    "C9 CI lockfile deletion + npm install -> npm ci",
+    "C10 CI never ran tests -> npm test + cargo test",
+    "H1 password validation -> 1..512 chars",
+    "H2 shared capabilities -> separate toast.json",
+    "H3 disconnect lied -> fixed",
+    "H6 CSP ws:/localhost -> pinned connect-src",
+    "H7 broad shell:allow-open -> HTTPS-only + Rust validation + private-host block",
+    "H8 cargo audit continue-on-error -> fails CI",
+    "H10 no SAST -> CodeQL active (rust), 0 findings",
+    "M1 rate limiting -> 10/s general, 2/s SIP",
+    "M2 tray 0x0 fallback -> fixed",
+    "M5 toast payload -> 64KB cap + object check",
+    "M6 parseInt radix -> base 10"
+  ],
+  "compliance": {
+    "nist_csf_2_0": {
+      "GOVERN": "policy exists but stale (F5); no formal ownership",
+      "IDENTIFY": "threat model stale (F5); asset inventory via repo",
+      "PROTECT": "DPAPI; IPC validation; rate limiting; least-privilege capabilities; strict CSP; minisign updates; single instance; per-user install",
+      "DETECT": "CodeQL; dependabot; npm/cargo audit; secret scanning + push protection; diagnostics; crash dumps; no CSP reporting (F4)",
+      "RESPOND": "crash recovery; backup file; version monotonicity; no incident runbook",
+      "RECOVER": "settings backup/atomic writes; migration marker; rollback prevented by version monotonicity"
+    },
+    "iso_27001_2022": {
+      "A.8.24_cryptography": "implemented",
+      "A.8.12_data_leakage_prevention": "implemented",
+      "A.8.25_secure_dev_lifecycle": "partial (no enforced PRs - F1)",
+      "A.8.28_secure_coding": "implemented",
+      "A.8.29_security_testing": "partial (no coverage gate, no fuzzing)",
+      "A.8.31_secrets_separation": "partial (repo secrets, no env gate - F1)",
+      "A.5.25_26_supplier_security": "partial (release.yml unpinned - F2)",
+      "A.6.8_cloud_security": "partial (no branch policies)",
+      "A.8.34_audit_testing": "n/a"
+    },
+    "cis_v8": {
+      "3.3_secure_configuration": "implemented",
+      "4_x_5_x_access_control": "GAP - no branch protection/review (F1)",
+      "5.2_secure_software": "strict CSP, signed updates",
+      "7.4_remediation": "dependabot, npm/cargo audit, CodeQL",
+      "8_x_audit_logs": "diagnostics + crash dumps; no CSP reporting",
+      "13_2_13_3_data_protection": "DPAPI, redaction, sanitizers",
+      "16_x_application_security": "secure coding, partial testing, stale threat model",
+      "18_1_penetration_testing": "recommended before 90-day mark"
+    }
+  },
+  "roadmap": {
+    "days_7_release_gate": [
+      "enable-branch-protection-on-main",
+      "approval-gated-signed-release-publishing",
+      "pin-release-actions-by-sha",
+      "merge-dependabot-undici-pr",
+      "refresh-security-docs"
+    ],
+    "days_30_hardening": [
+      "wire-authenticode-signing",
+      "tighten-csp",
+      "generic-user-safe-sip-errors",
+      "coverage-gate-and-bridge-tests",
+      "pin-pjsip-and-choco",
+      "redact-panic-payloads",
+      "sync-cargolock-in-auto-bump",
+      "codeql-js-ts-analysis"
+    ],
+    "days_90_enterprise": [
+      "immutable-update-storage-and-key-rotation",
+      "sbom-per-release",
+      "post-migration-config-cleanup",
+      "external-pentest-and-sip-fuzzing",
+      "opt-in-telemetry-and-diagnostics-clear",
+      "formalize-nist-iso-mapping-and-incident-runbook"
+    ]
+  },
+  "blue_team": {
+    "detect": ["CodeQL", "npm audit", "cargo audit", "dependabot", "secret-scanning-push-protection", "diagnostics-log", "crash-dumps", "atomic-write-backup"],
+    "missing": ["csp-violation-reporting", "coverage-gate", "incident-runbook"]
+  },
+  "red_team": {
+    "highest_value_target": "release pipeline (F1-F3): compromised maintainer account or bot PAT yields signed installers",
+    "well_defended": "webview compromise containment (CSP, capabilities, validation)",
+    "under_tested": "inbound SIP parser (no fuzzing); IPC bridge error paths"
+  }
+}
