@@ -236,4 +236,8 @@ jobs:
         run: |
           FLAG=""
           if [ "${{ needs.promote.outputs.release_type }}" = "beta" ]; then FLAG="--prerelease"; fi
-          gh release create "${{ github.ref_name }}" artifacts/** --generate-notes $FLAG
+          BODY=$(gh api --method POST repos/jaydenrussell/CallerFlash/releases/generate-notes \
+            -f tag_name="${{ github.ref_name }}" \
+            -f target_commitish="${{ needs.promote.outputs.target_branch }}" \
+            --jq '.body')
+          gh release create "${{ github.ref_name }}" artifacts/** --notes "$BODY" $FLAG
