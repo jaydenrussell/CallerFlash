@@ -233,6 +233,7 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: jaydenrussell/CallerFlash
         run: |
           FLAG=""
           if [ "${{ needs.promote.outputs.release_type }}" = "beta" ]; then FLAG="--prerelease"; fi
