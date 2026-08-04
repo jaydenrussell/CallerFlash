@@ -126,17 +126,6 @@ jobs:
           ref: ${{ needs.promote.outputs.target_branch }}
           fetch-depth: 0
 
-      - name: Setup MSYS2 and dependencies
-        run: |
-          choco install msys2 -y
-          choco install mingw -y
-          choco install pkg-config -y
-          choco install git -y
-          choco install make -y
-          choco install python -y
-          echo "C:\msys64\usr\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
-          echo "C:\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
-
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -145,30 +134,8 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Verify installations
-        run: |
-          make --version
-          pkg-config --version
-          node --version
-          npm --version
-          mingw32-make --version
-
-      - name: Build PJSIP from source
-        run: |
-          cmd.exe /c "
-            C:\msys64\usr\bin\bash -lc '
-              git clone https://github.com/pjsip/pjproject.git /tmp/pjproject &&
-              cd /tmp/pjproject &&
-              ./configure --prefix=/mingw64 --disable-video --enable-shared=no --enable-pkg-config &&
-              mingw32-make -j4 &&
-              mingw32-make install
-            '
-          "
-
       - name: Build Tauri app
         env:
-          PKG_CONFIG: C:\\msys64\\usr\\bin\\pkg-config.exe
-          PKG_CONFIG_PATH: C:\\msys64\\mingw64\\lib\\pkgconfig
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run build:tauri
