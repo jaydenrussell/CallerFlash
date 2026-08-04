@@ -69,7 +69,7 @@ jobs:
               if ($v.Build -gt 99) { throw "Beta patch must be <= 99, got '$tag'" }
               $releaseType = 'beta'
               $targetBranch = 'beta'
-              $manifestVersion = "${version}-beta${v.Build}"
+              $manifestVersion = "${version}-beta"
             } elseif ($v.Build -eq 0) {
               $releaseType = 'stable'
               $targetBranch = 'stable'
