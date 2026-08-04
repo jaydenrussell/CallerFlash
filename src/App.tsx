@@ -9,7 +9,7 @@ import { Diagnostics } from './components/Diagnostics';
 import { AutoUpdate } from './components/AutoUpdate';
 import { About } from './components/About';
 import { ToastContainer } from './components/ToastNotification';
-import { useAppStore, type DiagnosticLog } from './store/useAppStore';
+import { useAppStore, runStorageMigration, type DiagnosticLog } from './store/useAppStore';
 import { sanitizeCallerNumberForClipboard, sanitizeCallerName } from './security/secretRedactor';
 
 // Threshold below which the sidebar collapses to icons only
@@ -143,6 +143,10 @@ export default function App() {
         }
       }).catch((e) => addDiagnosticLog({ level: 'error', category: 'SYSTEM', message: `Failed to load diagnostics: ${e}` }));
     }
+    // Hydrate from native (DPAPI) storage once the bridge is installed.
+    // Auto-connect (below) waits for sipConfig.password, so this must run
+    // before the auto-connect effect fires.
+    runStorageMigration();
   }, []);
 
   // If "Start minimized" is enabled, hide to the system tray as soon as

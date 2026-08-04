@@ -109,14 +109,16 @@ interface PersistedUiSettings {
 class SecureStorage {
   private _cache: PersistedUiSettings | null = null;
   private writeQueue: Promise<void> = Promise.resolve();
-  private hasNativeStorage: boolean;
 
   get cache(): PersistedUiSettings | null {
     return this._cache;
   }
 
-  constructor() {
-    this.hasNativeStorage = typeof window !== 'undefined' && !!window.callerflash?.storage;
+  // Evaluated on every access: the Tauri bridge (window.callerflash) is
+  // installed *after* this module's top-level scope runs, so a value captured
+  // in the constructor would permanently disable native (DPAPI) storage.
+  get hasNativeStorage(): boolean {
+    return typeof window !== 'undefined' && !!window.callerflash?.storage;
   }
 
     /** Optional callback fired when native storage fails (user-visible warning). */
@@ -245,6 +247,12 @@ secureStorage.onNativeSaveError = (e) => {
 // Phase 2: After store is created, try to load from file storage and hydrate store
 async function initStorageMigration() {
   try {
+    useAppStore.getState().addDiagnosticLog({
+      level: 'info',
+      category: 'SYSTEM',
+      message: 'Storage migration run',
+      details: `bridge=${!!window.callerflash}, storageLoad=${!!window.callerflash?.storage?.load}, readyState=${typeof document !== 'undefined' ? document.readyState : 'none'}`,
+    });
     if (typeof window !== 'undefined' && window.callerflash?.storage?.load) {
       const fileData = (await window.callerflash.storage.load()) as Partial<PersistedUiSettings>;
       const sipFile = fileData?.sipConfig;
@@ -315,6 +323,17 @@ async function initStorageMigration() {
       details: String(e),
     });
   }
+}
+
+let storageMigrationStarted = false;
+
+// Runs the migration once. Must be invoked *after* the Tauri bridge is
+// installed (window.callerflash), i.e. from App.tsx on mount — a top-level
+// call here would race the bridge and silently skip native storage.
+export function runStorageMigration(): void {
+  if (storageMigrationStarted) return;
+  storageMigrationStarted = true;
+  void initStorageMigration();
 }
 
 // ── Store interface ──────────────────────────────────────────────────
@@ -433,7 +452,7 @@ export const useAppStore = create<AppState>((set) => ({
     const next = { ...prev, ...config };
     useAppStore.setState({ sipConfig: next });
 
-    const nativeOk = typeof window !== 'undefined' && !!window.callerflash?.storage?.save;
+    const nativeOk = secureStorage.hasNativeStorage;
     const pwLen = (next.password ?? '').length;
     useAppStore.getState().addDiagnosticLog({
       level: 'info',
@@ -595,8 +614,9 @@ export const useAppStore = create<AppState>((set) => ({
   setClipboardText: (text) => set({ clipboardText: text }),
 })); 
 
-// Init storage migration (handles SIP password decryption internally)
-initStorageMigration();
+// Init storage migration (handles SIP password decryption internally).
+// Deliberately NOT called here: window.callerflash does not exist at module
+// scope. App.tsx invokes runStorageMigration() on mount, once the bridge is up.
 
 // ── Sync start-with-Windows toggle with actual Windows state ─────────
 if (typeof window !== 'undefined' && window.callerflash?.app?.getStartWithWindows) {
