@@ -236,4 +236,4 @@ jobs:
         run: |
           FLAG=""
           if [ "${{ needs.promote.outputs.release_type }}" = "beta" ]; then FLAG="--prerelease"; fi
-          gh release create "${{ github.ref_name }}" artifacts/** --generate-notes --verify-tag $FLAG
+          gh release create "${{ github.ref_name }}" artifacts/** --generate-notes $FLAG
