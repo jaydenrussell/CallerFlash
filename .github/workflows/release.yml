@@ -212,7 +212,7 @@ jobs:
 
   release:
     name: Publish ${{ needs.promote.outputs.release_type }} release
-    needs: build
+    needs: [build, promote]
     runs-on: ubuntu-latest
     permissions:
       contents: write
