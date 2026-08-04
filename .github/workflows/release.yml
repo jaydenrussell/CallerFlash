@@ -55,6 +55,7 @@ jobs:
           $v = [version]$version
 
           $latestTag = gh api repos/jaydenrussell/CallerFlash/releases/latest --jq '.tag_name' 2>$null
+          if ($LASTEXITCODE -ne 0) { $latestTag = $null }
           if (-not $latestTag) {
             if ($v.Build -ne 0) { throw "First release must be a stable tag (patch 0), got '$tag'" }
             $releaseType = 'stable'
