@@ -247,22 +247,8 @@ secureStorage.onNativeSaveError = (e) => {
 // Phase 2: After store is created, try to load from file storage and hydrate store
 async function initStorageMigration() {
   try {
-    useAppStore.getState().addDiagnosticLog({
-      level: 'info',
-      category: 'SYSTEM',
-      message: 'Storage migration run',
-      details: `bridge=${!!window.callerflash}, storageLoad=${!!window.callerflash?.storage?.load}, readyState=${typeof document !== 'undefined' ? document.readyState : 'none'}`,
-    });
     if (typeof window !== 'undefined' && window.callerflash?.storage?.load) {
       const fileData = (await window.callerflash.storage.load()) as Partial<PersistedUiSettings>;
-      const sipFile = fileData?.sipConfig;
-      const filePwLen = typeof sipFile?.password === 'string' ? sipFile.password.length : -1;
-      useAppStore.getState().addDiagnosticLog({
-        level: 'info',
-        category: 'SYSTEM',
-        message: 'Native storage load result',
-        details: `version=${fileData?.version ?? 'none'}, keys=${Object.keys(fileData ?? {}).length}, sipConfig=${sipFile ? 'present' : 'missing'}, passwordLen=${filePwLen}`,
-      });
       if (fileData && Object.keys(fileData).length > 0 && (fileData.version ?? 0) >= 2) {
         // File storage is authoritative — update cache and hydrate store
         secureStorage.initCache(fileData as PersistedUiSettings);
@@ -283,29 +269,8 @@ async function initStorageMigration() {
           toastDragPosition: fileData.toastDragPosition ?? null,
           updateInfo: mergedUpdate,
         });
-
-        useAppStore.getState().addDiagnosticLog({
-          level: 'success',
-          category: 'SYSTEM',
-          message: 'Store hydrated from native storage',
-          details: `sipConfigPasswordLen=${mergedSip.password.length}`,
-        });
-
         return;
       }
-      useAppStore.getState().addDiagnosticLog({
-        level: 'warning',
-        category: 'SYSTEM',
-        message: 'Native storage data skipped',
-        details: `version=${fileData?.version ?? 'none'}, keys=${Object.keys(fileData ?? {}).length} — falling back to localStorage`,
-      });
-    } else {
-      useAppStore.getState().addDiagnosticLog({
-        level: 'warning',
-        category: 'SYSTEM',
-        message: 'Native storage unavailable',
-        details: 'window.callerflash.storage.load missing — password will never be persisted',
-      });
     }
     // Migrate localStorage to file
     const localData = loadSettingsSync();
@@ -316,12 +281,7 @@ async function initStorageMigration() {
     }
   } catch (e) {
     // initStorageMigration failure is non-fatal — localStorage fallback still works
-    useAppStore.getState().addDiagnosticLog({
-      level: 'warning',
-      category: 'SYSTEM',
-      message: 'Native storage load threw',
-      details: String(e),
-    });
+    console.warn('[store] initStorageMigration failed:', e);
   }
 }
 
@@ -452,32 +412,12 @@ export const useAppStore = create<AppState>((set) => ({
     const next = { ...prev, ...config };
     useAppStore.setState({ sipConfig: next });
 
-    const nativeOk = secureStorage.hasNativeStorage;
-    const pwLen = (next.password ?? '').length;
-    useAppStore.getState().addDiagnosticLog({
-      level: 'info',
-      category: 'SIP',
-      message: 'SIP settings save requested',
-      details: `passwordLen=${pwLen}, nativeStorage=${nativeOk}`,
-    });
-
     try {
       await secureStorage.save({
         ...secureStorage.cache,
         sipConfig: next,
       });
-      useAppStore.getState().addDiagnosticLog({
-        level: 'success',
-        category: 'SIP',
-        message: 'SIP settings persisted',
-        details: `passwordLen=${pwLen}, nativeStorage=${nativeOk}`,
-      });
     } catch {
-      useAppStore.getState().addDiagnosticLog({
-        level: 'warning',
-        category: 'SIP',
-        message: 'SIP settings save failed — localStorage fallback',
-      });
       // SIP config save failure is non-fatal — localStorage fallback persists
     }
   },
