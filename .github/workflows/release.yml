@@ -54,8 +54,7 @@ jobs:
           }
           $v = [version]$version
 
-          $latestTag = gh api repos/jaydenrussell/CallerFlash/releases/latest --jq '.tag_name' 2>$null
-          if ($LASTEXITCODE -ne 0) { $latestTag = $null }
+          $latestTag = gh release list --repo jaydenrussell/CallerFlash --exclude-pre-releases --limit 1 2>$null | ForEach-Object { ($_ -split "`t")[2] }
           if (-not $latestTag) {
             if ($v.Build -ne 0) { throw "First release must be a stable tag (patch 0), got '$tag'" }
             $releaseType = 'stable'
