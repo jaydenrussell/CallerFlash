@@ -33,7 +33,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDczNzE3NUJDQ0M1MjQyREMKUldUY1FsTE12SFZ4YzJ2UFdBdGlWeWdscEJ0RGw2THFSa0d1d1EwQVdQVmd2OTcyQVBQRURjOUMK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM2OEI0NUQ1QzZDMTE5RDcKUldUWEdjSEcxVVdMeHJscDAvMjRNQndSYm93S2wxQmJyK0o0OGU0cWUvK0MweFlVTzhpbVZUSDQK",
       "endpoints": [
         "https://github.com/jaydenrussell/CallerFlash/releases/latest/download/update.json"
       ],
