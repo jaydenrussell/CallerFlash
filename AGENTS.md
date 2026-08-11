@@ -2,8 +2,8 @@
 
 ## Operating model (HARD RULE)
 
-- **Never clone this repo locally and never treat a checkout as a working directory.** Edit GitHub directly through the `gh` API (`gh api` contents + PUT), using only temp files under the sandbox to read/modify/write back. The original file system is the source of truth; local clones cause divergence and wasted work.
-- Read a file with `gh api repos/jaydenrussell/CallerFlash/contents/<path>?ref=main` (base64 `content`), decode to a temp file, edit, re-encode, and `PUT` with the file's `sha`. New files use `POST`.
+- The working copy is the git checkout at `D:\CallerFlash` on `main`; edit and build there (`cargo check`, `npm run ...`). Publish changes to GitHub `main` via `gh api` (contents + PUT with the file's `sha`), then keep the local file in sync so the checkout never drifts from what CI sees.
+- Read a file from GitHub with `gh api repos/jaydenrussell/CallerFlash/contents/<path>?ref=main` (base64 `content`), decode to a temp file, edit, re-encode, and `PUT` with the file's `sha`. New files use `POST`.
 - The branch to work on is **`main`**. The older Electron app (`jaydenrussell/Sip-Toast`) is a stale predecessor — do not edit it.
 
 ## What this repo is
@@ -31,5 +31,5 @@ CallerFlash: a Windows SIP caller-ID app (registers to a SIP trunk, shows toast 
 
 ## Build / verify constraints
 
-- This environment cannot run `cargo`/`npm` builds. Changes are validated by the repo's GitHub Actions (`.github/workflows/*.yml`). After pushing, watch CI; fix compile errors in-branch.
+- Local builds work in `D:\CallerFlash` (`cargo check`, `cargo test`, `npm run build`) and are the first validation step before pushing. After pushing to GitHub `main`, CI (`.github/workflows/*.yml`) re-validates; watch CI and fix any compile errors there.
 - Lint: `eslint` for TS. Keep Rust additions minimal and API-correct (Tauri 2 `Image::from_rgba(w,h,rgba) -> Result<Image,Error>`, `tray.set_icon(Image)`, `app.listen` returns a `Copy` `EventId` so ignoring it is safe).
