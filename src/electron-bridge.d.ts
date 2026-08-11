@@ -31,6 +31,11 @@ declare global {
     openExternal: (url: string) => void;
   }
 
+  interface CallerFlashClipboardApi {
+    /** Write text to the system clipboard (works without window focus). */
+    copy: (text: string) => void;
+  }
+
   interface CallerFlashNotifyApi {
     /** Show a native OS notification. No-op in web demo. */
     show(data: { title: string; body: string; urgency?: 'critical' | 'normal' | 'low'; timeoutType?: 'default' | 'never'; soundEnabled?: boolean }): void;
@@ -134,6 +139,7 @@ declare global {
     window: CallerFlashWindowControls;
     tray: CallerFlashTrayApi;
     shell: CallerFlashShellApi;
+    clipboard: CallerFlashClipboardApi;
     notify: CallerFlashNotifyApi;
     toast: CallerFlashToastApi;
     updater: CallerFlashUpdaterApi;
