@@ -480,14 +480,6 @@ export function SipSettings() {
                   </select>
                   <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-win-text-tertiary pointer-events-none" />
                 </div>
-                {/* [voipms-tls-guard] Remove this notice when VoIP.ms supports ECDHE */}
-                {voipMsTlsBlocked && (
-                  <p className="mt-2 text-[11px] leading-snug text-win-text-tertiary">
-                    TLS is greyed out: VoIP.ms's TLS endpoints currently offer only
-                    RSA-key-exchange ciphers, which CallerFlash's TLS stack doesn't support.
-                    It will be enabled once VoIP.ms adds ECDHE.
-                  </p>
-                )}
               </InputField>
             </div>
 
