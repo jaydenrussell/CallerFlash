@@ -3,12 +3,12 @@
 ## Operating model (HARD RULE)
 
 - **Never clone this repo locally and never treat a checkout as a working directory.** Edit GitHub directly through the `gh` API (`gh api` contents + PUT), using only temp files under the sandbox to read/modify/write back. The original file system is the source of truth; local clones cause divergence and wasted work.
-- Read a file with `gh api repos/jaydenrussell/CallerFlash/contents/<path>?ref=refactor/tauri` (base64 `content`), decode to a temp file, edit, re-encode, and `PUT` with the file's `sha`. New files use `POST`.
-- The branch to work on is **`refactor/tauri`**. The older Electron app (`jaydenrussell/Sip-Toast`) is a stale predecessor — do not edit it.
+- Read a file with `gh api repos/jaydenrussell/CallerFlash/contents/<path>?ref=main` (base64 `content`), decode to a temp file, edit, re-encode, and `PUT` with the file's `sha`. New files use `POST`.
+- The branch to work on is **`main`**. The older Electron app (`jaydenrussell/Sip-Toast`) is a stale predecessor — do not edit it.
 
 ## What this repo is
 
-CallerFlash: a Windows SIP caller-ID app (registers to a SIP trunk, shows toast notifications on inbound calls, optional Acuity client lookup). `refactor/tauri` is the **Tauri (Rust backend + React frontend)** rewrite. It is NOT the Electron version.
+CallerFlash: a Windows SIP caller-ID app (registers to a SIP trunk, shows toast notifications on inbound calls, optional Acuity client lookup). `main` is the **Tauri (Rust backend + React frontend)** rewrite. It is NOT the Electron version.
 
 ## Architecture map
 
