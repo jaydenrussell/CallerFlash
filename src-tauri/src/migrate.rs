@@ -114,7 +114,7 @@ fn decrypt_enc_format(encrypted: &str) -> Result<String, CommandError> {
     encrypted_with_tag.extend_from_slice(tag);
 
     let plaintext = cipher
-        .decrypt(&nonce, encrypted_with_tag.as_ref())
+        .decrypt(nonce, encrypted_with_tag.as_ref())
         .map_err(|e| CommandError::crypto(format!("AES-GCM decrypt: {}", e)))?;
 
     String::from_utf8(plaintext)
@@ -143,7 +143,7 @@ fn decrypt_fb_format(data: &str) -> Result<String, CommandError> {
     encrypted_with_tag.extend_from_slice(tag);
 
     let plaintext = cipher
-        .decrypt(&nonce, encrypted_with_tag.as_ref())
+        .decrypt(nonce, encrypted_with_tag.as_ref())
         .map_err(|e| CommandError::crypto(format!("AES-GCM decrypt: {}", e)))?;
 
     String::from_utf8(plaintext)
@@ -221,7 +221,7 @@ fn decrypt_ss_format(
     let nonce: &Nonce<U12> = (&nonce[..GCM_NONCE_LENGTH]).into();
 
     let plaintext = cipher
-        .decrypt(&nonce, encrypted_with_tag.as_ref())
+        .decrypt(nonce, encrypted_with_tag.as_ref())
         .map_err(|e| CommandError::crypto(format!("AES-GCM decrypt: {}", e)))?;
 
     String::from_utf8(plaintext)
