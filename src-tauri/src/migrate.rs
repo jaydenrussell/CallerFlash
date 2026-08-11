@@ -1,5 +1,6 @@
 #![cfg(feature = "migration")]
 
+use aes_gcm::aead::generic_array::typenum::consts::U12;
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
 use base64::Engine;
@@ -15,6 +16,7 @@ use crate::secure;
 const SALT_LENGTH: usize = 32;
 const IV_LENGTH: usize = 16;
 const TAG_LENGTH: usize = 16;
+const GCM_NONCE_LENGTH: usize = 12;
 
 // Electron safeStorage (Chromium OSCrypt v10) layout used by Sip-Toast:
 //   "v10" || nonce[12] || AES-256-GCM ciphertext with tag
@@ -106,13 +108,13 @@ fn decrypt_enc_format(encrypted: &str) -> Result<String, CommandError> {
 
     let cipher = Aes256Gcm::new_from_slice(&derived_key)
         .map_err(|e| CommandError::crypto(format!("AES init: {}", e)))?;
-    let nonce = Nonce::from_slice(iv);
+    let nonce: &Nonce<U12> = (&iv[..GCM_NONCE_LENGTH]).into();
 
     let mut encrypted_with_tag = ciphertext.to_vec();
     encrypted_with_tag.extend_from_slice(tag);
 
     let plaintext = cipher
-        .decrypt(nonce, encrypted_with_tag.as_ref())
+        .decrypt(&nonce, encrypted_with_tag.as_ref())
         .map_err(|e| CommandError::crypto(format!("AES-GCM decrypt: {}", e)))?;
 
     String::from_utf8(plaintext)
@@ -135,13 +137,13 @@ fn decrypt_fb_format(data: &str) -> Result<String, CommandError> {
     let machine_key = derive_machine_key()?;
     let cipher = Aes256Gcm::new_from_slice(&machine_key)
         .map_err(|e| CommandError::crypto(format!("AES init: {}", e)))?;
-    let nonce = Nonce::from_slice(iv);
+    let nonce: &Nonce<U12> = (&iv[..GCM_NONCE_LENGTH]).into();
 
     let mut encrypted_with_tag = ciphertext.to_vec();
     encrypted_with_tag.extend_from_slice(tag);
 
     let plaintext = cipher
-        .decrypt(nonce, encrypted_with_tag.as_ref())
+        .decrypt(&nonce, encrypted_with_tag.as_ref())
         .map_err(|e| CommandError::crypto(format!("AES-GCM decrypt: {}", e)))?;
 
     String::from_utf8(plaintext)
@@ -216,10 +218,10 @@ fn decrypt_ss_format(
 
     let cipher = Aes256Gcm::new_from_slice(key)
         .map_err(|e| CommandError::crypto(format!("AES init: {}", e)))?;
-    let nonce = Nonce::from_slice(nonce);
+    let nonce: &Nonce<U12> = (&nonce[..GCM_NONCE_LENGTH]).into();
 
     let plaintext = cipher
-        .decrypt(nonce, encrypted_with_tag.as_ref())
+        .decrypt(&nonce, encrypted_with_tag.as_ref())
         .map_err(|e| CommandError::crypto(format!("AES-GCM decrypt: {}", e)))?;
 
     String::from_utf8(plaintext)
