@@ -37,7 +37,7 @@ tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
-base64 = "0.22"
+base64 = "0.23"
 futures-util = "0.3"
 rsipstack = "0.6"
 rustls-native-certs = "0.8"
