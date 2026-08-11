@@ -6,12 +6,12 @@ on:
       - 'v*'
 
 # ---------------------------------------------------------------------------
-# Release pipeline (all-numeric versioning):
-#   Stable tags   -> vX.Y.0   (e.g. v2.0.0, v2.1.0, v3.0.0). Patch MUST be 0.
-#   Beta tags     -> vX.Y.Z   (e.g. v2.0.1 .. v2.0.99) on the SAME minor as the
-#                    current stable. The numeric core is always all digits, no
-#                    suffix: beta 2.0.1 sorts between stable 2.0.0 and the next
-#                    stable 2.1.0, so GitHub /releases/latest never surfaces a
+# Release pipeline (explicit tag suffix):
+#   Stable tags   -> vX.Y.Z       (e.g. v2.0.0, v2.1.0, v3.0.0). No suffix.
+#   Beta tags     -> vX.Y.Z-beta (e.g. v2.0.3-beta). The "-beta" suffix is
+#                    authoritative and always means prerelease; the manifest
+#                    version becomes X.Y.Z-beta, which GitHub sorts below the
+#                    same numeric core, so /releases/latest never surfaces a
 #                    beta to stable users (beta releases are prereleases).
 #
 #   Flow:
@@ -48,15 +48,17 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = "${{ github.ref_name }}"
-          $version = $tag -replace '^v', ''
-          if ($version -notmatch '^\d+\.\d+\.\d+$') {
-            throw "Tag '$tag' is not a numeric X.Y.Z version"
+          $m = [regex]::Match($tag, '^v(\d+\.\d+\.\d+)(-beta)?$')
+          if (-not $m.Success) {
+            throw "Tag '$tag' must match vX.Y.Z (stable) or vX.Y.Z-beta (beta)"
           }
+          $version = $m.Groups[1].Value
+          $isBeta = $m.Groups[2].Success
           $v = [version]$version
 
           $latestTag = gh release list --repo jaydenrussell/CallerFlash --exclude-pre-releases --limit 1 2>$null | ForEach-Object { ($_ -split "`t")[2] }
           if (-not $latestTag) {
-            if ($v.Build -ne 0) { throw "First release must be a stable tag (patch 0), got '$tag'" }
+            if ($isBeta) { throw "First release must be a stable tag (no '-beta' suffix), got '$tag'" }
             $releaseType = 'stable'
             $targetBranch = 'stable'
             $manifestVersion = $version
@@ -65,17 +67,15 @@ jobs:
             if ($v -le $latest) {
               throw "Tag '$tag' is not ahead of latest release '$latestTag'"
             }
-            if ($v.Major -eq $latest.Major -and $v.Minor -eq $latest.Minor) {
+            if ($isBeta) {
               if ($v.Build -gt 99) { throw "Beta patch must be <= 99, got '$tag'" }
               $releaseType = 'beta'
               $targetBranch = 'beta'
               $manifestVersion = "${version}-beta"
-            } elseif ($v.Build -eq 0) {
+            } else {
               $releaseType = 'stable'
               $targetBranch = 'stable'
               $manifestVersion = $version
-            } else {
-              throw "Invalid version '$tag': patch must be 0 (stable) or share the current stable's minor (beta)"
             }
           }
 
