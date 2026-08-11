@@ -134,4 +134,52 @@ describe("SipSettings", () => {
     expect(input.value).toBe("secret123");
     expect(input.type).toBe("text");
   });
+
+  it("disables the TLS option when a VoIP.ms server is selected", () => {
+    mockStore.sipConfig.server = "atlanta.voip.ms";
+    render(<SipSettings />);
+    const protocolSelect = screen.getAllByRole("combobox")[1] as HTMLSelectElement;
+    const tlsOption = Array.from(protocolSelect.options).find((o) => o.value === "TLS");
+    expect(tlsOption?.disabled).toBe(true);
+    expect(tlsOption?.textContent).toContain("not implemented with VoIP.ms");
+  });
+
+  it("keeps TLS enabled for non-VoIP.ms servers", () => {
+    mockStore.sipConfig.server = "sip.example.com";
+    render(<SipSettings />);
+    const protocolSelect = screen.getAllByRole("combobox")[1] as HTMLSelectElement;
+    const tlsOption = Array.from(protocolSelect.options).find((o) => o.value === "TLS");
+    expect(tlsOption?.disabled).toBe(false);
+    expect(tlsOption?.textContent).toBe("TLS");
+  });
+
+  it("shows the TLS-not-implemented notice when a VoIP.ms server is selected", () => {
+    mockStore.sipConfig.server = "atlanta.voip.ms";
+    render(<SipSettings />);
+    expect(screen.getByText(/TLS is greyed out/i)).toBeInTheDocument();
+  });
+
+  it("auto-switches to TCP when selecting a VoIP.ms server while TLS is active", () => {
+    mockStore.sipConfig = { ...mockStore.sipConfig, protocol: "TLS", port: 5061, server: "" };
+    render(<SipSettings />);
+    const providerSelect = screen.getAllByRole("combobox")[0] as HTMLSelectElement;
+    fireEvent.change(providerSelect, { target: { value: "atlanta.voip.ms" } });
+    const protocolSelect = screen.getAllByRole("combobox")[1] as HTMLSelectElement;
+    expect(protocolSelect.value).toBe("TCP");
+    expect(screen.getByDisplayValue("5060")).toBeInTheDocument();
+    expect(mockStore.addDiagnosticLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: "warning",
+        message: expect.stringContaining("not implemented with VoIP.ms"),
+      })
+    );
+  });
+
+  it("normalizes a persisted VoIP.ms + TLS config to TCP on load", () => {
+    mockStore.sipConfig = { ...mockStore.sipConfig, protocol: "TLS", port: 5061, server: "atlanta.voip.ms" };
+    render(<SipSettings />);
+    const protocolSelect = screen.getAllByRole("combobox")[1] as HTMLSelectElement;
+    expect(protocolSelect.value).toBe("TCP");
+    expect(screen.getByDisplayValue("5060")).toBeInTheDocument();
+  });
 });
