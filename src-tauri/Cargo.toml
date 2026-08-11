@@ -42,6 +42,7 @@ futures-util = "0.3"
 rsipstack = "0.6"
 rustls-native-certs = "0.8"
 open = "5"
+arboard = "3"
 winreg = "0.52"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
 once_cell = "1.20"
