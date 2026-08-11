@@ -5,6 +5,7 @@ import {
   Play, Pause, ChevronDown
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
+import { useShallow } from 'zustand/react/shallow';
 
 const levelConfig = {
   info: { icon: Info, color: '#60cdff', bg: 'bg-blue-500/10', label: 'INFO' },
@@ -23,7 +24,13 @@ const categoryColors: Record<string, string> = {
 const categories = ['all', 'SIP', 'TOAST', 'UPDATE', 'SYSTEM'] as const;
 
 export function Diagnostics() {
-  const { diagnosticLogs, clearDiagnosticLogs, addDiagnosticLog } = useAppStore();
+  const { diagnosticLogs, clearDiagnosticLogs, addDiagnosticLog } = useAppStore(
+    useShallow((s) => ({
+      diagnosticLogs: s.diagnosticLogs,
+      clearDiagnosticLogs: s.clearDiagnosticLogs,
+      addDiagnosticLog: s.addDiagnosticLog,
+    })),
+  );
   const [search, setSearch] = useState('');
   const [filterLevel, setFilterLevel] = useState<string>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');

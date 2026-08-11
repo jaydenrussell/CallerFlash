@@ -6,7 +6,7 @@ import { useAppStore } from '../store/useAppStore';
 import { formatVersion } from '../utils/formatVersion';
 
 export function About() {
-  const { updateInfo } = useAppStore();
+  const updateInfo = useAppStore((s) => s.updateInfo);
 
   return (
     <div className="flex flex-col h-full animate-fade-in">

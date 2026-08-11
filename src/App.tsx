@@ -10,6 +10,7 @@ import { AutoUpdate } from './components/AutoUpdate';
 import { About } from './components/About';
 import { ToastContainer } from './components/ToastNotification';
 import { useAppStore, runStorageMigration, type DiagnosticLog } from './store/useAppStore';
+import { useShallow } from 'zustand/react/shallow';
 import { sanitizeCallerNumberForClipboard, sanitizeCallerName } from './security/secretRedactor';
 
 // Threshold below which the sidebar collapses to icons only
@@ -28,7 +29,7 @@ function useWindowWidth() {
 }
 
 function MainContent() {
-  const { activeTab } = useAppStore();
+  const activeTab = useAppStore((s) => s.activeTab);
 
   const content = {
     dashboard: <Dashboard />,
@@ -53,7 +54,18 @@ function MainContent() {
 
 
 export default function App() {
-  const { setIsMinimized, addDiagnosticLog, appPreferences, sipConnected, sipRegistered, setActiveTab, sipConfig } = useAppStore();
+  const { setIsMinimized, addDiagnosticLog, appPreferences, sipConnected, sipRegistered, setActiveTab, sipConfig } =
+    useAppStore(
+      useShallow((s) => ({
+        setIsMinimized: s.setIsMinimized,
+        addDiagnosticLog: s.addDiagnosticLog,
+        appPreferences: s.appPreferences,
+        sipConnected: s.sipConnected,
+        sipRegistered: s.sipRegistered,
+        setActiveTab: s.setActiveTab,
+        sipConfig: s.sipConfig,
+      })),
+    );
   const width = useWindowWidth();
   const sidebarCollapsed = width < SIDEBAR_COLLAPSE_BREAKPOINT;
 

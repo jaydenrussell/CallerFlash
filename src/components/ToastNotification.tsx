@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Phone, X, User } from 'lucide-react';
 import { useAppStore, type CallRecord } from '../store/useAppStore';
+import { useShallow } from 'zustand/react/shallow';
 import { sanitizeCallerNumberForClipboard } from '../security/secretRedactor';
 
 interface ToastNotificationProps {
@@ -11,10 +12,15 @@ interface ToastNotificationProps {
 }
 
 export function ToastNotification({ call, onDismiss, stackIndex }: ToastNotificationProps) {
-  const {
-    toastConfig, setClipboardText, addDiagnosticLog,
-    toastDragPosition, setToastDragPosition,
-  } = useAppStore();
+  const { toastConfig, setClipboardText, addDiagnosticLog, toastDragPosition, setToastDragPosition } = useAppStore(
+    useShallow((s) => ({
+      toastConfig: s.toastConfig,
+      setClipboardText: s.setClipboardText,
+      addDiagnosticLog: s.addDiagnosticLog,
+      toastDragPosition: s.toastDragPosition,
+      setToastDragPosition: s.setToastDragPosition,
+    })),
+  );
 
   const [isExiting, setIsExiting] = useState(false);
   const [progress, setProgress] = useState(100);
@@ -338,7 +344,12 @@ export function ToastNotification({ call, onDismiss, stackIndex }: ToastNotifica
 }
 
 export function ToastContainer() {
-  const { activeToasts, removeToast } = useAppStore();
+  const { activeToasts, removeToast } = useAppStore(
+    useShallow((s) => ({
+      activeToasts: s.activeToasts,
+      removeToast: s.removeToast,
+    })),
+  );
 
   return (
     <>

@@ -6,6 +6,7 @@ import {
   Check, X as XIcon, AlertTriangle
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
+import { useShallow } from 'zustand/react/shallow';
 
 import { formatVersion } from '../utils/formatVersion';
 
@@ -206,7 +207,13 @@ function formatRelativeLastCheck(lastChecked: Date | null): string {
 }
 
 export function AutoUpdate() {
-  const { updateInfo, setUpdateInfo, addDiagnosticLog } = useAppStore();
+  const { updateInfo, setUpdateInfo, addDiagnosticLog } = useAppStore(
+    useShallow((s) => ({
+      updateInfo: s.updateInfo,
+      setUpdateInfo: s.setUpdateInfo,
+      addDiagnosticLog: s.addDiagnosticLog,
+    })),
+  );
   const [showReleaseNotes, setShowReleaseNotes] = useState(false);
   // Full unfiltered release list, fetched from GitHub.
   const [releases, setReleases] = useState<GithubRelease[]>([]);

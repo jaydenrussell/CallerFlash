@@ -3,6 +3,7 @@ import {
   RefreshCw, Info, Wifi, WifiOff
 } from 'lucide-react';
 import { useAppStore, type TabId } from '../store/useAppStore';
+import { useShallow } from 'zustand/react/shallow';
 import { cn } from '../utils/cn';
 import { formatVersion } from '../utils/formatVersion';
 import logoUrl from '../assets/icon.png';
@@ -39,7 +40,15 @@ interface SidebarProps {
 }
 
 export function Sidebar({ collapsed }: SidebarProps) {
-  const { activeTab, setActiveTab, sipConnected, sipRegistered, updateInfo } = useAppStore();
+  const { activeTab, setActiveTab, sipConnected, sipRegistered, updateInfo } = useAppStore(
+    useShallow((s) => ({
+      activeTab: s.activeTab,
+      setActiveTab: s.setActiveTab,
+      sipConnected: s.sipConnected,
+      sipRegistered: s.sipRegistered,
+      updateInfo: s.updateInfo,
+    })),
+  );
 
   if (collapsed) {
     return (

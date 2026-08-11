@@ -1,9 +1,16 @@
 import { useState } from 'react';
 import { Power, AppWindow, Minimize2, ClipboardCopy } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
+import { useShallow } from 'zustand/react/shallow';
 
 export function Preferences() {
-  const { appPreferences, setAppPreferences, addDiagnosticLog } = useAppStore();
+  const { appPreferences, setAppPreferences, addDiagnosticLog } = useAppStore(
+    useShallow((s) => ({
+      appPreferences: s.appPreferences,
+      setAppPreferences: s.setAppPreferences,
+      addDiagnosticLog: s.addDiagnosticLog,
+    })),
+  );
   const [showHint, setShowHint] = useState(false);
 
   return (

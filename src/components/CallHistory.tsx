@@ -4,9 +4,17 @@ import {
   Search, Trash2, Copy, Check, Filter, Download
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
+import { useShallow } from 'zustand/react/shallow';
 
 export function CallHistory() {
-  const { callHistory, clearCallHistory, setClipboardText, addDiagnosticLog } = useAppStore();
+  const { callHistory, clearCallHistory, setClipboardText, addDiagnosticLog } = useAppStore(
+    useShallow((s) => ({
+      callHistory: s.callHistory,
+      clearCallHistory: s.clearCallHistory,
+      setClipboardText: s.setClipboardText,
+      addDiagnosticLog: s.addDiagnosticLog,
+    })),
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);

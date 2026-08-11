@@ -4,6 +4,7 @@ import {
   ChevronDown, Eye, EyeOff, ShieldCheck, Wifi, WifiOff
 } from 'lucide-react';
 import { useAppStore, type SipConfig } from '../store/useAppStore';
+import { useShallow } from 'zustand/react/shallow';
 import { sanitizeSipServer } from '../security/secretRedactor';
 
 interface ProviderOption {
@@ -187,7 +188,18 @@ export function SipSettings() {
     isConnecting,
     connectSip,
     disconnectSip,
-  } = useAppStore();
+  } = useAppStore(
+    useShallow((s) => ({
+      sipConfig: s.sipConfig,
+      setSipConfig: s.setSipConfig,
+      addDiagnosticLog: s.addDiagnosticLog,
+      sipConnected: s.sipConnected,
+      sipRegistered: s.sipRegistered,
+      isConnecting: s.isConnecting,
+      connectSip: s.connectSip,
+      disconnectSip: s.disconnectSip,
+    })),
+  );
   // [voipms-tls-guard] Normalize on load: if a persisted config somehow has a
   // *.voip.ms server with TLS selected, fall back to TCP:5060.
   const [localConfig, setLocalConfig] = useState<SipConfig>(() => {

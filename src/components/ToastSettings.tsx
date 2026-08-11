@@ -3,6 +3,7 @@ import {
   Clock, PhoneIncoming
 } from 'lucide-react';
 import { useAppStore, type ToastConfig } from '../store/useAppStore';
+import { useShallow } from 'zustand/react/shallow';
 
 
 const fontFamilies = [
@@ -11,9 +12,13 @@ const fontFamilies = [
 ];
 
 export function ToastSettings() {
-  const {
-    toastConfig, setToastConfig, addDiagnosticLog,
-  } = useAppStore();
+  const { toastConfig, setToastConfig, addDiagnosticLog } = useAppStore(
+    useShallow((s) => ({
+      toastConfig: s.toastConfig,
+      setToastConfig: s.setToastConfig,
+      addDiagnosticLog: s.addDiagnosticLog,
+    })),
+  );
 
   const update = (updates: Partial<ToastConfig>) => setToastConfig(updates);
 

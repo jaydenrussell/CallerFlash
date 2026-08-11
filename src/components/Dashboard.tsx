@@ -4,13 +4,19 @@ import {
   Wifi, Clock, Shield, Info
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
+import { useShallow } from 'zustand/react/shallow';
 
 export function Dashboard() {
-  const {
-    sipConnected, sipRegistered,
-    callHistory,
-    appPreferences, isMinimized, sipConfig,
-  } = useAppStore();
+  const { sipConnected, sipRegistered, callHistory, appPreferences, isMinimized, sipConfig } = useAppStore(
+    useShallow((s) => ({
+      sipConnected: s.sipConnected,
+      sipRegistered: s.sipRegistered,
+      callHistory: s.callHistory,
+      appPreferences: s.appPreferences,
+      isMinimized: s.isMinimized,
+      sipConfig: s.sipConfig,
+    })),
+  );
 
   const [uptime, setUptime] = useState(0);
 
