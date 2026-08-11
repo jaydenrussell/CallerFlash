@@ -95,6 +95,25 @@ fn host_is_private(host: &str) -> bool {
 }
 
 #[tauri::command]
+async fn copy_to_clipboard(text: String) -> Result<(), CommandError> {
+    if text.is_empty() {
+        return Err(CommandError::invalid_input("Nothing to copy"));
+    }
+    if text.len() > 4096 {
+        return Err(CommandError::invalid_input("Text too long"));
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut clipboard = arboard::Clipboard::new()
+            .map_err(|e| CommandError::io(format!("Failed to open clipboard: {}", e)))?;
+        clipboard
+            .set_text(text)
+            .map_err(|e| CommandError::io(format!("Failed to write clipboard: {}", e)))
+    })
+    .await
+    .map_err(|e| CommandError::unknown(format!("Clipboard task failed: {}", e)))?
+}
+
+#[tauri::command]
 async fn notify_show(app: AppHandle, title: String, body: String) -> Result<(), CommandError> {
     if !RATE_LIMITER.check("notify_show") {
         return Err(CommandError::rate_limited());
@@ -468,6 +487,7 @@ pub fn run() {
             diagnostics_export,
             diagnostics_load,
             shell_open_external,
+            copy_to_clipboard,
             notify_show,
             sip_connect,
             sip_disconnect,
