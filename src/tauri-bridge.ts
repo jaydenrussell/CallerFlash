@@ -107,6 +107,12 @@ function setup(): void {
       },
     },
 
+    clipboard: {
+      copy: (text: string) => {
+        invoke('copy_to_clipboard', { text }).catch((e) => logError('clipboard.copy', e));
+      },
+    },
+
     notify: {
       show: (data: { title: string; body: string; urgency?: 'critical' | 'normal' | 'low'; timeoutType?: 'default' | 'never'; soundEnabled?: boolean }) => {
         invoke('notify_show', { title: data.title, body: data.body }).catch((e) => logError('notify.show', e));
