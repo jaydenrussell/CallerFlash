@@ -6,7 +6,7 @@ const mockStore = vi.hoisted(() => ({
   sipConfig: {
     server: "",
     port: 5060,
-    protocol: "UDP" as const,
+    protocol: "UDP" as "UDP" | "TCP" | "TLS",
     username: "",
     password: "",
     authUsername: "",
