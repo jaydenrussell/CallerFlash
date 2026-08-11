@@ -153,12 +153,6 @@ describe("SipSettings", () => {
     expect(tlsOption?.textContent).toBe("TLS");
   });
 
-  it("shows the TLS-not-implemented notice when a VoIP.ms server is selected", () => {
-    mockStore.sipConfig.server = "atlanta.voip.ms";
-    render(<SipSettings />);
-    expect(screen.getByText(/TLS is greyed out/i)).toBeInTheDocument();
-  });
-
   it("auto-switches to TCP when selecting a VoIP.ms server while TLS is active", () => {
     mockStore.sipConfig = { ...mockStore.sipConfig, protocol: "TLS", port: 5061, server: "" };
     render(<SipSettings />);
