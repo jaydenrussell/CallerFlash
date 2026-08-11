@@ -266,6 +266,21 @@ export default function App() {
         details: `No response sent — CallerFlash does not answer calls`,
       });
 
+      // Copy the caller number to the clipboard so a paste finds the caller.
+      // Done via the Rust command (not navigator.clipboard) because it must
+      // work even when the main window is minimized/hidden in the tray.
+      if (toastConfig.autoCopyToClipboard && window.callerflash?.clipboard?.copy) {
+        if (safeNumber) {
+          window.callerflash.clipboard.copy(safeNumber);
+          addDiagnosticLog({
+            level: 'info',
+            category: 'TOAST',
+            message: `Auto-copied caller number to clipboard`,
+            details: `${safeNumber}`,
+          });
+        }
+      }
+
       // Show notification based on user's style preference
       if (toastConfig.style === 'custom' && window.callerflash?.toast?.show) {
         window.callerflash.toast.show({
