@@ -171,6 +171,12 @@ const knownServerValues = new Set(
   sipProviders.flatMap((g) => g.options.map((o) => o.value)).filter((v) => v !== '__custom__')
 );
 
+// [voipms-tls-guard] Matches any *.voip.ms host (or the bare voip.ms domain).
+const isVoipMsServer = (server: string): boolean => {
+  const s = server.trim().toLowerCase();
+  return s === 'voip.ms' || s.endsWith('.voip.ms');
+};
+
 export function SipSettings() {
   const {
     sipConfig,
@@ -182,7 +188,16 @@ export function SipSettings() {
     connectSip,
     disconnectSip,
   } = useAppStore();
-  const [localConfig, setLocalConfig] = useState<SipConfig>({ ...sipConfig });
+  // [voipms-tls-guard] Normalize on load: if a persisted config somehow has a
+  // *.voip.ms server with TLS selected, fall back to TCP:5060.
+  const [localConfig, setLocalConfig] = useState<SipConfig>(() => {
+    const cfg = { ...sipConfig };
+    if (isVoipMsServer(cfg.server) && cfg.protocol === 'TLS') {
+      cfg.protocol = 'TCP';
+      cfg.port = 5060;
+    }
+    return cfg;
+  });
   const [showPassword, setShowPassword] = useState(false);
   const [passwordDraft, setPasswordDraft] = useState('');
   const [saved, setSaved] = useState(false);
@@ -204,13 +219,45 @@ export function SipSettings() {
     setLocalConfig((prev) => ({ ...prev, ...updates }));
   };
 
+  // ==========================================================================
+  // VoIP.ms TLS guard  [voipms-tls-guard]
+  // --------------------------------------------------------------------------
+  // VoIP.ms SIP-TLS endpoints (port 5061) only offer static-RSA-key-exchange
+  // cipher suites (TLS 1.2). CallerFlash's TLS stack (rustls via rsipstack)
+  // does not support RSA key exchange, so the handshake always fails with
+  // HandshakeFailure. TLS is therefore disabled for *.voip.ms servers until
+  // VoIP.ms enables ECDHE on their TLS listeners.
+  //
+  // TO RE-ENABLE when VoIP.ms supports ECDHE:  [voipms-tls-guard]
+  //   1. Delete this comment block, `voipMsTlsBlocked`, and `coerceVoipMsTls`.
+  //   2. Remove the `...coerceVoipMsTls(...)` calls from `handleServerSelect`,
+  //      the server <input>, and the `useState` initializer above.
+  //   3. In the Protocol <select>: remove `disabled={voipMsTlsBlocked}`, change
+  //      the TLS <option> label back to "TLS", and delete the "not implemented
+  //      with VoIP.ms" notice <p>.
+  // ==========================================================================
+  const voipMsTlsBlocked = isVoipMsServer(localConfig.server);
+
+  // If a *.voip.ms server is in use while protocol is TLS, downgrade to TCP:5060
+  // so the saved config never contains an unusable TLS registration. Called from
+  // every place the server value can change (select, text input, initial load).
+  const coerceVoipMsTls = (server: string): Partial<SipConfig> => {
+    if (!isVoipMsServer(server) || localConfig.protocol !== 'TLS') return {};
+    addDiagnosticLog({
+      level: 'warning',
+      category: 'SIP',
+      message: 'TLS is not implemented with VoIP.ms - switched to TCP',
+    });
+    return { protocol: 'TCP', port: 5060 };
+  };
+
   const handleServerSelect = (value: string) => {
     if (value === '__custom__') {
       setCustomMode(true);
       updateLocal({ server: '' });
     } else {
       setCustomMode(false);
-      updateLocal({ server: value });
+      updateLocal({ server: value, ...coerceVoipMsTls(value) });
     }
   };
 
@@ -385,7 +432,7 @@ export function SipSettings() {
                     });
                     return;
                   }
-                  updateLocal({ server: safe });
+                  updateLocal({ server: safe, ...coerceVoipMsTls(safe) });
                   setCustomMode(!knownServerValues.has(safe));
                 }}
                 placeholder="sip.example.com"
@@ -426,10 +473,21 @@ export function SipSettings() {
                   >
                     <option value="UDP">UDP</option>
                     <option value="TCP">TCP</option>
-                    <option value="TLS">TLS</option>
+                    {/* [voipms-tls-guard] Remove `disabled` + label suffix when VoIP.ms supports ECDHE */}
+                    <option value="TLS" disabled={voipMsTlsBlocked}>
+                      TLS{voipMsTlsBlocked ? ' (not implemented with VoIP.ms)' : ''}
+                    </option>
                   </select>
                   <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-win-text-tertiary pointer-events-none" />
                 </div>
+                {/* [voipms-tls-guard] Remove this notice when VoIP.ms supports ECDHE */}
+                {voipMsTlsBlocked && (
+                  <p className="mt-2 text-[11px] leading-snug text-win-text-tertiary">
+                    TLS is greyed out: VoIP.ms's TLS endpoints currently offer only
+                    RSA-key-exchange ciphers, which CallerFlash's TLS stack doesn't support.
+                    It will be enabled once VoIP.ms adds ECDHE.
+                  </p>
+                )}
               </InputField>
             </div>
 
