@@ -312,7 +312,7 @@ Low findings are hygiene, documentation, or defense-in-depth items.
 | H3 | `disconnect` lied about success | Resolved |
 | H6 | CSP `ws:`/`http://localhost` | Resolved — `connect-src` pinned |
 | H7 | Broad `shell:allow-open` | Resolved — HTTPS-only + Rust-side validation + private-host block |
-| H8 | `cargo audit` `continue-on-error` | Resolved — fails CI with documented ignore for RUSTSEC-2024-0429 |
+| H8 | `cargo audit` `continue-on-error` | Resolved — fails CI with documented ignores (RUSTSEC-2024-0429 + 12 Linux-only gtk/proc-macro-error + 5 unic-* unmaintained warnings) |
 | H10 | No SAST | Resolved — CodeQL active (rust), 25 rules, 0 findings |
 | H11 | OS error details leaked | Partially — see F6 |
 | M1 | No rate limiting | Resolved — 10/s general, 2/s SIP |
