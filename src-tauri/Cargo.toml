@@ -56,3 +56,6 @@ sha2 = { version = "0.11", optional = true }
 [dev-dependencies]
 tempfile = "3"
 
+[patch.crates-io]
+glib-macros = { path = "vendor/glib-macros-0.18.5" }
+gtk3-macros = { path = "vendor/gtk3-macros-0.18.2" }
