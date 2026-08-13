@@ -1707,16 +1707,6 @@ dependencies = [
 [[package]]
 name = "gdkwayland-sys"
 version = "0.18.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "140071d506d223f7572b9f09b5e155afbd77428cd5cc7af8f2694c41d98dfe69"
-dependencies = [
- "gdk-sys",
- "glib-sys",
- "gobject-sys",
- "libc",
- "pkg-config",
- "system-deps",
-]
 
 [[package]]
 name = "gdkx11"
