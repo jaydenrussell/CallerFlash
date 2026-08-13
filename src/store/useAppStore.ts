@@ -13,7 +13,8 @@ import { redactMessage, redactKeyedValue } from '../security/secretRedactor';
 //   - Versioned schema (future migrations)
 
 const UI_STORAGE_KEY = 'callerflash-ui-settings';
-const STORAGE_VERSION = 2; // Bump when schema changes
+const STORAGE_VERSION = 3; // Bump when schema changes
+const MAX_CALL_HISTORY = 500;
 
 // ── Interfaces ───────────────────────────────────────────────────────
 export interface SipConfig {
@@ -58,7 +59,6 @@ export interface CallRecord {
   timestamp: Date;
   duration: number;
   direction: 'inbound' | 'outbound';
-  status: 'answered' | 'missed' | 'rejected';
 }
 
 export interface DiagnosticLog {
@@ -103,6 +103,33 @@ interface PersistedUiSettings {
   releasePageUrl?: string;
   sipConfig?: Partial<SipConfig>;
   lastRunVersion?: string;
+  callHistory?: CallRecord[];
+}
+
+// Persisted call records store timestamps as ISO strings (JSON), so hydrate
+// them back to Date objects when reading from disk/localStorage.
+function hydrateCallRecord(raw: Partial<CallRecord> | undefined | null): CallRecord | null {
+  if (!raw || typeof raw !== 'object' || typeof raw.id !== 'string' || typeof raw.callerNumber !== 'string') {
+    return null;
+  }
+  const ts = typeof raw.timestamp === 'string' ? new Date(raw.timestamp) : raw.timestamp;
+  if (!(ts instanceof Date) || isNaN(ts.getTime())) return null;
+  return {
+    id: raw.id,
+    callerNumber: raw.callerNumber,
+    callerName: typeof raw.callerName === 'string' ? raw.callerName : 'Unknown',
+    timestamp: ts,
+    duration: typeof raw.duration === 'number' ? raw.duration : 0,
+    direction: raw.direction === 'outbound' ? 'outbound' : 'inbound',
+  };
+}
+
+function hydrateCallHistory(raw: unknown): CallRecord[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((r) => hydrateCallRecord(r as Partial<CallRecord>))
+    .filter((r): r is CallRecord => r !== null)
+    .slice(0, MAX_CALL_HISTORY);
 }
 
 // ── Secure storage wrapper (communicates with main process) ─────────
@@ -268,6 +295,7 @@ async function initStorageMigration() {
           sipConfig: mergedSip,
           toastDragPosition: fileData.toastDragPosition ?? null,
           updateInfo: mergedUpdate,
+          callHistory: hydrateCallHistory(fileData.callHistory),
         });
         return;
       }
@@ -489,9 +517,16 @@ export const useAppStore = create<AppState>((set) => ({
   isMinimized: defaultAppPreferences.startMinimized,
   setIsMinimized: (minimized) => set({ isMinimized: minimized }),
 
-  callHistory: [],
-  addCallRecord: (record) => set((s) => ({ callHistory: [record, ...s.callHistory].slice(0, 500) })),
-  clearCallHistory: () => set({ callHistory: [] }),
+  callHistory: hydrateCallHistory(persistedUi.callHistory),
+  addCallRecord: (record) => set((s) => {
+    const callHistory = [record, ...s.callHistory].slice(0, MAX_CALL_HISTORY);
+    secureStorage.save({ ...secureStorage.cache, callHistory });
+    return { callHistory };
+  }),
+  clearCallHistory: () => set(() => {
+    secureStorage.save({ ...secureStorage.cache, callHistory: [] });
+    return { callHistory: [] };
+  }),
 
   activeToasts: [],
   addToast: (record) => set((s) => ({ activeToasts: [...s.activeToasts, record] })),

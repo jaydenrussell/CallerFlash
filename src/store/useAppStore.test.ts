@@ -62,4 +62,55 @@ describe("useAppStore", () => {
     expect(logs.length).toBeLessThanOrEqual(1000);
     expect(logs[0].message).toBe("log 1004");
   });
+
+  it("addCallRecord prepends records to callHistory", () => {
+    useAppStore.getState().addCallRecord({
+      id: "1",
+      callerNumber: "555-0100",
+      callerName: "Alice",
+      timestamp: new Date("2025-01-01T10:00:00Z"),
+      duration: 0,
+      direction: "inbound",
+    });
+    useAppStore.getState().addCallRecord({
+      id: "2",
+      callerNumber: "555-0200",
+      callerName: "Bob",
+      timestamp: new Date("2025-01-02T10:00:00Z"),
+      duration: 0,
+      direction: "inbound",
+    });
+    const history = useAppStore.getState().callHistory;
+    expect(history.map((c) => c.id)).toEqual(["2", "1"]);
+  });
+
+  it("addCallRecord respects 500 entry cap", () => {
+    const store = useAppStore.getState();
+    for (let i = 0; i < 505; i++) {
+      store.addCallRecord({
+        id: String(i),
+        callerNumber: `555-0${i}`,
+        callerName: "Tester",
+        timestamp: new Date(),
+        duration: 0,
+        direction: "inbound",
+      });
+    }
+    const history = useAppStore.getState().callHistory;
+    expect(history.length).toBe(500);
+    expect(history[0].id).toBe("504");
+  });
+
+  it("clearCallHistory empties callHistory", () => {
+    useAppStore.getState().addCallRecord({
+      id: "1",
+      callerNumber: "555-0100",
+      callerName: "Alice",
+      timestamp: new Date(),
+      duration: 0,
+      direction: "inbound",
+    });
+    useAppStore.getState().clearCallHistory();
+    expect(useAppStore.getState().callHistory).toEqual([]);
+  });
 });

@@ -266,7 +266,6 @@ export default function App() {
         timestamp: new Date(),
         duration: 0,
         direction: 'inbound' as const,
-        status: 'missed' as const,
       };
 
       useAppStore.getState().addCallRecord(record);

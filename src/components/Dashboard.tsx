@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Phone, PhoneIncoming, PhoneMissed, PhoneOff,
+  Phone, PhoneIncoming, PhoneOff,
   Wifi, Clock, Shield, Info
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
@@ -34,8 +34,6 @@ export function Dashboard() {
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
   };
 
-  const missedCalls = callHistory.filter((c) => c.status === 'missed').length;
-  const answeredCalls = callHistory.filter((c) => c.status === 'answered').length;
   const todayCalls = callHistory.filter((c) => c.timestamp.getDate() === new Date().getDate()).length;
 
   return (
@@ -61,7 +59,7 @@ export function Dashboard() {
           label="Calls today"
           value={todayCalls.toString()}
           color="#60cdff"
-          tooltip={`${answeredCalls} answered · ${missedCalls} missed`}
+          tooltip={`${todayCalls} call${todayCalls === 1 ? '' : 's'} received today`}
         />
       </div>
 
@@ -111,14 +109,8 @@ export function Dashboard() {
                 key={call.id}
                 className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-win-surface-hover transition-colors"
               >
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${
-                  call.status === 'answered' ? 'bg-win-success/15' : 'bg-win-error/15'
-                }`}>
-                  {call.status === 'answered' ? (
-                    <PhoneIncoming className="w-3.5 h-3.5 text-win-success" />
-                  ) : (
-                    <PhoneMissed className="w-3.5 h-3.5 text-win-error" />
-                  )}
+                <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 bg-win-accent/15">
+                  <PhoneIncoming className="w-3.5 h-3.5 text-win-accent" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-medium text-win-text">{call.callerNumber}</p>
