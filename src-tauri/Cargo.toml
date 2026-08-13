@@ -26,30 +26,30 @@ serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 tracing-log = "0.2"
-tauri = { version = "2.11.3", features = ["tray-icon", "image-png"] }
-tauri-plugin-log = "2"
-tauri-plugin-shell = "2"
-tauri-plugin-notification = "2"
-tauri-plugin-single-instance = "2"
-tauri-plugin-updater = "2"
-url = "2"
-tokio = { version = "1", features = ["full"] }
+tauri = { version = "2.11.5", features = ["tray-icon", "image-png"] }
+tauri-plugin-log = "2.9.0"
+tauri-plugin-shell = "2.3.5"
+tauri-plugin-notification = "2.3.3"
+tauri-plugin-single-instance = "2.4.3"
+tauri-plugin-updater = "2.10.1"
+url = "2.5.8"
+tokio = { version = "1.53.1", features = ["full"] }
 tokio-util = "0.7"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
-base64 = "0.22"
+base64 = "0.23"
 futures-util = "0.3"
 rsipstack = "0.6"
 rustls-native-certs = "0.8"
 open = "5"
 arboard = "3"
-winreg = "0.52"
+winreg = "0.56"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
-once_cell = "1.20"
+once_cell = "1"
 ed25519-dalek = "3"
 hex = "0.4"
 secrecy = "0.10"
-aes-gcm = { version = "0.10", optional = true }
+aes-gcm = { version = "0.11", optional = true }
 hmac = { version = "0.13", optional = true }
 sha2 = { version = "0.11", optional = true }
 
