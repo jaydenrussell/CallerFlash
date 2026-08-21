@@ -38,6 +38,13 @@ export function Diagnostics() {
   const [expandedLog, setExpandedLog] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Clear wipes BOTH the in-memory store and the on-disk log — otherwise
+  // entries reappear on next launch via diagnostics_load.
+  const handleClear = () => {
+    window.callerflash?.diagnostics?.clear?.();
+    clearDiagnosticLogs();
+  };
+
   useEffect(() => {
     if (autoScroll && scrollRef.current) {
       scrollRef.current.scrollTop = 0;
@@ -285,7 +292,7 @@ export function Diagnostics() {
           <button onClick={exportLogs} disabled={diagnosticLogs.length === 0} className="flex items-center gap-1.5 px-3 py-2 bg-win-surface hover:bg-win-surface-hover text-win-text-secondary rounded-lg text-xs transition-colors border border-win-border disabled:opacity-40">
             <Download className="w-3.5 h-3.5" /> Export
           </button>
-          <button onClick={clearDiagnosticLogs} disabled={diagnosticLogs.length === 0} className="flex items-center gap-1.5 px-3 py-2 bg-win-error/10 hover:bg-win-error/20 text-win-error rounded-lg text-xs transition-colors border border-win-error/20 disabled:opacity-40">
+          <button onClick={handleClear} disabled={diagnosticLogs.length === 0} className="flex items-center gap-1.5 px-3 py-2 bg-win-error/10 hover:bg-win-error/20 text-win-error rounded-lg text-xs transition-colors border border-win-error/20 disabled:opacity-40">
             <Trash2 className="w-3.5 h-3.5" /> Clear
           </button>
         </div>

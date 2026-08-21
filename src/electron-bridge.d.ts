@@ -159,6 +159,8 @@ declare global {
       append: (entry: { id: string; timestamp: Date | string; level: string; category: string; message: string; details?: string | null }) => void;
       load: () => Promise<Array<{ id: string; timestamp: Date; level: string; category: string; message: string; details?: string | null }>>;
       exportLogs: (text: string) => Promise<string | null>;
+      /** Zero-overwrite + delete the on-disk diagnostics log. */
+      clear: () => Promise<void>;
     };
     app: {
       setStartWithWindows: (enabled: boolean) => void;

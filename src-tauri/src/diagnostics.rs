@@ -82,6 +82,26 @@ impl Diagnostics {
         }
     }
 
+    /// Best-effort sanitization of the on-disk log: overwrite with zeros
+    /// (so the plaintext entries don't linger in unallocated sectors), then
+    /// delete the file.
+    pub fn clear(&self) {
+        let zeros = vec![
+            0u8;
+            fs::metadata(&self.path)
+                .map(|m| m.len() as usize)
+                .unwrap_or(0)
+        ];
+        if let Err(e) = fs::write(&self.path, &zeros) {
+            log::warn!("[diagnostics] Could not overwrite log: {}", e);
+        }
+        if let Err(e) = fs::remove_file(&self.path) {
+            log::warn!("[diagnostics] Could not delete log: {}", e);
+        } else {
+            log::info!("[diagnostics] Cleared on-disk log at {:?}", self.path);
+        }
+    }
+
     pub fn load(&self, limit: usize) -> Vec<LogEntry> {
         let limit = limit.min(1000);
         let content = match fs::read_to_string(&self.path) {
@@ -157,4 +177,69 @@ pub fn diagnostics_load(app: tauri::AppHandle) -> Vec<LogEntry> {
         .unwrap_or_else(|_| PathBuf::from("."));
     let diag = Diagnostics::new(data_dir);
     diag.load(1000)
+}
+
+#[tauri::command]
+pub fn diagnostics_clear(app: tauri::AppHandle) -> Result<(), CommandError> {
+    if !RATE_LIMITER.check("diagnostics_clear") {
+        return Err(CommandError::rate_limited());
+    }
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| PathBuf::from("."));
+    Diagnostics::new(data_dir).clear();
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Diagnostics, LogEntry};
+    use std::fs;
+
+    fn entry(id: &str) -> LogEntry {
+        LogEntry {
+            id: id.to_string(),
+            timestamp: "2026-08-21T00:00:00Z".to_string(),
+            level: "info".to_string(),
+            category: "TEST".to_string(),
+            message: "hello".to_string(),
+            details: None,
+        }
+    }
+
+    #[test]
+    fn clear_removes_log_file_and_entries() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let diag = Diagnostics::new(dir.path().to_path_buf());
+        diag.append(&entry("1"));
+        assert!(diag.load(100).len() == 1);
+        assert!(diag.path.exists());
+
+        diag.clear();
+
+        assert!(!diag.path.exists(), "log file should be deleted");
+        assert!(diag.load(100).is_empty());
+    }
+
+    #[test]
+    fn clear_on_missing_file_is_noop() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let diag = Diagnostics::new(dir.path().to_path_buf());
+        diag.clear();
+        assert!(!diag.path.exists());
+    }
+
+    #[test]
+    fn append_then_load_returns_newest_first() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let diag = Diagnostics::new(dir.path().to_path_buf());
+        fs::remove_file(&diag.path).ok();
+        diag.append(&entry("first"));
+        diag.append(&entry("second"));
+        let loaded = diag.load(100);
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].id, "second", "newest entry first");
+        assert_eq!(loaded[1].id, "first");
+    }
 }

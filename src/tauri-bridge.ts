@@ -307,6 +307,13 @@ function setup(): void {
           return null;
         }
       },
+      clear: async () => {
+        try {
+          await invoke('diagnostics_clear');
+        } catch (e) {
+          logError('diagnostics.clear', e);
+        }
+      },
     },
 
     app: {

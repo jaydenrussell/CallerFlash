@@ -315,6 +315,21 @@ fn mark_migration_done(app_data_dir: &Path) {
     }
 }
 
+/// Best-effort sanitization of the legacy config after a successful
+/// migration. The file holds the SIP password wrapped with a machine-
+/// derivable key (hostname/CPU) — zero the contents before unlinking so
+/// the plaintext-adjacent bytes don't linger in unallocated sectors.
+fn sanitize_legacy_config(path: &Path) {
+    let zeros = vec![0u8; fs::metadata(path).map(|m| m.len() as usize).unwrap_or(0)];
+    if let Err(e) = fs::write(path, &zeros) {
+        log::warn!("[migrate] Could not overwrite legacy config: {}", e);
+    }
+    match fs::remove_file(path) {
+        Ok(()) => log::info!("[migrate] Sanitized legacy config at {:?}", path),
+        Err(e) => log::warn!("[migrate] Could not delete legacy config: {}", e),
+    }
+}
+
 pub fn run_migration(app_data_dir: &Path) {
     if was_migration_attempted(app_data_dir) {
         log::info!("[migrate] Migration already attempted, skipping");
@@ -368,12 +383,15 @@ pub fn run_migration(app_data_dir: &Path) {
         return;
     }
 
+    let mut password_recovered = true;
     let decrypted_password = if password_enc.is_empty() {
+        // No credential in the legacy file at all.
         String::new()
     } else {
         match decrypt_password(password_enc, &old_config_path) {
             Ok(p) => p,
             Err(e) => {
+                password_recovered = false;
                 log::warn!(
                     "[migrate] Could not decrypt SIP password ({}); importing the rest - user will need to re-enter the password",
                     e
@@ -426,5 +444,37 @@ pub fn run_migration(app_data_dir: &Path) {
         username
     );
 
+    // Sanitize only when nothing of value remains: the credential was
+    // recovered (or never existed). On decrypt failure keep the file so the
+    // user can still recover the password with the old app.
+    if password_recovered {
+        sanitize_legacy_config(&old_config_path);
+    } else {
+        log::info!("[migrate] Keeping legacy config: password not decrypted, may still be recoverable via the old app");
+    }
+
     mark_migration_done(app_data_dir);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_legacy_config;
+    use std::fs;
+
+    #[test]
+    fn sanitize_removes_existing_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("old-config.json");
+        fs::write(&path, "{\"sip\":{\"password\":\"enc:AAAA\"}}").expect("write");
+        sanitize_legacy_config(&path);
+        assert!(!path.exists(), "legacy config should be removed");
+    }
+
+    #[test]
+    fn sanitize_is_noop_on_missing_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("does-not-exist.json");
+        sanitize_legacy_config(&path);
+        assert!(!path.exists());
+    }
 }

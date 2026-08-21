@@ -9,7 +9,7 @@ mod storage;
 mod tray;
 mod update;
 
-use diagnostics::{diagnostics_append, diagnostics_export, diagnostics_load};
+use diagnostics::{diagnostics_append, diagnostics_clear, diagnostics_export, diagnostics_load};
 use error::CommandError;
 use ratelimit::RATE_LIMITER;
 use sip::SipClient;
@@ -495,6 +495,7 @@ pub fn run() {
             diagnostics_append,
             diagnostics_export,
             diagnostics_load,
+            diagnostics_clear,
             shell_open_external,
             copy_to_clipboard,
             notify_show,
