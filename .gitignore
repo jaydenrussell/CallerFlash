@@ -15,3 +15,6 @@ src-tauri/icons/android/
 # Preloader build artifacts
 preloader/obj/
 preloader/*.user
+
+# Coverage reports
+coverage/
