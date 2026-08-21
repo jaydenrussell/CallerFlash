@@ -1261,4 +1261,133 @@ mod tests {
         assert_eq!(number, "1234");
         assert_eq!(name, "John Doe");
     }
+
+    /// Deterministic mutation fuzzing of the attacker-controlled INVITE
+    /// parse path (`extract_invite_caller`). cargo-fuzz/libFuzzer does not
+    /// run on the MSVC toolchain CI uses, so this runs a seeded corpus plus
+    /// mutations as an ordinary test: any panic on hostile input is a
+    /// remote DoS and fails CI.
+    #[test]
+    fn fuzz_extract_invite_caller_no_panic() {
+        const ITERATIONS: u64 = 20_000;
+        const MAX_CALLER_ID: usize = 128;
+
+        let corpus: Vec<&[u8]> = vec![
+            b"INVITE sip:u@e.com SIP/2.0\r\nFrom: \"John\" <sip:123@e.com>\r\n\r\n",
+            b"INVITE sip:u@e.com SIP/2.0\r\nFrom: \"a\"b\" <sip:x@y>\r\n\r\n",
+            b"INVITE sip:u@e.com SIP/2.0\r\nFrom: \"Unbalanced <sip:1@h>\r\n\r\n",
+            b"INVITE sip:u@e.com SIP/2.0\r\nFrom: \"\" <>;tag=x\r\n\r\n",
+            b"INVITE sip:u@e.com SIP/2.0\r\nFrom: <sip:@host>\r\n\r\n",
+            b"INVITE sip:u@e.com SIP/2.0\r\nFrom: \":weird\" <sip:n@h>\r\n\r\n",
+            "INVITE sip:u@e.com SIP/2.0\r\nFrom: \"Ünïcödé 名前\" <sip:+1555@h>\r\n\r\n".as_bytes(),
+            b"INVITE sip:u@e.com SIP/2.0\r\nFrom: \"CRLF\x0d\x0aInjected\" <sip:v@h>\r\n\r\n",
+            b"INVITE sip:u@e.com SIP/2.0\r\nFrom: sip:noquotes@h\r\n\r\n",
+            b"GARBAGE\r\n\r\n",
+            b"",
+        ];
+
+        struct Rng(u64);
+        impl Rng {
+            fn next(&mut self) -> u64 {
+                // xorshift64*
+                let mut x = self.0;
+                x ^= x >> 12;
+                x ^= x << 25;
+                x ^= x >> 27;
+                self.0 = x;
+                x.wrapping_mul(0x2545F4914F6CDD1D)
+            }
+            fn below(&mut self, n: usize) -> usize {
+                (self.next() % n as u64) as usize
+            }
+        }
+        let mut rng = Rng(0x000C_A113_F1A5);
+
+        let interesting: [u8; 10] = [0x0D, 0x0A, 0x22, 0x40, 0x3A, 0x00, 0xFF, 0x7F, 0xC3, 0xA9];
+
+        for _ in 0..ITERATIONS {
+            let mut data = corpus[rng.below(corpus.len())].to_vec();
+            // Apply 1..=6 random mutations.
+            for _ in 0..(1 + rng.below(6)) {
+                if data.is_empty() {
+                    break;
+                }
+                match rng.below(6) {
+                    0 => {
+                        let i = rng.below(data.len());
+                        data[i] ^= 1 << rng.below(8);
+                    }
+                    1 => {
+                        let i = rng.below(data.len());
+                        data.insert(i, interesting[rng.below(interesting.len())]);
+                    }
+                    2 => {
+                        let i = rng.below(data.len());
+                        data.remove(i);
+                    }
+                    3 => {
+                        let i = rng.below(data.len());
+                        let j = (i + 1 + rng.below(16)).min(data.len());
+                        let chunk: Vec<u8> = data[i..j].to_vec();
+                        let at = rng.below(data.len() + 1);
+                        data.splice(at..at, chunk);
+                    }
+                    4 => data.truncate(rng.below(data.len()) + 1),
+                    _ => {
+                        let i = rng.below(data.len());
+                        let j = rng.below(data.len());
+                        data.swap(i, j);
+                    }
+                }
+            }
+
+            // Parse must not panic; extraction must uphold invariants.
+            if let Ok(msg) = SipMessage::try_from(data.as_slice()) {
+                let (number, name) = extract_invite_caller(&msg);
+                assert!(
+                    number.chars().count() <= MAX_CALLER_ID
+                        && name.chars().count() <= MAX_CALLER_ID,
+                    "caller id exceeded max length"
+                );
+                for c in number.chars().chain(name.chars()) {
+                    assert!(
+                        c.is_ascii_graphic() || c == ' ',
+                        "unsanitized char {:?} leaked into caller id",
+                        c
+                    );
+                }
+            }
+        }
+    }
+
+    /// Same treatment for `sanitize_caller_id` directly: arbitrary strings
+    /// (including multi-byte UTF-8 near control bytes) must yield only
+    /// printable ASCII bounded by the max length.
+    #[test]
+    fn fuzz_sanitize_caller_id_no_panic() {
+        struct Rng(u64);
+        impl Rng {
+            fn next(&mut self) -> u64 {
+                let mut x = self.0;
+                x ^= x >> 12;
+                x ^= x << 25;
+                x ^= x >> 27;
+                self.0 = x;
+                x.wrapping_mul(0x2545F4914F6CDD1D)
+            }
+        }
+        let mut rng = Rng(0xBEEF_CAFE);
+        let alphabet: Vec<char> = "aZ9 \x00\x01\x7f\u{7f}\"'@:/\\\r\n\t\u{2603}\u{10FFFF}"
+            .chars()
+            .collect();
+        for _ in 0..20_000u32 {
+            let len = (rng.next() % 300) as usize;
+            let s: String = (0..len)
+                .map(|_| alphabet[(rng.next() % alphabet.len() as u64) as usize])
+                .collect();
+            let clean = sanitize_caller_id(&s);
+            assert!(clean.chars().count() <= 128);
+            assert!(clean.chars().all(|c| c.is_ascii_graphic() || c == ' '));
+        }
+    }
 }

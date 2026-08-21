@@ -29,17 +29,16 @@ export default defineConfig({
     setupFiles: ["./src/test-setup.ts"],
     coverage: {
       provider: "v8",
-      // Full-file mode: every source file counts, untested ones included.
-      // Floors sit just under the current baseline (~12%) as a ratchet —
-      // new untested code drags the average down, so coverage can only
-      // improve. Raise as tests are added.
+      // Floors sit just under the measured baseline (bridge layer now
+      // tested) as a ratchet — new untested code drags the average down,
+      // so coverage can only improve. Raise as tests are added.
       include: ["src/**/*.{ts,tsx}"],
       exclude: ["src/**/*.test.*", "src/test-setup.ts"],
       thresholds: {
-        statements: 11,
-        branches: 11,
-        functions: 11,
-        lines: 12,
+        statements: 16,
+        branches: 13,
+        functions: 17,
+        lines: 17,
       },
     },
   },
