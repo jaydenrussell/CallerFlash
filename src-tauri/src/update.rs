@@ -2,18 +2,40 @@ use serde::Serialize;
 use tauri::{Manager, Runtime};
 use tauri_plugin_updater::UpdaterExt;
 
-/// Stable channel endpoint. `releases/latest` resolves to the newest
-/// non-prerelease release, so this always serves the latest stable.
-const STABLE_UPDATE_ENDPOINT: &str =
+/// Fallback endpoint used only when the GitHub API is unreachable: the
+/// mutable `releases/latest` pointer. Primary resolution always pins the
+/// exact release tag (see [`tagged_endpoint`]) so manifest URLs are
+/// immutable — a given tag's `update.json` never changes after publish.
+const FALLBACK_UPDATE_ENDPOINT: &str =
     "https://github.com/jaydenrussell/CallerFlash/releases/latest/download/update.json";
 
 const UPDATE_REPO_API: &str = "https://api.github.com/repos/jaydenrussell/CallerFlash";
+
+/// Immutable per-tag manifest URL. Release assets are never mutated after
+/// publication, so a fetched manifest always corresponds to that exact tag.
+fn tagged_endpoint(tag: &str) -> String {
+    format!("https://github.com/jaydenrussell/CallerFlash/releases/download/{tag}/update.json")
+}
 
 fn http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {e}"))
+}
+
+async fn fetch_json(url: &str) -> Option<serde_json::Value> {
+    let resp = http_client()
+        .ok()?
+        .get(url)
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    resp.json().await.ok()
 }
 
 /// Mirror of the frontend's `/-(beta|tauri)(\.|$)/i` tag filter: a beta tag
@@ -34,36 +56,34 @@ fn matches_beta_tag(tag: &str) -> bool {
     false
 }
 
-/// GitHub has no "latest prerelease" alias, so the beta channel endpoint is
-/// resolved by listing recent releases. Any failure falls back to the stable
-/// endpoint — the updater still signature-verifies whatever it downloads.
+/// GitHub has no "latest prerelease" alias, so the beta channel's newest tag
+/// comes from listing recent releases.
+async fn latest_beta_tag() -> Option<String> {
+    let releases = fetch_json(&format!("{UPDATE_REPO_API}/releases?per_page=20")).await?;
+    releases.as_array()?.iter().find_map(|r| {
+        let tag = r.get("tag_name")?.as_str()?;
+        r.get("prerelease")?.as_bool()?;
+        matches_beta_tag(tag).then(|| tag.to_string())
+    })
+}
+
+/// `/releases/latest` resolves to the newest non-prerelease release.
+async fn latest_stable_tag() -> Option<String> {
+    let release = fetch_json(&format!("{UPDATE_REPO_API}/releases/latest")).await?;
+    release.get("tag_name")?.as_str().map(String::from)
+}
+
+/// Resolve the update manifest URL for a channel. Both channels pin the
+/// exact tag; any API failure degrades to the mutable pointer (the updater
+/// still signature-verifies whatever it downloads).
 async fn resolve_channel_endpoint(channel: &str) -> String {
-    if channel != "beta" {
-        return STABLE_UPDATE_ENDPOINT.to_string();
-    }
-    let tag = async {
-        let resp = http_client()
-            .ok()?
-            .get(format!("{UPDATE_REPO_API}/releases?per_page=20"))
-            .header("Accept", "application/vnd.github+json")
-            .send()
-            .await
-            .ok()?;
-        if !resp.status().is_success() {
-            return None;
-        }
-        let releases: serde_json::Value = resp.json().await.ok()?;
-        releases.as_array()?.iter().find_map(|r| {
-            let tag = r.get("tag_name")?.as_str()?;
-            r.get("prerelease")?.as_bool()?;
-            matches_beta_tag(tag).then(|| tag.to_string())
-        })
+    let tag = match channel {
+        "beta" => latest_beta_tag().await,
+        _ => latest_stable_tag().await,
     };
-    match tag.await {
-        Some(tag) => format!(
-            "https://github.com/jaydenrussell/CallerFlash/releases/download/{tag}/update.json"
-        ),
-        None => STABLE_UPDATE_ENDPOINT.to_string(),
+    match tag {
+        Some(tag) => tagged_endpoint(&tag),
+        None => FALLBACK_UPDATE_ENDPOINT.to_string(),
     }
 }
 
@@ -207,7 +227,15 @@ pub async fn cmd_list_releases() -> Result<Vec<ReleaseInfo>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::matches_beta_tag;
+    use super::{matches_beta_tag, tagged_endpoint};
+
+    #[test]
+    fn tagged_endpoints_pin_the_exact_tag() {
+        assert_eq!(
+            tagged_endpoint("v2.1.0"),
+            "https://github.com/jaydenrussell/CallerFlash/releases/download/v2.1.0/update.json"
+        );
+    }
 
     #[test]
     fn beta_tags_match() {

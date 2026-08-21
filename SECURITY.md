@@ -39,11 +39,17 @@ pinned in `src-tauri/tauri.conf.json`.
 ### Endpoint integrity
 
 The renderer never supplies an update URL. `cmd_check_update` resolves the
-endpoint entirely in the Rust backend from the requested channel:
+endpoint entirely in the Rust backend from the requested channel, always
+pinning the **exact release tag**:
 
-- **stable** → `https://github.com/jaydenrussell/CallerFlash/releases/latest/download/update.json`
-- **beta** → the latest `-beta`/`-tauri` prerelease tag's `update.json`,
-  resolved by listing recent releases from the GitHub API (backend-side)
+- **stable** → newest non-prerelease tag via the GitHub API, then
+  `https://github.com/jaydenrussell/CallerFlash/releases/download/<tag>/update.json`
+- **beta** → newest `-beta`/`-tauri` prerelease tag, same per-tag URL shape
+
+Per-tag asset URLs are **immutable**: a published release's `update.json`
+and installer are never modified after publication, so a fetched manifest
+always corresponds to that exact tag. Only if the GitHub API is unreachable
+does resolution degrade to the mutable `releases/latest` pointer.
 
 The resolved URL is then validated against a hard-coded HTTPS host
 allow-list (`github.com`, `api.github.com`,

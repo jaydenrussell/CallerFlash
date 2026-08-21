@@ -36,8 +36,8 @@ jobs:
       - name: npm audit
         run: npm audit --audit-level=high
 
-      - name: Run tests
-        run: npm test
+      - name: Run tests with coverage gate
+        run: npm run test:coverage
 
       - name: Build check
         run: npm run build
@@ -101,5 +101,13 @@ jobs:
           #   - RUSTSEC-2025-0098 unic-ucd-version
           cargo audit --ignore RUSTSEC-2024-0429 --ignore RUSTSEC-2024-0411 --ignore RUSTSEC-2024-0412 --ignore RUSTSEC-2024-0413 --ignore RUSTSEC-2024-0414 --ignore RUSTSEC-2024-0415 --ignore RUSTSEC-2024-0416 --ignore RUSTSEC-2024-0417 --ignore RUSTSEC-2024-0418 --ignore RUSTSEC-2024-0419 --ignore RUSTSEC-2024-0420 --ignore RUSTSEC-2024-0370 --ignore RUSTSEC-2025-0081 --ignore RUSTSEC-2025-0075 --ignore RUSTSEC-2025-0080 --ignore RUSTSEC-2025-0100 --ignore RUSTSEC-2025-0098
 
-      - name: Run tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@a2a5f6e99e1a31540baa0468acfa302cff0f359f # v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Run tests with coverage gate
+        working-directory: src-tauri
+        # Floor sits at the measured baseline (~25.6% lines); blocks
+        # regressions. Raise as coverage improves.
+        run: cargo llvm-cov --fail-under-lines 25
