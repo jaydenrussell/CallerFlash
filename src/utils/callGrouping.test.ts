@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { getCallSection, groupCallsBySection, type CallSectionKey } from "./callGrouping";
+import { getDayKey, getCallSectionLabel, groupCallsBySection } from "./callGrouping";
 import type { CallRecord } from "../store/useAppStore";
 
-const now = new Date("2025-06-15T12:00:00Z");
+const now = new Date(2025, 5, 15, 12, 0, 0);
 
 function makeCall(timestamp: Date, id: string): CallRecord {
   return {
@@ -15,41 +15,42 @@ function makeCall(timestamp: Date, id: string): CallRecord {
   };
 }
 
-function daysAgo(days: number, hour = 10): Date {
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate() - days, hour);
-}
+describe("getDayKey", () => {
+  it("formats local calendar day as YYYY-MM-DD", () => {
+    expect(getDayKey(new Date(2025, 5, 15))).toBe("2025-06-15");
+    expect(getDayKey(new Date(2025, 0, 3))).toBe("2025-01-03");
+  });
+});
 
-describe("getCallSection", () => {
-  it.each([
-    [daysAgo(0), "today"],
-    [daysAgo(1), "yesterday"],
-    [daysAgo(3), "last7"],
-    [daysAgo(7), "last7"],
-    [daysAgo(8), "last30"],
-    [daysAgo(30), "last30"],
-    [daysAgo(31), "older"],
-  ] as [Date, CallSectionKey][])("maps %s to %s", (ts, expected) => {
-    expect(getCallSection(ts, now)).toBe(expected);
+describe("getCallSectionLabel", () => {
+  it("labels today and yesterday", () => {
+    expect(getCallSectionLabel("2025-06-15", now, "en-US")).toBe("Today");
+    expect(getCallSectionLabel("2025-06-14", now, "en-US")).toBe("Yesterday");
+  });
+
+  it("labels older days with weekday and date", () => {
+    expect(getCallSectionLabel("2025-06-12", now, "en-US")).toBe("Thursday, June 12");
+  });
+
+  it("includes year for other years", () => {
+    expect(getCallSectionLabel("2024-06-12", now, "en-US")).toBe("Wednesday, June 12, 2024");
   });
 });
 
 describe("groupCallsBySection", () => {
-  it("groups calls into ordered sections", () => {
+  it("groups calls by calendar day in descending order", () => {
     const calls = [
-      makeCall(daysAgo(31), "old"),
-      makeCall(daysAgo(0), "today"),
-      makeCall(daysAgo(1), "yesterday"),
-      makeCall(daysAgo(10), "last30"),
+      makeCall(new Date(2025, 5, 15, 9, 0), "a"),
+      makeCall(new Date(2025, 5, 15, 8, 0), "b"),
+      makeCall(new Date(2025, 5, 14, 20, 0), "c"),
+      makeCall(new Date(2025, 5, 10, 10, 0), "d"),
     ];
-    const sections = groupCallsBySection(calls, now);
-    expect(sections.map((s) => s.key)).toEqual(["today", "yesterday", "last30", "older"]);
-    expect(sections[0].calls.map((c) => c.id)).toEqual(["today"]);
-    expect(sections[3].calls.map((c) => c.id)).toEqual(["old"]);
-  });
-
-  it("omits empty sections", () => {
-    const sections = groupCallsBySection([makeCall(daysAgo(5), "week")], now);
-    expect(sections.map((s) => s.key)).toEqual(["last7"]);
+    const sections = groupCallsBySection(calls, now, "en-US");
+    expect(sections.map((s) => s.key)).toEqual(["2025-06-15", "2025-06-14", "2025-06-10"]);
+    expect(sections[0].label).toBe("Today");
+    expect(sections[0].calls.map((c) => c.id)).toEqual(["a", "b"]);
+    expect(sections[1].label).toBe("Yesterday");
+    expect(sections[2].label).toBe("Tuesday, June 10");
   });
 
   it("returns empty array for empty input", () => {
