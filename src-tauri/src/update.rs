@@ -1,4 +1,3 @@
-use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::Serialize;
 use tauri::{Manager, Runtime};
 use tauri_plugin_updater::UpdaterExt;
@@ -7,6 +6,66 @@ use tauri_plugin_updater::UpdaterExt;
 /// non-prerelease release, so this always serves the latest stable.
 const STABLE_UPDATE_ENDPOINT: &str =
     "https://github.com/jaydenrussell/CallerFlash/releases/latest/download/update.json";
+
+const UPDATE_REPO_API: &str = "https://api.github.com/repos/jaydenrussell/CallerFlash";
+
+fn http_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {e}"))
+}
+
+/// Mirror of the frontend's `/-(beta|tauri)(\.|$)/i` tag filter: a beta tag
+/// ends with (or continues with `.`/`-` after) a `-beta` or `-tauri` marker.
+fn matches_beta_tag(tag: &str) -> bool {
+    let lower = tag.to_lowercase();
+    for marker in ["-beta", "-tauri"] {
+        let mut from = 0;
+        while let Some(pos) = lower[from..].find(marker) {
+            let abs = from + pos;
+            let rest = &lower[abs + marker.len()..];
+            if rest.is_empty() || rest.starts_with('.') || rest.starts_with('-') {
+                return true;
+            }
+            from = abs + marker.len();
+        }
+    }
+    false
+}
+
+/// GitHub has no "latest prerelease" alias, so the beta channel endpoint is
+/// resolved by listing recent releases. Any failure falls back to the stable
+/// endpoint — the updater still signature-verifies whatever it downloads.
+async fn resolve_channel_endpoint(channel: &str) -> String {
+    if channel != "beta" {
+        return STABLE_UPDATE_ENDPOINT.to_string();
+    }
+    let tag = async {
+        let resp = http_client()
+            .ok()?
+            .get(format!("{UPDATE_REPO_API}/releases?per_page=20"))
+            .header("Accept", "application/vnd.github+json")
+            .send()
+            .await
+            .ok()?;
+        if !resp.status().is_success() {
+            return None;
+        }
+        let releases: serde_json::Value = resp.json().await.ok()?;
+        releases.as_array()?.iter().find_map(|r| {
+            let tag = r.get("tag_name")?.as_str()?;
+            r.get("prerelease")?.as_bool()?;
+            matches_beta_tag(tag).then(|| tag.to_string())
+        })
+    };
+    match tag.await {
+        Some(tag) => format!(
+            "https://github.com/jaydenrussell/CallerFlash/releases/download/{tag}/update.json"
+        ),
+        None => STABLE_UPDATE_ENDPOINT.to_string(),
+    }
+}
 
 /// Metadata handed to the renderer. Mirrors the shape the
 /// `tauri-plugin-updater` JS `Update` class expects, so the frontend can
@@ -20,41 +79,6 @@ pub struct UpdateMetadata {
     pub date: Option<String>,
     pub body: Option<String>,
     pub raw_json: serde_json::Value,
-}
-
-#[derive(Serialize)]
-pub struct VerifyResult {
-    pub valid: bool,
-}
-
-const VERIFY_PUBLIC_KEY_B64: &str = "RXv0FZ3tFJwx3XH8qGJWzOJ3zKzXG6y5Y0k8L9aBc1E=";
-
-fn get_verifying_key() -> Result<VerifyingKey, String> {
-    use base64::Engine;
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(VERIFY_PUBLIC_KEY_B64)
-        .map_err(|e| format!("Base64 decode failed: {}", e))?;
-    let arr: [u8; 32] = bytes
-        .try_into()
-        .map_err(|_| "Invalid public key length".to_string())?;
-    VerifyingKey::from_bytes(&arr).map_err(|e| format!("Invalid Ed25519 key: {}", e))
-}
-
-#[tauri::command]
-pub fn cmd_verify_update(signature_b64: String, data_hex: String) -> Result<VerifyResult, String> {
-    let key = get_verifying_key()?;
-
-    use base64::Engine;
-    let sig_bytes = base64::engine::general_purpose::STANDARD
-        .decode(&signature_b64)
-        .map_err(|e| format!("Signature base64 decode failed: {}", e))?;
-    let signature =
-        Signature::from_slice(&sig_bytes).map_err(|e| format!("Invalid signature bytes: {}", e))?;
-
-    let data = hex::decode(&data_hex).map_err(|e| format!("Hex decode failed: {}", e))?;
-
-    let valid = key.verify(&data, &signature).is_ok();
-    Ok(VerifyResult { valid })
 }
 
 /// Restrict the check endpoint to the hard-coded GitHub release hosts. The
@@ -80,19 +104,18 @@ fn validate_update_endpoint(endpoint: &str) -> Result<String, String> {
 
 /// Channel-aware update check.
 ///
-/// The renderer resolves the per-channel endpoint (stable → `releases/latest`,
-/// beta → the latest beta tag's release) and passes it here; the endpoint is
-/// validated against the host allow-list, then `tauri-plugin-updater` is used
-/// for the actual check and signature-verified download/install later.
+/// The endpoint is resolved entirely in the backend from the requested
+/// channel (stable → `releases/latest`, beta → the latest beta tag's
+/// release), validated against the host allow-list, then handed to
+/// `tauri-plugin-updater` for the signature-verified check/download/install.
+/// The renderer never supplies a URL.
 #[tauri::command]
 pub async fn cmd_check_update<R: Runtime>(
     webview: tauri::Webview<R>,
-    endpoint: Option<String>,
+    channel: Option<String>,
 ) -> Result<Option<UpdateMetadata>, String> {
-    let endpoint = match endpoint {
-        Some(url) => validate_update_endpoint(&url)?,
-        None => STABLE_UPDATE_ENDPOINT.to_string(),
-    };
+    let resolved = resolve_channel_endpoint(channel.as_deref().unwrap_or("stable")).await;
+    let endpoint = validate_update_endpoint(&resolved)?;
 
     let updater = webview
         .updater_builder()
@@ -121,5 +144,85 @@ pub async fn cmd_check_update<R: Runtime>(
         Ok(Some(metadata))
     } else {
         Ok(None)
+    }
+}
+
+/// Trimmed release info for the renderer's release-history panel. Only the
+/// fields the UI renders are forwarded — no asset URLs or author metadata.
+#[derive(Serialize)]
+pub struct ReleaseInfo {
+    pub tag_name: String,
+    pub name: Option<String>,
+    pub published_at: Option<String>,
+    pub prerelease: bool,
+    pub body: Option<String>,
+    pub html_url: String,
+}
+
+/// Fetch the recent GitHub releases for the release-history UI. Runs in the
+/// backend so the renderer needs no direct api.github.com access (CSP has no
+/// external connect-src). Rate-limited: unauthenticated GitHub API quota is
+/// 60 req/hour per IP.
+#[tauri::command]
+pub async fn cmd_list_releases() -> Result<Vec<ReleaseInfo>, String> {
+    if !crate::ratelimit::RATE_LIMITER.check("list_releases") {
+        return Err("Too many requests. Try again shortly.".into());
+    }
+    let resp = http_client()?
+        .get(format!("{UPDATE_REPO_API}/releases?per_page=20"))
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch releases: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("GitHub API returned {}", resp.status()));
+    }
+    let releases: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Invalid release list response: {e}"))?;
+    let arr = releases
+        .as_array()
+        .ok_or_else(|| "Unexpected release list shape".to_string())?;
+    Ok(arr
+        .iter()
+        .filter_map(|r| {
+            Some(ReleaseInfo {
+                tag_name: r.get("tag_name")?.as_str()?.to_string(),
+                name: r.get("name").and_then(|v| v.as_str()).map(String::from),
+                published_at: r
+                    .get("published_at")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                prerelease: r
+                    .get("prerelease")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
+                body: r.get("body").and_then(|v| v.as_str()).map(String::from),
+                html_url: r.get("html_url")?.as_str()?.to_string(),
+            })
+        })
+        .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::matches_beta_tag;
+
+    #[test]
+    fn beta_tags_match() {
+        assert!(matches_beta_tag("v2.1.0-beta"));
+        assert!(matches_beta_tag("v2.1.0-beta.28"));
+        assert!(matches_beta_tag("V2.1.0-BETA.3"));
+        assert!(matches_beta_tag("v2.0.0-tauri"));
+        assert!(matches_beta_tag("v2.0.0-tauri.1"));
+    }
+
+    #[test]
+    fn stable_and_lookalike_tags_do_not_match() {
+        assert!(!matches_beta_tag("v2.1.0"));
+        assert!(!matches_beta_tag("v2.1.0-betauser"));
+        assert!(!matches_beta_tag("v2.1.0-alpine"));
+        assert!(!matches_beta_tag("betatest"));
     }
 }

@@ -19,64 +19,67 @@ surface is:
 
 | Asset | Threat | Mitigation |
 |-------|--------|-----------|
-| Update channel | Supply-chain compromise via CDN or GitHub account takeover | Ed25519 detached sig, SHA-256 checksum, pinned public key via Tauri updater |
-| SIP credentials | Theft from disk or memory | AES-256-GCM at rest, keyring-backed key, never written to logs |
+| Update channel | Supply-chain compromise via CDN or GitHub account takeover | minisign signature verified by `tauri-plugin-updater` against a pinned public key; backend-only endpoint resolution with an HTTPS host allow-list |
+| SIP credentials | Theft from disk or memory | DPAPI (user-bound) encryption at rest, never written to logs, redacted at the single log chokepoint |
 | Caller ID data | Display-name injection (CRLF, control bytes) | Sanitization at parser exit (`sanitize_caller_id`) |
 | Clipboard contents | Cross-app injection via auto-copy | Strict digit-only sanitizer |
-| WebView renderer | XSS / RCE | Strict CSP, `withGlobalTauri: false`, no `shell:allow-spawn`, input validation at IPC trust boundary |
-| External links | Accidental RCE via `javascript:` URIs | URL validated server-side (https/http only, max 2048 chars) |
-| Registration spam | Attacker-controlled SIP server | Version monotonicity + pinned Ed25519 key |
+| WebView renderer | XSS / RCE | Strict CSP (`script-src 'self'`, no external `connect-src`), `withGlobalTauri: false`, no `shell:allow-spawn`, validation at the IPC trust boundary |
+| External links | RCE via crafted URIs / SSRF to internal hosts | Scheme allow-list (https/http), length + control-char checks, private/loopback host rejection (unit-tested) |
+| Registration spam | Attacker-controlled or replayed IPC traffic | Per-command rate limiting on notification and toast commands |
 
 ---
 
 ## Update Security
 
-Every release is signed using **two independent layers**. Both must pass
-for the update to install.
+Updates are delivered through `tauri-plugin-updater`. Every release ships
+a `update.json` manifest and a **minisign detached signature**; the updater
+refuses to install anything that does not verify against the public key
+pinned in `src-tauri/tauri.conf.json`.
 
-### 1. SHA-256 Checksum + Ed25519 Detached Signature
+### Endpoint integrity
 
-The Tauri updater plugin verifies the installer checksum and Ed25519
-signature before applying the update.
+The renderer never supplies an update URL. `cmd_check_update` resolves the
+endpoint entirely in the Rust backend from the requested channel:
 
-```
-# Generate the keypair (once, offline)
-openssl genpkey -algorithm Ed25519 -out release-signing.key
-openssl pkey -in release-signing.key -pubout -out release-signing.pub
+- **stable** → `https://github.com/jaydenrussell/CallerFlash/releases/latest/download/update.json`
+- **beta** → the latest `-beta`/`-tauri` prerelease tag's `update.json`,
+  resolved by listing recent releases from the GitHub API (backend-side)
 
-# Sign a release
-shasum -a 256 CallerFlash-Setup-X.Y.Z.exe > SHA256SUMS
-openssl pkeyutl -sign -rawin -in SHA256SUMS -inkey release-signing.key \
-    -out CallerFlash-Setup-X.Y.Z.exe.sig
+The resolved URL is then validated against a hard-coded HTTPS host
+allow-list (`github.com`, `api.github.com`,
+`objects.githubusercontent.com`) before any network request is made.
+Even if every check failed, a tampered payload cannot install: the
+minisign signature over the installer must verify against the pinned key.
 
-# Users verify with:
-openssl pkeyutl -verify -rawin -pubin \
-    -inkey release-signing.pub \
-    -in SHA256SUMS \
-    -sigfile CallerFlash-Setup-X.Y.Z.exe.sig
-```
+### Release pipeline
 
-### Additional Gates
-
-* **HTTPS only** + **host allow-list** — updater endpoint is pinned to
-  `https://releases.callerflash.app/{{target}}/{{current_version}}`.
-* **Version monotonicity** — never installs a release older than the
-  currently running version. Defeats roll-back attacks.
+- The build/sign job runs in a protected `release` GitHub environment and
+  waits for maintainer approval on stable tags.
+- Signing material (`TAURI_SIGNING_PRIVATE_KEY`) exists only as a GitHub
+  Actions secret — never in the repo.
+- Every stable release attaches a build-provenance attestation
+  (`attest-build-provenance`), binding artifacts to the exact workflow run.
+- `SHA256SUMS` is published with each release for manual verification.
 
 ---
 
 ## Cryptographic Storage
 
-SIP credentials are encrypted at rest using **AES-256-GCM**:
+SIP credentials are encrypted at rest using **Windows DPAPI**
+(`CryptProtectData`, via the `windows-sys` crate):
 
-- Encryption key is stored in the Windows Credential Manager via the
-  `keyring` crate.
-- Key is generated once on first use (OS-level RNG).
-- Settings file uses a versioned envelope format (`_version: 3`,
-  `_encrypted: true`).
-- Decryption failures produce user-safe messages.
-- Fallback: if keyring is unavailable, the app continues with
-  in-memory-only operation.
+- Ciphertext is stored in `%APPDATA%/CallerFlash/settings.json` as
+  `dpapi:<base64>` values.
+- DPAPI scopes decryption to the Windows user account that encrypted it —
+  the key never exists in application code or config, and nothing to
+  rotate or leak.
+- Settings writes are atomic (temp file + rename) with a `.bak` backup of
+  the previous good file.
+- Decryption failures produce user-safe messages and never echo raw
+  error content.
+
+Legacy Electron-era settings (`enc:`/`fb:` formats) are migrated once on
+first run of the Tauri build and re-encrypted under DPAPI.
 
 ---
 
@@ -85,22 +88,28 @@ SIP credentials are encrypted at rest using **AES-256-GCM**:
 The Tauri webview is configured with least privilege:
 
 - `withGlobalTauri: false` — no `window.__TAURI__` exposed to scripts.
-- Strict CSP in `tauri.conf.json`:
+- Strict CSP (identical policy in `index.html` and `tauri.conf.json`):
   ```
+  default-src 'self'
   script-src 'self'
-  style-src 'self' 'unsafe-inline'
-  connect-src 'self' ws: wss:
-  img-src 'self' data:
+  style-src 'self' https://fonts.googleapis.com 'unsafe-inline'
+  font-src  'self' https://fonts.gstatic.com data:
+  img-src   'self' data:
+  connect-src 'self'
   form-action 'none'
   object-src 'none'
+  base-uri 'self'
   frame-ancestors 'none'
   ```
-- Capabilities in `src-tauri/capabilities/default.json` request only
-  the minimum permissions needed. No `fs:*`, no `shell:default`, no
-  `dialog:*`, no `clipboard:*`.
-- The toast window (`toast.html`) has a separate, permissive CSP with
-  `'unsafe-inline'` for its inline script — isolated webview with no
-  user input surface.
+  `'unsafe-inline'` styles remain only because React applies inline style
+  attributes; there is no `unsafe-eval`, no wasm, and **no external
+  `connect-src`** — update checks and release history are fetched by the
+  Rust backend, not the renderer.
+- Capabilities are split per window and least-privilege:
+  - `capabilities/default.json` (main window): core defaults plus
+    `shell:allow-open` restricted to `https://*` URLs.
+  - `capabilities/toast.json` (toast window): event listen/emit and basic
+    window controls only.
 
 ---
 
@@ -117,14 +126,19 @@ The **trust boundary** sits at the IPC layer. The frontend is treated as
 untrusted input:
 
 - Every IPC command validates and sanitizes parameters on the Rust side.
-- `serde_json::Value` parameters are schema-validated with field-level
-  length and type checks.
-- Notification titles/bodies have length limits (256/1024 bytes).
+- Notification titles/bodies have length limits (256/1024 bytes); toast
+  payloads are capped at 64 KB.
 - SIP config is validated (username, server required; port, protocol,
   expiry range-checked).
-- Storage data is size-limited (5MB max) and must be a JSON object.
-- URLs for shell open are restricted to `http://` and `https://` only,
-  max 2048 chars.
+- Storage data is size-limited (5 MB max) and must be a JSON object.
+- `shell_open_external` enforces https/http schemes, a 2048-char limit,
+  control-character rejection, and rejects loopback/private/obfuscated
+  numeric hosts (SSRF containment) — covered by unit tests.
+- Rate limiters bound notify/toast command rates (general: 10/s,
+  SIP-triggered: 2/s) and use poisoning-tolerant locks.
+- Crash reports sanitize panic payloads (printable ASCII, bounded length)
+  and contain no process arguments; they are written only to
+  `%APPDATA%/CallerFlash/crashes/`.
 
 ---
 
@@ -142,19 +156,26 @@ content. It:
 * Sanitizes the clipboard payload to digits-only (plus a leading `+`)
   so a malicious caller-name field cannot piggyback into the clipboard.
 
-The diagnostic export button writes the **already-redacted** log
-buffer to disk — there is no path from SIP password to exported file.
+Unmapped SIP errors surface a generic message to the UI; full detail goes
+only to local logs after redaction. The diagnostic export button writes
+the **already-redacted** log buffer to disk — there is no path from SIP
+password to exported file.
+
+Release builds log at `Info` level; `Debug` verbosity is dev-build only.
 
 ---
 
 ## Dependency Hygiene
 
-* `cargo audit` is run on every CI build with an allowlist for
-  known-accepted advisories (see `.audit.toml`).
-* Rust dependencies are pinned to exact versions in `Cargo.lock`.
-* `npm audit --omit=dev` is run on every CI build.
+* `cargo audit` runs on every CI build with a documented inline allowlist
+  for known-accepted advisories (Linux-only gtk-rs family, unmaintained
+  `unic-*` transitive deps) — see `.github/workflows/ci.yml`.
+* `npm audit --audit-level=high` gates every CI build.
+* CodeQL scans the repo on every push to `main` and weekly.
+* Dependabot security updates are enabled; secret scanning and push
+  protection are enabled on the repository.
 * All JS dependencies are pinned to exact versions in
-  `package-lock.json`.
+  `package-lock.json`; Rust dependencies are locked in `Cargo.lock`.
 
 ---
 
@@ -167,8 +188,9 @@ or an unverified checksum, **do not run the binary**. Email
 1. Yank the release immediately.
 2. Invalidate any cached installer URLs.
 3. Publish a `security-advisory` GitHub Security Advisory.
-4. Force-push a corrected release signed with a fresh key (if the
-   signing key is suspected of compromise).
+4. Publish a corrected release signed with a fresh minisign key (if the
+   signing key is suspected of compromise) and ship a signed app update
+   pointing users at it.
 
 ---
 

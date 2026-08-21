@@ -139,11 +139,33 @@ function versionMatchesChannel(version: string, channel: 'stable' | 'beta'): boo
   return false;
 }
 
+/** Map a backend ReleaseInfo into the shape the UI already consumes. */
+function toGithubRelease(r: {
+  tagName: string;
+  name: string | null;
+  publishedAt: string | null;
+  prerelease: boolean;
+  body: string | null;
+  htmlUrl: string;
+}): GithubRelease {
+  return {
+    tag_name: r.tagName,
+    name: r.name ?? '',
+    published_at: r.publishedAt ?? '',
+    prerelease: r.prerelease,
+    body: r.body ?? '',
+    html_url: r.htmlUrl,
+    assets: [],
+  };
+}
+
 /**
  * Fetch the newest GitHub release for a single channel.
  *   stable → `/releases/latest` (GitHub's non-prerelease pointer).
  *   beta   → the newest prerelease whose tag matches the beta pattern
  *            (GitHub has no "latest prerelease" alias).
+ * Uses the backend command when available (packaged app); falls back to a
+ * direct fetch only in a plain browser dev session.
  * Returns null when the channel has no matching release.
  */
 async function fetchChannelLatest(
@@ -151,6 +173,14 @@ async function fetchChannelLatest(
   channel: 'stable' | 'beta'
 ): Promise<GithubRelease | null> {
   const headers = { Accept: 'application/vnd.github+json' };
+  if (window.callerflash?.updater?.listReleases) {
+    const list = await window.callerflash.updater.listReleases();
+    const mapped = list.map(toGithubRelease);
+    if (channel === 'beta') {
+      return mapped.find((r) => r.prerelease && /-(beta|tauri)(\.|$)/i.test(r.tag_name)) ?? null;
+    }
+    return mapped.find((r) => !r.prerelease) ?? null;
+  }
   if (channel === 'beta') {
     const resp = await fetch(`https://api.github.com/repos/${repoPath}/releases?per_page=20`, { headers });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -246,11 +276,17 @@ export function AutoUpdate() {
   );
 
   // Refetch on mount and whenever the channel toggles — each channel
-  // has its own release set.
+  // has its own release set. Uses the backend command when available;
+  // direct fetch only in a plain browser dev session.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
+        if (window.callerflash?.updater?.listReleases) {
+          const list = await window.callerflash.updater.listReleases();
+          if (!cancelled) setReleases(list.map(toGithubRelease));
+          return;
+        }
         const repoPath = updateInfo.githubRepo.replace(/^https?:\/\/github\.com\//, '');
         const apiUrl = `https://api.github.com/repos/${repoPath}/releases?per_page=20`;
         const response = await fetch(apiUrl, {

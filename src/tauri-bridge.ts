@@ -25,31 +25,18 @@ interface UpdateMetadata {
   rawJson: Record<string, unknown>;
 }
 
-// Hard-coded so the beta endpoint can never be redirected to an attacker repo.
-const UPDATE_REPO = 'jaydenrussell/CallerFlash';
-const STABLE_UPDATE_ENDPOINT = `https://github.com/${UPDATE_REPO}/releases/latest/download/update.json`;
-
 /**
- * Resolve the update.json endpoint for the active channel.
- * stable → `releases/latest/download/update.json` (GitHub's "latest" always
- * points at the newest non-prerelease release).
- * beta   → the latest beta tag's release, since GitHub has no "latest
- *          prerelease" alias. Falls back to stable if the list can't be read.
+ * Release history is fetched backend-side (cmd_list_releases) so the
+ * renderer needs no direct api.github.com access — CSP has no external
+ * connect-src.
  */
-async function resolveUpdateEndpoint(channel: string): Promise<string> {
-  if (channel !== 'beta') return STABLE_UPDATE_ENDPOINT;
-  try {
-    const response = await fetch(`https://api.github.com/repos/${UPDATE_REPO}/releases?per_page=20`, {
-      headers: { Accept: 'application/vnd.github+json' },
-    });
-    if (!response.ok) return STABLE_UPDATE_ENDPOINT;
-    const releases: Array<{ tag_name: string; prerelease: boolean }> = await response.json();
-    const tag = releases.find((r) => r.prerelease && /-(beta|tauri)(\.|$)/i.test(r.tag_name))?.tag_name;
-    if (!tag) return STABLE_UPDATE_ENDPOINT;
-    return `https://github.com/${UPDATE_REPO}/releases/download/${tag}/update.json`;
-  } catch {
-    return STABLE_UPDATE_ENDPOINT;
-  }
+interface ReleaseInfo {
+  tagName: string;
+  name: string | null;
+  publishedAt: string | null;
+  prerelease: boolean;
+  body: string | null;
+  htmlUrl: string;
 }
 
 function safeJsonResponse(data: unknown): Record<string, unknown> {
@@ -137,8 +124,9 @@ function setup(): void {
     updater: {
       check: async (channel: string) => {
         try {
-          const endpoint = await resolveUpdateEndpoint(channel);
-          const metadata = await invoke<UpdateMetadata | null>('cmd_check_update', { endpoint });
+          // Endpoint resolution happens in the backend from the channel —
+          // the renderer never supplies a URL.
+          const metadata = await invoke<UpdateMetadata | null>('cmd_check_update', { channel });
           currentUpdate = metadata ? new Update(metadata) : null;
           totalContentLength = 0;
           downloadedBytes = 0;
@@ -207,6 +195,9 @@ function setup(): void {
       },
       getDownloadState: async function () {
         return { status: currentUpdate ? 'available' : 'idle', version: currentUpdate?.version || null, path: null, error: null };
+      },
+      listReleases: async function (): Promise<ReleaseInfo[]> {
+        return invoke<ReleaseInfo[]>('cmd_list_releases');
       },
       onStatus: function (callback: (data: { status: string; version?: string; progress?: number; downloadUrl?: string; message?: string }) => void) {
         const unlisten: Promise<() => void> = listen('updater:status', function (event) {

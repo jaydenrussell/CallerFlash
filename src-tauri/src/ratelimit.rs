@@ -21,7 +21,9 @@ impl RateLimiter {
 
     pub fn check(&self, command: &'static str) -> bool {
         let now = Instant::now();
-        let mut buckets = self.buckets.lock().unwrap();
+        // A panicking holder must not poison the limiter into crashing every
+        // later command; recover the inner data instead of propagating.
+        let mut buckets = self.buckets.lock().unwrap_or_else(|e| e.into_inner());
         let timestamps = buckets.entry(command).or_default();
 
         let cutoff = now - std::time::Duration::from_secs(self.window_secs);

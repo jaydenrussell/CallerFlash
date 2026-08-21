@@ -177,7 +177,9 @@ fn user_safe_sip_error(msg: &str) -> String {
     } else if msg.contains("Timeout") || msg.contains("timeout") {
         "SIP server did not respond. Check server availability.".to_string()
     } else {
-        format!("SIP error: {}", msg.chars().take(128).collect::<String>())
+        // Unmapped errors can embed host/IP/OS detail; keep the UI generic and
+        // let the full detail go to the log via the caller's error! macro.
+        "SIP operation failed. Check server settings and try again.".to_string()
     }
 }
 

@@ -112,6 +112,15 @@ declare global {
     download: (channel: string, version: string, downloadUrl: string) => Promise<{ status: string; version?: string; error?: string }>;
     install: (version: string) => Promise<{ status: string; error?: string }>;
     getDownloadState: () => Promise<{ status: string; version: string | null; path: string | null; error: string | null }>;
+    /** Backend-fetched release history (no renderer network access needed). */
+    listReleases?: () => Promise<Array<{
+      tagName: string;
+      name: string | null;
+      publishedAt: string | null;
+      prerelease: boolean;
+      body: string | null;
+      htmlUrl: string;
+    }>>;
     /** Notify the backend that update settings changed so any periodic check reschedules. */
     notifySettingsChanged?: () => void;
     onStatus: (callback: (data: { status: string; version?: string; progress?: number; downloadUrl?: string; message?: string }) => void) => () => void;

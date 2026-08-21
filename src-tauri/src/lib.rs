@@ -19,7 +19,7 @@ use tauri::{AppHandle, Emitter, Listener, Manager};
 pub use sip::{sip_connect, sip_disconnect, sip_test_connection};
 pub use storage::{storage_load, storage_save};
 pub use tray::{tray_set_sip_status, tray_set_update_available};
-pub use update::{cmd_check_update, cmd_verify_update};
+pub use update::{cmd_check_update, cmd_list_releases};
 
 const MAX_NOTIFY_TITLE_LENGTH: usize = 256;
 const MAX_NOTIFY_BODY_LENGTH: usize = 1024;
@@ -396,7 +396,16 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
-        .plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Debug).build())
+        // Debug logs in dev builds; Info in release to cut leak surface and noise.
+        .plugin(
+            tauri_plugin_log::Builder::default()
+                .level(if cfg!(debug_assertions) {
+                    log::LevelFilter::Debug
+                } else {
+                    log::LevelFilter::Info
+                })
+                .build(),
+        )
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::default().build())
@@ -502,8 +511,8 @@ pub fn run() {
             app_set_start_with_windows,
             app_get_start_with_windows,
             run_startup_checks,
-            cmd_verify_update,
             cmd_check_update,
+            cmd_list_releases,
         ]);
 
     builder.run(tauri::generate_context!()).unwrap_or_else(|e| {
