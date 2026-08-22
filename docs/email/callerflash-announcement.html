@@ -4,22 +4,70 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="color-scheme" content="light dark">
+  <meta name="supported-color-schemes" content="light dark">
   <title>Introducing CallerFlash — Know who's calling before you answer</title>
+  <style>
+    /* ---- Dark mode: Apple Mail, iOS Mail, Gmail apps, Thunderbird ---- */
+    @media (prefers-color-scheme: dark) {
+      .cf-page    { background-color:#0f1115 !important; }
+      .cf-card    { background-color:#1a1d26 !important; }
+      .cf-h1      { color:#e8ebf2 !important; }
+      .cf-h2      { color:#e8ebf2 !important; }
+      .cf-text    { color:#c3c9d6 !important; }
+      .cf-strong  { color:#e8ebf2 !important; }
+      .cf-muted   { color:#8b93a7 !important; }
+      .cf-fine    { color:#767e90 !important; }
+      .cf-feat-green  { background-color:#14251b !important; }
+      .cf-feat-blue   { background-color:#131f2e !important; }
+      .cf-feat-orange { background-color:#271b12 !important; }
+      .cf-feat-green-title  { color:#7ee2a8 !important; }
+      .cf-feat-blue-title   { color:#8ec5ff !important; }
+      .cf-feat-orange-title { color:#ffb37e !important; }
+      .cf-feat-body   { color:#aab3c2 !important; }
+      .cf-divider     { border-top-color:#2a2f3d !important; }
+      .cf-compat      { color:#c3c9d6 !important; }
+      .cf-link        { color:#6ea8ff !important; }
+      .cf-footer      { background-color:#12141a !important; border-top-color:#2a2f3d !important; }
+      .cf-shot        { border-color:#2a2f3d !important; }
+    }
+    /* ---- Outlook.com / new Outlook forced dark mode ([data-ogsc]) ---- */
+    [data-ogsc] .cf-page    { background-color:#0f1115 !important; }
+    [data-ogsc] .cf-card    { background-color:#1a1d26 !important; }
+    [data-ogsc] .cf-h1      { color:#e8ebf2 !important; }
+    [data-ogsc] .cf-h2      { color:#e8ebf2 !important; }
+    [data-ogsc] .cf-text    { color:#c3c9d6 !important; }
+    [data-ogsc] .cf-strong  { color:#e8ebf2 !important; }
+    [data-ogsc] .cf-muted   { color:#8b93a7 !important; }
+    [data-ogsc] .cf-fine    { color:#767e90 !important; }
+    [data-ogsc] .cf-feat-green  { background-color:#14251b !important; }
+    [data-ogsc] .cf-feat-blue   { background-color:#131f2e !important; }
+    [data-ogsc] .cf-feat-orange { background-color:#271b12 !important; }
+    [data-ogsc] .cf-feat-green-title  { color:#7ee2a8 !important; }
+    [data-ogsc] .cf-feat-blue-title   { color:#8ec5ff !important; }
+    [data-ogsc] .cf-feat-orange-title { color:#ffb37e !important; }
+    [data-ogsc] .cf-feat-body   { color:#aab3c2 !important; }
+    [data-ogsc] .cf-divider     { border-top-color:#2a2f3d !important; }
+    [data-ogsc] .cf-compat      { color:#c3c9d6 !important; }
+    [data-ogsc] .cf-link        { color:#6ea8ff !important; }
+    [data-ogsc] .cf-footer      { background-color:#12141a !important; border-top-color:#2a2f3d !important; }
+    [data-ogsc] .cf-shot        { border-color:#2a2f3d !important; }
+  </style>
 </head>
-<body style="margin:0; padding:0; background-color:#f4f5f7; font-family:'Segoe UI', Arial, Helvetica, sans-serif; -webkit-text-size-adjust:100%;">
+<body class="cf-page" style="margin:0; padding:0; background-color:#f4f5f7; font-family:'Segoe UI', Arial, Helvetica, sans-serif; -webkit-text-size-adjust:100%;">
 
   <!-- Preheader (hidden preview text) -->
   <div style="display:none; max-height:0; overflow:hidden;">
     Free caller-ID popups for your VoIP line — the number is on your clipboard before you answer.
   </div>
 
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f5f7;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="cf-page" style="background-color:#f4f5f7;">
     <tr>
       <td align="center" style="padding:24px 12px;">
 
-        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px; max-width:600px; background-color:#ffffff; border-radius:12px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" class="cf-card" style="width:600px; max-width:600px; background-color:#ffffff; border-radius:12px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
 
-          <!-- Header -->
+          <!-- Header (dark in both themes) -->
           <tr>
             <td style="background-color:#171923; padding:20px 32px;" align="center">
               <img src="https://raw.githubusercontent.com/jaydenrussell/CallerFlash/main/docs/cflogo.png" width="56" height="56" alt="CallerFlash" style="display:block; margin:0 auto 8px auto; border:0;">
@@ -31,24 +79,24 @@
           <!-- Hero copy -->
           <tr>
             <td style="padding:36px 40px 8px 40px;" align="center">
-              <h1 style="margin:0 0 14px 0; font-size:26px; line-height:34px; color:#1a202c; font-weight:700;">
+              <h1 class="cf-h1" style="margin:0 0 14px 0; font-size:26px; line-height:34px; color:#1a202c; font-weight:700;">
                 Know who's calling before you answer
               </h1>
-              <p style="margin:0; font-size:16px; line-height:26px; color:#4a5568;">
+              <p class="cf-text" style="margin:0; font-size:16px; line-height:26px; color:#4a5568;">
                 CallerFlash watches your SIP line and pops up a desktop toast for every
-                incoming call — with the number <strong>already copied to your clipboard</strong>.
+                incoming call — with the number <strong class="cf-strong" style="color:#1a202c;">already copied to your clipboard</strong>.
                 One paste pulls up the caller in your CRM, browser, or ticketing system
                 before you even say hello.
               </p>
             </td>
           </tr>
 
-          <!-- Hero image -->
+          <!-- Hero images -->
           <tr>
             <td style="padding:24px 32px 4px 32px;" align="center">
               <img src="https://raw.githubusercontent.com/jaydenrussell/CallerFlash/main/docs/screenshots/dashboard.png"
                    width="536" alt="CallerFlash dashboard showing a registered SIP session and recent calls"
-                   style="display:block; width:100%; max-width:536px; height:auto; border:1px solid #e2e8f0; border-radius:10px;">
+                   class="cf-shot" style="display:block; width:100%; max-width:536px; height:auto; border:1px solid #e2e8f0; border-radius:10px;">
             </td>
           </tr>
           <tr>
@@ -56,7 +104,7 @@
               <img src="https://raw.githubusercontent.com/jaydenrussell/CallerFlash/main/docs/screenshots/toast.png"
                    width="300" alt="Incoming call toast with caller ID"
                    style="display:block; width:300px; max-width:100%; height:auto; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,0.18);">
-              <div style="font-size:12px; color:#a0aec0; margin-top:8px;">The incoming-call popup — fully customizable, draggable, and it remembers where you put it.</div>
+              <div class="cf-muted" style="font-size:12px; color:#a0aec0; margin-top:8px;">The incoming-call popup — fully customizable, draggable, and it remembers where you put it.</div>
             </td>
           </tr>
 
@@ -66,21 +114,21 @@
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td width="33%" valign="top" style="padding:0 8px;">
-                    <div style="background-color:#f0fdf4; border-radius:10px; padding:18px 16px; text-align:center;">
-                      <div style="font-size:15px; font-weight:700; color:#22543d; margin-bottom:6px;">&#128222; Instant popups</div>
-                      <div style="font-size:13px; line-height:20px; color:#4a5568;">A toast appears the moment your line rings — number and caller name included.</div>
+                    <div class="cf-feat-green" style="background-color:#f0fdf4; border-radius:10px; padding:18px 16px; text-align:center;">
+                      <div class="cf-feat-green-title" style="font-size:15px; font-weight:700; color:#22543d; margin-bottom:6px;">&#128222; Instant popups</div>
+                      <div class="cf-feat-body" style="font-size:13px; line-height:20px; color:#4a5568;">A toast appears the moment your line rings — number and caller name included.</div>
                     </div>
                   </td>
                   <td width="33%" valign="top" style="padding:0 8px;">
-                    <div style="background-color:#ebf8ff; border-radius:10px; padding:18px 16px; text-align:center;">
-                      <div style="font-size:15px; font-weight:700; color:#2a4365; margin-bottom:6px;">&#128203; Paste-ready</div>
-                      <div style="font-size:13px; line-height:20px; color:#4a5568;">The caller's number lands on your clipboard automatically. Ctrl+V and go.</div>
+                    <div class="cf-feat-blue" style="background-color:#ebf8ff; border-radius:10px; padding:18px 16px; text-align:center;">
+                      <div class="cf-feat-blue-title" style="font-size:15px; font-weight:700; color:#2a4365; margin-bottom:6px;">&#128203; Paste-ready</div>
+                      <div class="cf-feat-body" style="font-size:13px; line-height:20px; color:#4a5568;">The caller's number lands on your clipboard automatically. Ctrl+V and go.</div>
                     </div>
                   </td>
                   <td width="33%" valign="top" style="padding:0 8px;">
-                    <div style="background-color:#fffaf0; border-radius:10px; padding:18px 16px; text-align:center;">
-                      <div style="font-size:15px; font-weight:700; color:#7b341e; margin-bottom:6px;">&#128274; Private &amp; secure</div>
-                      <div style="font-size:13px; line-height:20px; color:#4a5568;">Credentials encrypted with Windows DPAPI. Signed, verified auto-updates.</div>
+                    <div class="cf-feat-orange" style="background-color:#fffaf0; border-radius:10px; padding:18px 16px; text-align:center;">
+                      <div class="cf-feat-orange-title" style="font-size:15px; font-weight:700; color:#7b341e; margin-bottom:6px;">&#128274; Private &amp; secure</div>
+                      <div class="cf-feat-body" style="font-size:13px; line-height:20px; color:#4a5568;">Credentials encrypted with Windows DPAPI. Signed, verified auto-updates.</div>
                     </div>
                   </td>
                 </tr>
@@ -91,19 +139,19 @@
           <!-- How it works -->
           <tr>
             <td style="padding:36px 40px 0 40px;">
-              <h2 style="margin:0 0 16px 0; font-size:19px; color:#1a202c;">Up and running in five minutes</h2>
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:14px; line-height:22px; color:#4a5568;">
+              <h2 class="cf-h2" style="margin:0 0 16px 0; font-size:19px; color:#1a202c;">Up and running in five minutes</h2>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:14px; line-height:22px;">
                 <tr>
                   <td width="28" valign="top" style="padding-bottom:10px;"><div style="background-color:#2ea44f; color:#ffffff; border-radius:50%; width:24px; height:24px; text-align:center; line-height:24px; font-weight:700; font-size:13px;">1</div></td>
-                  <td valign="top" style="padding-bottom:10px;"><strong style="color:#1a202c;">Download</strong> the installer for Windows from the releases page below.</td>
+                  <td class="cf-text" valign="top" style="padding-bottom:10px; font-size:14px; line-height:22px; color:#4a5568;"><strong class="cf-strong" style="color:#1a202c;">Download</strong> the installer for Windows from the releases page below.</td>
                 </tr>
                 <tr>
                   <td width="28" valign="top" style="padding-bottom:10px;"><div style="background-color:#2ea44f; color:#ffffff; border-radius:50%; width:24px; height:24px; text-align:center; line-height:24px; font-weight:700; font-size:13px;">2</div></td>
-                  <td valign="top" style="padding-bottom:10px;"><strong style="color:#1a202c;">Enter your SIP credentials</strong> in Settings — presets for VoIP.ms make this a two-field job.</td>
+                  <td class="cf-text" valign="top" style="padding-bottom:10px; font-size:14px; line-height:22px; color:#4a5568;"><strong class="cf-strong" style="color:#1a202c;">Enter your SIP credentials</strong> in Settings — presets for VoIP.ms make this a two-field job.</td>
                 </tr>
                 <tr>
                   <td width="28" valign="top"><div style="background-color:#2ea44f; color:#ffffff; border-radius:50%; width:24px; height:24px; text-align:center; line-height:24px; font-weight:700; font-size:13px;">3</div></td>
-                  <td valign="top"><strong style="color:#1a202c;">Click Connect.</strong> When the status turns green, you're live — every call flashes on screen.</td>
+                  <td class="cf-text" valign="top" style="font-size:14px; line-height:22px; color:#4a5568;"><strong class="cf-strong" style="color:#1a202c;">Click Connect.</strong> When the status turns green, you're live — every call flashes on screen.</td>
                 </tr>
               </table>
             </td>
@@ -123,7 +171,7 @@
                   </td>
                 </tr>
               </table>
-              <p style="margin:12px 0 0 0; font-size:12px; color:#a0aec0;">
+              <p class="cf-fine" style="margin:12px 0 0 0; font-size:12px; color:#a0aec0;">
                 Windows 10/11 (x64) &nbsp;·&nbsp; no dependencies required &nbsp;·&nbsp; installer is code-signed and checksummed
               </p>
             </td>
@@ -132,11 +180,11 @@
           <!-- Compatibility strip -->
           <tr>
             <td style="padding:20px 40px 0 40px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #edf2f7;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="cf-divider" style="border-top:1px solid #edf2f7;">
                 <tr>
-                  <td align="center" style="padding-top:18px; font-size:13px; line-height:21px; color:#4a5568;">
-                    <strong style="color:#1a202c;">Works with any RFC-compliant SIP provider</strong><br>
-                    Tested with VoIP.ms · Twilio · Telnyx · Bandwidth &nbsp;(UDP, TCP &amp; TLS)
+                  <td align="center" style="padding-top:18px; font-size:13px; line-height:21px;">
+                    <span class="cf-strong" style="color:#1a202c; font-weight:700;">Works with any RFC-compliant SIP provider</span><br>
+                    <span class="cf-compat" style="color:#4a5568;">Tested with VoIP.ms · Twilio · Telnyx · Bandwidth &nbsp;(UDP, TCP &amp; TLS)</span>
                   </td>
                 </tr>
               </table>
@@ -146,21 +194,21 @@
           <!-- Secondary links -->
           <tr>
             <td align="center" style="padding:24px 40px 32px 40px;">
-              <a href="https://github.com/jaydenrussell/CallerFlash#readme" target="_blank" style="color:#2b6cb0; font-size:13px; text-decoration:none;">Setup guide</a>
-              <span style="color:#cbd5e0; padding:0 10px;">|</span>
-              <a href="https://github.com/jaydenrussell/CallerFlash/blob/main/SECURITY.md" target="_blank" style="color:#2b6cb0; font-size:13px; text-decoration:none;">Security overview</a>
-              <span style="color:#cbd5e0; padding:0 10px;">|</span>
-              <a href="https://github.com/jaydenrussell/CallerFlash/issues" target="_blank" style="color:#2b6cb0; font-size:13px; text-decoration:none;">Support</a>
+              <a class="cf-link" href="https://github.com/jaydenrussell/CallerFlash#readme" target="_blank" style="color:#2b6cb0; font-size:13px; text-decoration:none;">Setup guide</a>
+              <span class="cf-muted" style="color:#cbd5e0; padding:0 10px;">|</span>
+              <a class="cf-link" href="https://github.com/jaydenrussell/CallerFlash/blob/main/SECURITY.md" target="_blank" style="color:#2b6cb0; font-size:13px; text-decoration:none;">Security overview</a>
+              <span class="cf-muted" style="color:#cbd5e0; padding:0 10px;">|</span>
+              <a class="cf-link" href="https://github.com/jaydenrussell/CallerFlash/issues" target="_blank" style="color:#2b6cb0; font-size:13px; text-decoration:none;">Support</a>
             </td>
           </tr>
 
           <!-- Footer -->
           <tr>
-            <td style="background-color:#f7fafc; border-top:1px solid #e2e8f0; padding:18px 40px;" align="center">
-              <div style="font-size:12px; line-height:19px; color:#a0aec0;">
+            <td class="cf-footer" style="background-color:#f7fafc; border-top:1px solid #e2e8f0; padding:18px 40px;" align="center">
+              <div class="cf-fine" style="font-size:12px; line-height:19px; color:#a0aec0;">
                 CallerFlash is free, open-source software (MIT).<br>
                 You're receiving this because you asked about CallerFlash.<br>
-                <a href="https://github.com/jaydenrussell/CallerFlash" target="_blank" style="color:#a0aec0; text-decoration:underline;">github.com/jaydenrussell/CallerFlash</a>
+                <a class="cf-link" href="https://github.com/jaydenrussell/CallerFlash" target="_blank" style="color:#a0aec0; text-decoration:underline;">github.com/jaydenrussell/CallerFlash</a>
               </div>
             </td>
           </tr>
