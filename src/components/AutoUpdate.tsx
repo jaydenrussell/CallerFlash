@@ -247,6 +247,9 @@ export function AutoUpdate() {
   const [showReleaseNotes, setShowReleaseNotes] = useState(false);
   // Full unfiltered release list, fetched from GitHub.
   const [releases, setReleases] = useState<GithubRelease[]>([]);
+  // Why the release list is empty (network/API failure) — shown instead of
+  // an eternal "Loading…" so failures are visible, not silent.
+  const [listError, setListError] = useState<string | null>(null);
   const [phase, setPhase] = useState<UpdatePhase>('idle');
   // Captures the failure reason so the user sees WHY nothing happened,
   // not just a silent diagnostic log. Cleared on every new check.
@@ -284,7 +287,10 @@ export function AutoUpdate() {
       try {
         if (window.callerflash?.updater?.listReleases) {
           const list = await window.callerflash.updater.listReleases();
-          if (!cancelled) setReleases(list.map(toGithubRelease));
+          if (!cancelled) {
+            setListError(null);
+            setReleases(list.map(toGithubRelease));
+          }
           return;
         }
         const repoPath = updateInfo.githubRepo.replace(/^https?:\/\/github\.com\//, '');
@@ -292,11 +298,18 @@ export function AutoUpdate() {
         const response = await fetch(apiUrl, {
           headers: { Accept: 'application/vnd.github+json' },
         });
-        if (!response.ok) return;
+        if (!response.ok) {
+          if (!cancelled) setListError(`GitHub API returned HTTP ${response.status}.`);
+          return;
+        }
         const list: GithubRelease[] = await response.json();
-        if (!cancelled) setReleases(list);
-      } catch {
-        // Network failure — leave releases empty.
+        if (!cancelled) {
+          setListError(null);
+          setReleases(list);
+        }
+      } catch (e) {
+        // Network/API failure — surface it instead of spinning forever.
+        if (!cancelled) setListError(`Couldn't reach GitHub: ${e}`);
       }
     })();
     return () => {
@@ -439,25 +452,36 @@ export function AutoUpdate() {
 
     // Use Tauri updater to check
     if (window.callerflash?.updater?.check) {
-      const result = await window.callerflash.updater.check(channel);
-      if (id !== checkIdRef.current) return; // Stale response — channel changed
-      if (result?.upToDate) {
-        // Clear any stale update state — we are on the latest version
-        setOutcome({ kind: 'no-update', message: `You're running the latest version (${formatVersion(updateInfo.currentVersion)}).` });
-        setUpdateInfo({ updateAvailable: false, latestVersion: '', lastChecked: new Date() });
-        setDownloadUrl(null);
-        setPhase('idle');
-      } else if (result?.version) {
-        setUpdateInfo({ latestVersion: result.version, updateAvailable: true, lastChecked: new Date() });
-        setDownloadUrl(result.downloadUrl ?? null);
-        addDiagnosticLog({
-          level: 'info',
-          category: 'UPDATE',
-          message: `Update found: ${result.friendlyName || result.version}`,
-        });
-        setPhase('idle');
-      } else if (result?.error) {
-        setOutcome({ kind: 'verification-failed', message: result.error });
+      try {
+        const result = await window.callerflash.updater.check(channel);
+        if (id !== checkIdRef.current) return; // Stale response — channel changed
+        if (result?.upToDate) {
+          // Clear any stale update state — we are on the latest version
+          setOutcome({ kind: 'no-update', message: `You're running the latest version (${formatVersion(updateInfo.currentVersion)}).` });
+          setUpdateInfo({ updateAvailable: false, latestVersion: '', lastChecked: new Date() });
+          setDownloadUrl(null);
+          setPhase('idle');
+        } else if (result?.version) {
+          setUpdateInfo({ latestVersion: result.version, updateAvailable: true, lastChecked: new Date() });
+          setDownloadUrl(result.downloadUrl ?? null);
+          addDiagnosticLog({
+            level: 'info',
+            category: 'UPDATE',
+            message: `Update found: ${result.friendlyName || result.version}`,
+          });
+          setPhase('idle');
+        } else if (result?.error) {
+          setOutcome({ kind: 'verification-failed', message: result.error });
+          setUpdateInfo({ updateAvailable: false, latestVersion: '' });
+          setPhase('idle');
+        } else {
+          // Unrecognised shape — never leave the UI stuck in "checking".
+          setOutcome({ kind: 'verification-failed', message: 'Unexpected updater response.' });
+          setPhase('idle');
+        }
+      } catch (e) {
+        if (id !== checkIdRef.current) return;
+        setOutcome({ kind: 'verification-failed', message: String(e) });
         setUpdateInfo({ updateAvailable: false, latestVersion: '' });
         setPhase('idle');
       }
@@ -870,9 +894,11 @@ export function AutoUpdate() {
           {channelReleases.length === 0 ? (
             <div className="text-center py-4">
               <p className="text-xs text-win-text-tertiary">
-                {releases.length === 0
-                  ? 'Loading…'
-                  : `No ${updateInfo.updateChannel} releases found yet.`}
+                {listError
+                  ? listError
+                  : releases.length === 0
+                    ? 'Loading…'
+                    : `No ${updateInfo.updateChannel} releases found yet.`}
               </p>
             </div>
           ) : (

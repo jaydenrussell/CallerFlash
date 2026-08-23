@@ -9,6 +9,7 @@ import { Diagnostics } from './components/Diagnostics';
 import { AutoUpdate } from './components/AutoUpdate';
 import { About } from './components/About';
 import { ToastContainer } from './components/ToastNotification';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { useAppStore, runStorageMigration, type DiagnosticLog } from './store/useAppStore';
 import { useShallow } from 'zustand/react/shallow';
 import { sanitizeCallerNumberForClipboard, sanitizeCallerName } from './security/secretRedactor';
@@ -45,7 +46,9 @@ function MainContent() {
   return (
     <div className="flex-1 p-4 sm:p-6 min-w-0 overflow-hidden">
       <div className="h-full overflow-y-auto overflow-x-hidden">
-        {content[activeTab]}
+        <ErrorBoundary key={activeTab}>
+          {content[activeTab]}
+        </ErrorBoundary>
       </div>
     </div>
   );
