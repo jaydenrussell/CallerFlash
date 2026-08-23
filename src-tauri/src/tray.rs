@@ -5,6 +5,35 @@ use tauri::{
     AppHandle, Emitter, Listener, Manager,
 };
 
+/// Append a backend-generated entry to the user-visible Diagnostics log.
+/// Used for tray icon lifecycle events so icon problems are observable from
+/// the Diagnostics tab even though release builds have no console.
+fn tray_diag(app: &AppHandle, level: &str, message: &str, details: Option<String>) {
+    let ts = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let entry = serde_json::json!({
+        "id": format!("tray-{millis}"),
+        "timestamp": ts,
+        "level": level,
+        "category": "TRAY",
+        "message": message,
+        "details": details,
+    });
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let diag = crate::diagnostics::Diagnostics::new(data_dir);
+    if let Ok(log_entry) = serde_json::from_value::<crate::diagnostics::LogEntry>(entry) {
+        if log_entry.validate().is_ok() {
+            diag.append(&log_entry);
+        }
+    }
+}
+
 /// Map a SIP status string (backend `sip:status` or frontend label) to an icon tint.
 fn status_color(status: &str) -> (u8, u8, u8) {
     match status.to_lowercase().as_str() {
@@ -131,11 +160,18 @@ fn compose_tray_icon(base_rgba: &[u8], size: u32, rgb: (u8, u8, u8)) -> Vec<u8> 
 /// Build the tray icon: app logo + status-colored handset.
 fn build_status_icon(rgb: (u8, u8, u8)) -> Option<tauri::image::Image<'static>> {
     let (base, size) = tray_base_logo()?;
-    Some(tauri::image::Image::new_owned(
-        compose_tray_icon(&base, size, rgb),
-        size,
-        size,
-    ))
+    let out = compose_tray_icon(&base, size, rgb);
+    // Runtime sanity guard: a malformed buffer would otherwise be handed to
+    // the OS as a corrupt icon (or silently rejected, leaving the default).
+    if out.len() != (size * size * 4) as usize {
+        log::error!(
+            "[tray] composed icon buffer is {} bytes, expected {} — refusing to apply",
+            out.len(),
+            size * size * 4
+        );
+        return None;
+    }
+    Some(tauri::image::Image::new_owned(out, size, size))
 }
 
 /// Decode the bundled 32x32 logo once; reused for every status change.
@@ -153,11 +189,72 @@ fn tray_base_logo() -> Option<(Vec<u8>, u32)> {
 fn apply_sip_status(app: &AppHandle, status: &str) {
     let color = status_color(status);
     let tip = format!("CallerFlash - SIP {}", status);
-    if let Some(tray) = app.tray_by_id("main") {
-        if let Some(icon) = build_status_icon(color) {
-            let _ = tray.set_icon(Some(icon));
+    let Some(tray) = app.tray_by_id("main") else {
+        // Without an id match this function can never touch the real tray —
+        // log loudly (and once per run in the Diagnostics tab).
+        static WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+        if WARNED.get().is_none() {
+            log::error!("[tray] tray handle 'main' not found — status icon updates are no-ops");
+            tray_diag(
+                app,
+                "error",
+                "Tray icon not found by id 'main' — status overlay disabled",
+                None,
+            );
+            let _ = WARNED.set(());
         }
-        let _ = tray.set_tooltip(Some(&tip));
+        return;
+    };
+    let Some(icon) = build_status_icon(color) else {
+        static WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+        if WARNED.get().is_none() {
+            log::error!("[tray] failed to compose status icon (base logo missing or invalid)");
+            tray_diag(
+                app,
+                "error",
+                "Failed to compose tray status icon — bundled logo missing or invalid",
+                Some(format!("status: {}", status)),
+            );
+            let _ = WARNED.set(());
+        }
+        return;
+    };
+    let size = icon.width();
+    if let Err(e) = tray.set_icon(Some(icon)) {
+        static WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+        if WARNED.get().is_none() {
+            log::error!("[tray] set_icon failed: {}", e);
+            tray_diag(
+                app,
+                "error",
+                "Applying tray status icon failed",
+                Some(e.to_string()),
+            );
+            let _ = WARNED.set(());
+        }
+        return;
+    }
+    let _ = tray.set_tooltip(Some(&tip));
+    // One-time positive validation so it is observable that composition and
+    // application actually happened.
+    static VALIDATED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if VALIDATED.get().is_none() {
+        let _ = VALIDATED.set(true);
+        log::info!(
+            "[tray] status icon applied: {}x{} RGBA, glyph tinted for '{}'",
+            size,
+            size,
+            status
+        );
+        tray_diag(
+            app,
+            "info",
+            &format!(
+                "Tray status icon applied ({}x{} RGBA, glyph composited)",
+                size, size
+            ),
+            Some(format!("initial status: {}", status)),
+        );
     }
 }
 
@@ -174,15 +271,37 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
 
     let menu = Menu::with_items(app, &[&show, &hide, &separator, &quit])?;
 
-    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png")).expect(
-        "Failed to load tray icon - ensure src-tauri/icons/32x32.png exists and is a valid PNG",
-    );
+    // Load the bundled logo; if it is missing/corrupt fall back to the
+    // window icon instead of panicking at startup.
+    let icon = match tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png")) {
+        Ok(icon) => Some(icon),
+        Err(e) => {
+            log::error!(
+                "[tray] Failed to load bundled 32x32.png: {} — falling back to default window icon",
+                e
+            );
+            tray_diag(
+                app,
+                "error",
+                "Bundled tray logo failed to load — using default app icon",
+                Some(e.to_string()),
+            );
+            app.default_window_icon().cloned()
+        }
+    };
 
-    TrayIconBuilder::new()
-        .icon(icon)
+    // The id MUST match the "main" lookups in apply_sip_status /
+    // tray_set_sip_status / tray_set_update_available. A builder without an
+    // id gets a generated one, so every tray_by_id("main") call silently
+    // missed and status icons never applied.
+    let mut builder = TrayIconBuilder::with_id("main")
         .menu(&menu)
         .show_menu_on_left_click(false)
-        .tooltip("CallerFlash")
+        .tooltip("CallerFlash");
+    if let Some(icon) = icon {
+        builder = builder.icon(icon);
+    }
+    builder
         .on_tray_icon_event(move |tray, event| {
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
