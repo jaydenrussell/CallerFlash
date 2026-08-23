@@ -46,60 +46,38 @@ fn status_color(status: &str) -> (u8, u8, u8) {
 }
 
 // ---------------------------------------------------------------------------
-// Phone-glyph composition
+// Status-dot composition
 //
-// The tray shows the app logo with a small phone handset overlaid at its
-// center, tinted with the current SIP status color. The handset is drawn
-// procedurally: an annulus sector (the curved body) plus two discs at the
-// ends (ear/mouthpieces), the classic handset silhouette. A soft dark halo
-// keeps it legible over any logo artwork. Coverage is computed with 2x2
-// supersampling so edges are antialiased at tray sizes.
+// The tray shows the app logo with a solid colored status dot overlaid in
+// its bottom-right corner — the same pattern as the TeamViewer tray icon.
+// At Windows' 16px logical tray size a detailed glyph is unreadable, but a
+// large filled circle stays instantly recognizable. A near-white rim plus
+// a faint dark shadow keep the dot legible over any logo artwork. Coverage
+// is computed with 2x2 supersampling so edges are antialiased at tray sizes.
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
 const CANVAS: u32 = 32;
-// Arc geometry (pixels, angles in radians). Center sits off-canvas so the
-// band sweeps diagonally through the icon center. Sized so the handset
-// spans ~18px of the 32px canvas: Windows shows the tray at 16px logical,
-// and anything smaller disappears after downscaling.
-const ARC_CX: f32 = 2.8;
-const ARC_CY: f32 = 2.8;
-const ARC_R_IN: f32 = 15.0;
-const ARC_R_OUT: f32 = 21.0;
-const ARC_R_MID: f32 = 18.0;
-// 35deg .. 55deg around the off-canvas center => midpoint lands at ~(15.5, 15.5).
-const ARC_A0: f32 = 0.610_865_2;
-const ARC_A1: f32 = 0.959_931_1;
-const CAP_R: f32 = 4.6;
-// Layered contrast so the glyph reads over any logo artwork: a near-white
-// rim hugging the glyph (separates from saturated hues like the magenta
+// Dot geometry (pixels). Centered bottom-right, spanning 14..28 on both
+// axes: ~44% of the canvas, which survives the 2x downscale to the 16px
+// logical tray slot as a clearly visible ~7px dot.
+const DOT_CX: f32 = 21.0;
+const DOT_CY: f32 = 21.0;
+const DOT_R: f32 = 7.0;
+// Layered contrast so the dot reads over any logo artwork: a near-white
+// rim hugging the dot (separates from saturated hues like the magenta
 // logo body) over a faint dark shadow (separates from light/transparent
-// areas). Both are the glyph shape dilated outward.
-const RIM_GROW: f32 = 1.4;
+// areas). Both are the dot dilated outward.
+const RIM_GROW: f32 = 1.6;
 const RIM_ALPHA: f32 = 0.95;
-const SHADOW_GROW: f32 = 2.4;
+const SHADOW_GROW: f32 = 2.6;
 const SHADOW_ALPHA: f32 = 0.45;
 
-fn point_at(angle: f32, grow: f32) -> (f32, f32) {
-    let r = ARC_R_MID + grow * 0.5;
-    (ARC_CX + r * angle.cos(), ARC_CY + r * angle.sin())
-}
-
-/// Inside the handset body/caps (grow > 0 widens the shape for the halo).
-fn in_phone_shape(x: f32, y: f32, grow: f32) -> bool {
-    let dx = x - ARC_CX;
-    let dy = y - ARC_CY;
-    let d = (dx * dx + dy * dy).sqrt();
-    let a = dy.atan2(dx);
-    let arc = d >= ARC_R_IN - grow
-        && d <= ARC_R_OUT + grow
-        && a >= ARC_A0 - grow * 0.055
-        && a <= ARC_A1 + grow * 0.055;
-    let cap_hit = |p: (f32, f32)| {
-        let (ex, ey) = (x - p.0, y - p.1);
-        ex * ex + ey * ey <= (CAP_R + grow) * (CAP_R + grow)
-    };
-    arc || cap_hit(point_at(ARC_A0, grow)) || cap_hit(point_at(ARC_A1, grow))
+/// Inside the status dot (grow > 0 widens it for the halo layers).
+fn in_dot_shape(x: f32, y: f32, grow: f32) -> bool {
+    let dx = x - DOT_CX;
+    let dy = y - DOT_CY;
+    dx * dx + dy * dy <= (DOT_R + grow) * (DOT_R + grow)
 }
 
 /// Source-over blend of `color` at `alpha` onto one RGBA pixel.
@@ -118,7 +96,7 @@ fn blend_pixel(px: &mut [u8], color: (u8, u8, u8), alpha: f32) {
     px[3] = (out_a * 255.0).round().clamp(0.0, 255.0) as u8;
 }
 
-/// Overlay the status-tinted phone handset onto a copy of the logo RGBA.
+/// Overlay the status-tinted dot onto a copy of the logo RGBA.
 fn compose_tray_icon(base_rgba: &[u8], size: u32, rgb: (u8, u8, u8)) -> Vec<u8> {
     let mut out = base_rgba.to_vec();
     let samples: [(f32, f32); 4] = [(0.25, 0.25), (0.75, 0.25), (0.25, 0.75), (0.75, 0.75)];
@@ -130,11 +108,11 @@ fn compose_tray_icon(base_rgba: &[u8], size: u32, rgb: (u8, u8, u8)) -> Vec<u8> 
             for (sx, sy) in samples {
                 let px = x as f32 + sx;
                 let py = y as f32 + sy;
-                if in_phone_shape(px, py, 0.0) {
+                if in_dot_shape(px, py, 0.0) {
                     cov_glyph += 0.25;
-                } else if in_phone_shape(px, py, RIM_GROW) {
+                } else if in_dot_shape(px, py, RIM_GROW) {
                     cov_rim += 0.25;
-                } else if in_phone_shape(px, py, SHADOW_GROW) {
+                } else if in_dot_shape(px, py, SHADOW_GROW) {
                     cov_shadow += 0.25;
                 }
             }
@@ -407,11 +385,16 @@ mod tests {
         v
     }
 
+    /// Pixel index of the dot's center on the CANVAS grid.
+    fn dot_idx() -> usize {
+        ((DOT_CY as usize * CANVAS as usize) + DOT_CX as usize) * 4
+    }
+
     #[test]
-    fn glyph_center_takes_status_color() {
+    fn dot_center_takes_status_color() {
         let base = solid(CANVAS, [255, 0, 0, 255]);
         let out = compose_tray_icon(&base, CANVAS, status_color("registered"));
-        let idx = ((16 * CANVAS + 16) * 4) as usize;
+        let idx = dot_idx();
         // Fully covered pixel should land on the green status tint.
         assert!(out[idx].abs_diff(22) <= 2);
         assert!(out[idx + 1].abs_diff(163) <= 2);
@@ -420,30 +403,48 @@ mod tests {
     }
 
     #[test]
-    fn logo_pixels_away_from_glyph_unchanged() {
+    fn dot_is_solid_status_color_not_translucent() {
+        // Every fully-inside pixel of the dot must be the pure status color —
+        // guards against alpha/blend regressions that make the badge faint.
+        let base = solid(CANVAS, [255, 0, 0, 255]);
+        let (r, g, b) = status_color("registered");
+        let out = compose_tray_icon(&base, CANVAS, (r, g, b));
+        for y in (DOT_CY as usize - 4)..=(DOT_CY as usize + 4) {
+            for x in (DOT_CX as usize - 4)..=(DOT_CX as usize + 4) {
+                let idx = (y * CANVAS as usize + x) * 4;
+                assert!(
+                    out[idx].abs_diff(r) <= 2
+                        && out[idx + 1].abs_diff(g) <= 2
+                        && out[idx + 2].abs_diff(b) <= 2,
+                    "faint pixel at ({x},{y})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn logo_pixels_away_from_dot_unchanged() {
         let base = solid(CANVAS, [255, 0, 0, 255]);
         let out = compose_tray_icon(&base, CANVAS, status_color("error"));
-        for (x, y) in [(1usize, 30usize), (30, 2), (2, 2), (29, 29)] {
+        // All far from the bottom-right dot (max halo radius ~9.6px).
+        for (x, y) in [(1usize, 1usize), (8, 8), (1, 30), (2, 20)] {
             let idx = (y * CANVAS as usize + x) * 4;
             assert_eq!(&out[idx..idx + 4], &[255, 0, 0, 255]);
         }
     }
 
     #[test]
-    fn different_statuses_produce_different_centers() {
+    fn different_statuses_produce_different_dots() {
         let base = solid(CANVAS, [128, 128, 128, 255]);
         let green = compose_tray_icon(&base, CANVAS, status_color("registered"));
         let red = compose_tray_icon(&base, CANVAS, status_color("error"));
         let amber = compose_tray_icon(&base, CANVAS, status_color("connecting"));
         let blue = compose_tray_icon(&base, CANVAS, status_color("offline"));
         let centers = [&green, &red, &amber, &blue];
+        let i = dot_idx();
         for a in 0..centers.len() {
             for b in (a + 1)..centers.len() {
-                let ia = ((16 * CANVAS + 16) * 4) as usize;
-                let ib = ((16 * CANVAS + 16) * 4) as usize;
-                let pa = &centers[a][ia..ia + 3];
-                let pb = &centers[b][ib..ib + 3];
-                assert_ne!(pa, pb);
+                assert_ne!(&centers[a][i..i + 3], &centers[b][i..i + 3]);
             }
         }
     }
@@ -456,23 +457,30 @@ mod tests {
     }
 
     #[test]
-    fn glyph_footprint_is_large_enough_for_tray_downscaling() {
-        // Windows renders the tray at 16px logical; the glyph + rim must
+    fn dot_footprint_is_large_enough_for_tray_downscaling() {
+        // Windows renders the tray at 16px logical; the dot + halo must
         // occupy enough of the 32px canvas to survive that 2x shrink.
         let base = solid(CANVAS, [128, 128, 128, 255]);
         let out = compose_tray_icon(&base, CANVAS, status_color("registered"));
         let modified = (0..(CANVAS * CANVAS) as usize)
             .filter(|&i| out[i * 4..i * 4 + 3] != base[i * 4..i * 4 + 3])
             .count();
+        assert!(modified >= 220, "only {modified} px touched; dot too small");
+    }
+
+    #[test]
+    fn dot_stays_inside_canvas() {
+        // The dilated shadow must not clip: a clipped badge looks broken.
+        let max_reach = DOT_R + SHADOW_GROW;
+        assert!(DOT_CX - max_reach >= 0.0 && DOT_CY - max_reach >= 0.0);
         assert!(
-            modified >= 150,
-            "only {modified} px touched; glyph too small"
+            DOT_CX + 1.0 + max_reach <= CANVAS as f32 && DOT_CY + 1.0 + max_reach <= CANVAS as f32
         );
     }
 
     #[test]
-    fn white_rim_separates_glyph_from_logo() {
-        // Somewhere just outside the glyph body the composite must be
+    fn white_rim_separates_dot_from_logo() {
+        // Somewhere just outside the dot body the composite must be
         // near-white regardless of the underlying logo color.
         let base = solid(CANVAS, [128, 128, 128, 255]);
         let out = compose_tray_icon(&base, CANVAS, status_color("registered"));
