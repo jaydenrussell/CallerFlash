@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { Dashboard } from "./Dashboard";
+import type { CallRecord } from "../store/useAppStore";
 
 const mockStore = vi.hoisted(() => ({
   sipConfig: {
@@ -17,7 +18,7 @@ const mockStore = vi.hoisted(() => ({
   registrationError: null,
   sipConnected: true,
   sipRegistered: true,
-  callHistory: [],
+  callHistory: [] as CallRecord[],
   activeCall: null,
   inboundCall: null,
   setInboundCall: vi.fn(),

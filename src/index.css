@@ -1,5 +1,16 @@
 @import "tailwindcss";
 
+/* Inter variable font, bundled locally (SIL OFL — see src/assets/fonts/OFL.txt).
+   No third-party font CDN requests at launch: better privacy and full offline
+   support in firewalled environments. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./assets/fonts/InterVariable-latin.woff2') format('woff2');
+}
+
 @theme {
   --color-win-bg: #202020;
   --color-win-surface: #2d2d2d;

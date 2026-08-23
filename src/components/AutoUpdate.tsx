@@ -9,6 +9,7 @@ import { useAppStore } from '../store/useAppStore';
 import { useShallow } from 'zustand/react/shallow';
 
 import { formatVersion } from '../utils/formatVersion';
+import { isUpdateCheckDue, updateCheckIntervalDays } from '../utils/updateSchedule';
 
 interface GithubRelease {
   tag_name: string;
@@ -47,30 +48,11 @@ function parseChangelog(body: string, max = 6): string[] {
  * Compare two version strings. Returns 1 if a > b, -1 if a < b, 0 if equal.
  * Handles:
  *   - Semver: 1.5.0, 1.4.2
- *   - Beta prerelease: 1.5.0-beta.28
- *   - Nightly date codes: nightly-20260624 or nightly-20260624-17
- * Nightly versions are always considered NEWER than any semver version.
- * Between two nightlies, the later date wins; same date → higher index wins.
- *   Stable > beta (same base version).
+ *   - Beta prerelease: 1.5.0-beta.28 (stable > beta for the same base version)
  */
 function compareVersions(a: string, b: string): number {
   const va = formatVersion(a);
   const vb = formatVersion(b);
-
-  // Handle nightly date codes (with optional -N increment suffix for multiple builds per day).
-  const nightlyA = va.match(/^nightly[.-](\d{8})(?:[.-](\d+))?$/i);
-  const nightlyB = vb.match(/^nightly[.-](\d{8})(?:[.-](\d+))?$/i);
-
-  if (nightlyA && nightlyB) {
-    const diff = parseInt(nightlyA[1]) - parseInt(nightlyB[1]);
-    if (diff !== 0) return diff;
-    const incA = parseInt(nightlyA[2] || '0');
-    const incB = parseInt(nightlyB[2] || '0');
-    return incA - incB;
-  }
-
-  if (nightlyA) return 1;  // nightly is always newer than semver
-  if (nightlyB) return -1;
 
   // Semver comparison with prerelease support.
   // Parse "1.5.0-beta.28" → { major:1, minor:5, patch:0, pre:"beta", preN:28 }
@@ -208,26 +190,6 @@ type CheckOutcome =
   | { kind: 'verification-failed'; message: string; release?: GithubRelease }
   | null;
 
-type UpdateFrequency = 'off' | 'daily' | 'weekly' | 'monthly';
-
-const FREQUENCY_INTERVAL_DAYS: Record<UpdateFrequency, number | null> = {
-  off: null,
-  daily: 1,
-  weekly: 7,
-  monthly: 30,
-};
-
-function shouldAutoCheck(
-  lastChecked: Date | null,
-  frequency: UpdateFrequency
-): boolean {
-  const interval = FREQUENCY_INTERVAL_DAYS[frequency];
-  if (interval === null) return false; // off
-  if (!lastChecked) return true;       // first run
-  const ageDays = (Date.now() - lastChecked.getTime()) / 86_400_000;
-  return ageDays >= interval;
-}
-
 function formatRelativeLastCheck(lastChecked: Date | null): string {
   if (!lastChecked) return 'Never';
   const diffMs = Date.now() - lastChecked.getTime();
@@ -331,7 +293,10 @@ export function AutoUpdate() {
     }
   }, [updateInfo.updateAvailable, updateInfo.latestVersion]);
 
-  // Listen for updater status events from the backend.
+  // Listen for updater status events from the backend. The Tauri bridge
+  // emits exactly three statuses (downloading / ready / installing) during
+  // a download started from this component; every other outcome is returned
+  // as a result value, not an event.
   useEffect(() => {
     if (!window.callerflash?.updater?.onStatus) {
       return;
@@ -358,31 +323,9 @@ export function AutoUpdate() {
         // already started the install step (setting phase='installing'),
         // which would race and reset phase to 'idle'.
         setUpdateInfo({ isDownloading: false, isInstalling: false, updateAvailable: true });
-      } else if (status.status === 'update-available') {
-        if (status.version && !versionMatchesChannel(status.version, channelRef.current)) return;
-        if (status.version && compareVersions(
-          formatVersion(status.version),
-          formatVersion(updateInfo.currentVersion)
-        ) <= 0) return;
-        setUpdateInfo({
-          latestVersion: status.version,
-          updateAvailable: true,
-        });
-        if (status.downloadUrl) {
-          setDownloadUrl(status.downloadUrl);
-        }
       } else if (status.status === 'installing') {
         setPhase('installing');
         setUpdateInfo({ isDownloading: false, isInstalling: true });
-      } else if (status.status === 'success') {
-        setPhase('idle');
-        setUpdateInfo({ isDownloading: false, isInstalling: false });
-      } else if (status.status === 'up-to-date') {
-        setUpdateInfo({ lastChecked: new Date(), updateAvailable: false, latestVersion: '' });
-      } else if (status.status === 'error') {
-        setPhase('idle');
-        setUpdateInfo({ isDownloading: false, isInstalling: false });
-        setOutcome({ kind: 'verification-failed', message: status.message || 'Update failed' });
       }
     });
   }, [addDiagnosticLog]);
@@ -412,39 +355,13 @@ export function AutoUpdate() {
     });
   }, [addDiagnosticLog]);
 
-  // Query download state — if main process already downloaded an update
-  // in the background, we need to know about it. Re-check when channel
-  // changes so stale downloads from a different channel don't leak through.
-  useEffect(() => {
-    if (!window.callerflash?.updater?.getDownloadState) return;
-    window.callerflash.updater.getDownloadState().then((state) => {
-      const s = state as { status?: string; version?: string };
-      if (s?.status === 'ready' && s?.version) {
-        if (!versionMatchesChannel(s.version, updateInfo.updateChannel)) return;
-        const currentFormatted = formatVersion(updateInfo.currentVersion);
-        const foundFormatted = formatVersion(s.version);
-        if (compareVersions(foundFormatted, currentFormatted) <= 0) {
-          return;
-        }
-        setUpdateInfo({
-          latestVersion: s.version,
-          updateAvailable: true,
-          isDownloading: false,
-        });
-      } else if (s?.status === 'downloading') {
-        setPhase('downloading');
-        setUpdateInfo({ isDownloading: true });
-      }
-    }).catch((e) => addDiagnosticLog({ level: 'error', category: 'UPDATE', message: `Failed to get download state: ${e}` }));
-  }, [updateInfo.updateChannel]);
-
   /**
    * Check for updates — queries GitHub, does NOT download.
    * The user gets an "Update" button to download, then "Install" when ready.
    * Always scoped to ONE channel: defaults to the currently selected one, but
    * callers can pass an explicit channel (e.g. right after a channel switch).
    */
-  const handleCheckAndDownload = async (channelOverride?: 'stable' | 'beta') => {
+  const handleCheck = async (channelOverride?: 'stable' | 'beta') => {
     const channel: 'stable' | 'beta' = channelOverride ?? updateInfo.updateChannel;
     const id = ++checkIdRef.current;
     setPhase('checking');
@@ -527,12 +444,12 @@ export function AutoUpdate() {
   const hasCheckedRef = useRef(false);
   useEffect(() => {
     if (phase !== 'idle') return;
-    if (!shouldAutoCheck(updateInfo.lastChecked, updateInfo.updateCheckFrequency)) return;
+    if (!isUpdateCheckDue(updateInfo.updateCheckFrequency, updateInfo.lastChecked ?? null, Date.now())) return;
     if (hasCheckedRef.current) {
-      if (!shouldAutoCheck(updateInfo.lastChecked, updateInfo.updateCheckFrequency)) return;
+      if (!isUpdateCheckDue(updateInfo.updateCheckFrequency, updateInfo.lastChecked ?? null, Date.now())) return;
     }
     hasCheckedRef.current = true;
-    handleCheckAndDownload();
+    handleCheck();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [updateInfo.updateCheckFrequency]);
 
@@ -545,7 +462,7 @@ export function AutoUpdate() {
     lastChannelRef.current = updateInfo.updateChannel;
     if (prev !== updateInfo.updateChannel) {
       checkIdRef.current++; // drop any stale in-flight result from the old channel
-      handleCheckAndDownload(updateInfo.updateChannel);
+      handleCheck(updateInfo.updateChannel);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [updateInfo.updateChannel]);
@@ -673,7 +590,7 @@ export function AutoUpdate() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={() => handleCheckAndDownload()}
+            onClick={() => handleCheck()}
             disabled={isBusy}
             className="flex items-center gap-2 px-3.5 py-1.5 bg-win-accent hover:bg-win-accent-hover text-black rounded-lg text-sm font-semibold transition-colors disabled:opacity-50"
           >
@@ -734,7 +651,6 @@ export function AutoUpdate() {
             <p className="text-[11px] text-win-text-secondary mt-0.5">
               {phase === 'installing' ? 'Installing…'
                 : phase === 'downloading' ? `Downloading ${Math.round(updateInfo.downloadProgress)}%…`
-                : updateInfo.autoDownload ? 'Downloaded and ready to install.'
                 : `Newer than your current ${formatVersion(updateInfo.currentVersion)}.`}
             </p>
           </div>
@@ -853,32 +769,9 @@ export function AutoUpdate() {
             <p className="text-[10px] text-win-text-tertiary mt-1 leading-snug">
               {updateInfo.updateCheckFrequency === 'off'
                 ? 'Auto-check disabled. Use the Check button to look manually.'
-                : `Auto-checks on tab open if the last check is older than ${FREQUENCY_INTERVAL_DAYS[updateInfo.updateCheckFrequency]} day${FREQUENCY_INTERVAL_DAYS[updateInfo.updateCheckFrequency] === 1 ? '' : 's'}.`}
+                : `Auto-checks on tab open if the last check is older than ${updateCheckIntervalDays(updateInfo.updateCheckFrequency)} day${updateCheckIntervalDays(updateInfo.updateCheckFrequency) === 1 ? '' : 's'}.`}
             </p>
           </div>
-
-          {/* Auto-download toggle */}
-          <div
-            className="flex items-center justify-between p-2 rounded-lg bg-win-card border border-win-border/50 hover:border-win-border cursor-pointer transition-colors"
-            onClick={() => setUpdateInfo({ autoDownload: !updateInfo.autoDownload })}
-          >
-            <div className="min-w-0 pr-2">
-              <p className="text-sm font-medium text-win-text">Auto-download updates</p>
-              <p className="text-[11px] text-win-text-tertiary leading-snug">
-                {updateInfo.autoDownload
-                  ? `Verified ${updateInfo.updateChannel} updates download in the background and install automatically when you click Update.`
-                  : 'Updates are checked but not downloaded. Click Update to download and install.'}
-              </p>
-            </div>
-            <div className={`w-9 h-[20px] rounded-full transition-colors relative flex-shrink-0 ${
-              updateInfo.autoDownload ? 'bg-win-accent' : 'bg-win-border'
-            }`}>
-              <div className={`absolute top-[2px] w-4 h-4 rounded-full bg-white shadow transition-transform ${
-                updateInfo.autoDownload ? 'translate-x-[19px]' : 'translate-x-[2px]'
-              }`} />
-            </div>
-          </div>
-
 
         </div>
 

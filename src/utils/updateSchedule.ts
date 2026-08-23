@@ -18,6 +18,15 @@ export function updateCheckIntervalMs(frequency: UpdateCheckFrequency): number |
 }
 
 /**
+ * The same interval expressed in whole days, for UI copy.
+ * Returns null for 'off' (never schedule).
+ */
+export function updateCheckIntervalDays(frequency: UpdateCheckFrequency): number | null {
+  const ms = updateCheckIntervalMs(frequency);
+  return ms === null ? null : Math.round(ms / 86_400_000);
+}
+
+/**
  * How often the scheduler wakes up to evaluate whether a check is due.
  * Deliberately much shorter than the smallest check interval — the app may
  * sleep/hibernate between ticks, so we re-evaluate frequently and rely on

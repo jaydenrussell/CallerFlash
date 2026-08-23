@@ -98,8 +98,8 @@ The Tauri webview is configured with least privilege:
   ```
   default-src 'self'
   script-src 'self'
-  style-src 'self' https://fonts.googleapis.com 'unsafe-inline'
-  font-src  'self' https://fonts.gstatic.com data:
+  style-src 'self' 'unsafe-inline'
+  font-src  'self' data:
   img-src   'self' data:
   connect-src 'self'
   form-action 'none'

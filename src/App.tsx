@@ -15,38 +15,10 @@ import { useAppStore, runStorageMigration, persistLastRunVersion, type Diagnosti
 import { useShallow } from 'zustand/react/shallow';
 import { sanitizeCallerNumberForClipboard, sanitizeCallerName } from './security/secretRedactor';
 import { isUpdateCheckDue, UPDATE_SCHEDULER_TICK_MS } from './utils/updateSchedule';
+import { backgroundUpdateCheck } from './utils/backgroundUpdateCheck';
 
 // Threshold below which the sidebar collapses to icons only
 const SIDEBAR_COLLAPSE_BREAKPOINT = 720;
-
-// Background update check shared by the startup check and the periodic
-// scheduler. Uses the store directly (no hooks) so both call sites stay in
-// sync, including persisting lastChecked on the "up to date" path — without
-// that, the scheduler would re-fire on every tick.
-async function backgroundUpdateCheck(trigger: 'startup' | 'scheduled'): Promise<void> {
-  const check = window.callerflash?.updater?.check;
-  if (!check) return;
-  const log = (level: DiagnosticLog['level'], message: string) =>
-    useAppStore.getState().addDiagnosticLog({ level, category: 'UPDATE', message });
-  log('info', trigger === 'startup' ? 'Checking for updates on startup…' : `Scheduled update check…`);
-  try {
-    const result = await check('stable');
-    if (result?.version) {
-      useAppStore.getState().setUpdateInfo({
-        latestVersion: result.version,
-        updateAvailable: true,
-        lastChecked: new Date(),
-      });
-      log('info', `Update available: ${result.version}`);
-    } else if (result?.upToDate) {
-      useAppStore.getState().setUpdateInfo({ updateAvailable: false, lastChecked: new Date() });
-      log('info', 'App is up to date.');
-    }
-  } catch (e) {
-    // Failed checks do NOT advance lastChecked so the scheduler retries soon.
-    log('error', `Update check failed: ${e}`);
-  }
-}
 
 function useWindowWidth() {
   const [width, setWidth] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1280));

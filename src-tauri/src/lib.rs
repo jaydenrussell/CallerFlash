@@ -501,6 +501,18 @@ pub fn run() {
                     let _ = w.hide();
                 }
             });
+            // The renderer emits this on first run after an update (and any
+            // future re-show path). Rust owns initial visibility via
+            // should_start_hidden(); this listener makes the request real
+            // instead of a silent no-op.
+            let app_handle = app.handle().clone();
+            let _ = app.listen("window:show", move |_| {
+                if let Some(w) = app_handle.get_webview_window("main") {
+                    let _ = w.show();
+                    let _ = w.unminimize();
+                    let _ = w.set_focus();
+                }
+            });
 
             let data_dir = app
                 .path()

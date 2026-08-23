@@ -1,0 +1,44 @@
+# cargo-audit configuration for CallerFlash (src-tauri).
+#
+# Picked up automatically by `cargo audit` when run from this directory
+# (cargo-audit also checks ~/.cargo/audit.toml). All entries below are
+# informational warnings (unmaintained/unsound), NOT build-failing
+# vulnerabilities — cargo-audit still exits 0 on them.
+#
+# MAINTENANCE: re-review this list quarterly and whenever a dependency bump
+# might clear an entry. Every entry carries a reason and a last-reviewed date.
+# Last full review: 2026-08-23.
+
+[advisories]
+ignore = [
+  # ── Linux-only transitive deps (never compiled on Windows; target-gated via
+  #    tray-icon -> libappindicator -> gtk-rs GTK3, or glib-macros). The gtk-rs
+  #    GTK3 bindings are unmaintained upstream with no replacement on the
+  #    0.18.x line, and glib's unsoundness only matters on platforms that
+  #    actually compile it. Matches the existing dependabot dismissals.
+  #    Reviewed 2026-08-23.
+  "RUSTSEC-2024-0411", # gdkwayland-sys
+  "RUSTSEC-2024-0412", # gdk
+  "RUSTSEC-2024-0413", # atk
+  "RUSTSEC-2024-0414", # gdkx11-sys
+  "RUSTSEC-2024-0415", # gtk
+  "RUSTSEC-2024-0416", # atk-sys
+  "RUSTSEC-2024-0417", # gdkx11
+  "RUSTSEC-2024-0418", # gdk-sys
+  "RUSTSEC-2024-0419", # gtk3-macros
+  "RUSTSEC-2024-0420", # gtk-sys
+  "RUSTSEC-2024-0370", # proc-macro-error
+  "RUSTSEC-2024-0429", # glib (same advisory as GHSA-wrw7-89jp-8q8g)
+
+  # ── Windows-reachable but unmaintained informational warnings with no fix
+  #    available: pulled by tauri-utils v2.9.3 -> urlpattern 0.3.0 (unic-*
+  #    Unicode crate family). urlpattern 0.6.0 replaces them with icu_properties
+  #    but tauri-utils pins ^0.3.0; no newer tauri-utils exists yet, so this
+  #    clears when Tauri bumps urlpattern upstream.
+  #    Reviewed 2026-08-23.
+  "RUSTSEC-2025-0081", # unic-char-property
+  "RUSTSEC-2025-0075", # unic-char-range
+  "RUSTSEC-2025-0080", # unic-common
+  "RUSTSEC-2025-0100", # unic-ucd-ident
+  "RUSTSEC-2025-0098", # unic-ucd-version
+]

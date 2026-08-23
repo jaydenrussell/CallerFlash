@@ -45,8 +45,6 @@ const mockStore = vi.hoisted(() => {
     latestVersion: string;
     updateAvailable: boolean;
     lastChecked: Date | null;
-    autoUpdate: boolean;
-    autoDownload: boolean;
     updateChannel: "stable" | "beta";
     updateCheckFrequency: "off" | "daily" | "weekly" | "monthly";
     githubRepo: string;
@@ -66,8 +64,6 @@ const mockStore = vi.hoisted(() => {
       latestVersion: "",
       updateAvailable: false,
       lastChecked: null,
-      autoUpdate: true,
-      autoDownload: false,
       updateChannel: "beta",
       updateCheckFrequency: "off",
       githubRepo: "https://github.com/jaydenrussell/CallerFlash",
@@ -109,8 +105,6 @@ describe("AutoUpdate", () => {
       latestVersion: "",
       updateAvailable: false,
       lastChecked: null,
-      autoUpdate: true,
-      autoDownload: false,
       updateChannel: "beta",
       updateCheckFrequency: "off" as const,
       githubRepo: "https://github.com/jaydenrussell/CallerFlash",

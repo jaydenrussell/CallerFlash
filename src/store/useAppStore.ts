@@ -75,8 +75,6 @@ export interface UpdateInfo {
   latestVersion: string;
   updateAvailable: boolean;
   lastChecked: Date | null;
-  autoUpdate: boolean;
-  autoDownload: boolean;
   updateChannel: 'stable' | 'beta';
   updateCheckFrequency: 'off' | 'daily' | 'weekly' | 'monthly';
   githubRepo: string;
@@ -97,8 +95,6 @@ interface PersistedUiSettings {
   updateCheckFrequency?: 'off' | 'daily' | 'weekly' | 'monthly';
   lastCheckedAt?: string;
   updateChannel?: 'stable' | 'beta';
-  autoUpdate?: boolean;
-  autoDownload?: boolean;
   toastConfig?: Partial<ToastConfig>;
   releasePageUrl?: string;
   sipConfig?: Partial<SipConfig>;
@@ -284,8 +280,6 @@ async function initStorageMigration() {
         const mergedSip = { ...defaultSipConfig, ...(fileData.sipConfig ?? {}) };
         const mergedUpdate = { ...defaultUpdateInfo };
         if (fileData.updateChannel) mergedUpdate.updateChannel = fileData.updateChannel;
-        if (fileData.autoUpdate !== undefined) mergedUpdate.autoUpdate = fileData.autoUpdate;
-        if (fileData.autoDownload !== undefined) mergedUpdate.autoDownload = fileData.autoDownload;
         if (fileData.updateCheckFrequency) mergedUpdate.updateCheckFrequency = fileData.updateCheckFrequency;
         if (fileData.lastCheckedAt) mergedUpdate.lastChecked = new Date(fileData.lastCheckedAt);
         if (fileData.releasePageUrl) mergedUpdate.releasePageUrl = fileData.releasePageUrl;
@@ -415,8 +409,6 @@ const defaultUpdateInfo: UpdateInfo = {
   latestVersion: __APP_VERSION__,
   updateAvailable: false,
   lastChecked: persistedUi.lastCheckedAt ? new Date(persistedUi.lastCheckedAt) : null,
-  autoUpdate: persistedUi.autoUpdate ?? true,
-  autoDownload: persistedUi.autoDownload ?? true,
   updateChannel: persistedUi.updateChannel ?? 'stable',
   updateCheckFrequency: persistedUi.updateCheckFrequency ?? 'daily',
   githubRepo: __APP_REPO__,
@@ -469,6 +461,15 @@ export const useAppStore = create<AppState>((set) => ({
           useAppStore.setState({ sipConnected: true, isConnecting: false });
           s.addDiagnosticLog({ level: 'success', category: 'SIP', message: 'Connection established to ' + s.sipConfig.server });
         }
+      }).catch((e) => {
+        // The bridge normally converts rejections into { success:false }, but
+        // an IPC-level failure would reject — never leave isConnecting stuck.
+        useAppStore.setState({ sipConnected: false, isConnecting: false });
+        s.addDiagnosticLog({
+          level: 'error',
+          category: 'SIP',
+          message: `Connection failed: ${e instanceof Error ? e.message : String(e)}`,
+        });
       });
     } else if (import.meta.env.DEV) {
       // Dev-only simulation so the UI can be exercised without a backend.
@@ -574,8 +575,6 @@ export const useAppStore = create<AppState>((set) => ({
     secureStorage.save({
       ...secureStorage.cache,
       updateChannel: next.updateChannel,
-      autoUpdate: next.autoUpdate,
-      autoDownload: next.autoDownload,
       updateCheckFrequency: next.updateCheckFrequency,
       lastCheckedAt: next.lastChecked ? next.lastChecked.toISOString() : undefined,
       releasePageUrl: next.releasePageUrl || undefined,
