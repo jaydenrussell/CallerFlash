@@ -160,4 +160,25 @@ describe("AutoUpdate", () => {
     expect(await screen.findByText(/403 Forbidden/)).toBeTruthy();
     expect(screen.queryByText("Loading…")).toBeNull();
   });
+
+  it("renders snake_case backend payloads (serde drift regression)", async () => {
+    // v2.2.5 shipped ReleaseInfo without #[serde(rename_all = "camelCase")],
+    // so the wire format was tag_name/published_at/html_url while the
+    // frontend read tagName — undefined tags crashed the version sort.
+    mockStore.updateInfo = { ...mockStore.updateInfo, updateChannel: "stable" };
+    setUpdater({
+      listReleases: vi.fn(async () => [
+        {
+          tag_name: "v2.2.1",
+          name: null,
+          published_at: "2026-08-22T21:23:08Z",
+          prerelease: false,
+          body: "* note",
+          html_url: "https://github.com/jaydenrussell/CallerFlash/releases/tag/v2.2.1",
+        },
+      ]),
+    });
+    render(<AutoUpdate />);
+    expect(await screen.findByText("2.2.1")).toBeTruthy();
+  });
 });

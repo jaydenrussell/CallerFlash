@@ -173,6 +173,7 @@ pub async fn cmd_check_update<R: Runtime>(
 /// Trimmed release info for the renderer's release-history panel. Only the
 /// fields the UI renders are forwarded — no asset URLs or author metadata.
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ReleaseInfo {
     pub tag_name: String,
     pub name: Option<String>,

@@ -141,20 +141,25 @@ function versionMatchesChannel(version: string, channel: 'stable' | 'beta'): boo
 
 /** Map a backend ReleaseInfo into the shape the UI already consumes. */
 function toGithubRelease(r: {
-  tagName: string;
-  name: string | null;
-  publishedAt: string | null;
-  prerelease: boolean;
-  body: string | null;
-  htmlUrl: string;
+  tagName?: string;
+  tag_name?: string;
+  name?: string | null;
+  publishedAt?: string | null;
+  published_at?: string | null;
+  prerelease?: boolean;
+  body?: string | null;
+  htmlUrl?: string;
+  html_url?: string;
 }): GithubRelease {
   return {
-    tag_name: r.tagName,
+    // Accept both camelCase and snake_case — the wire format has drifted
+    // between builds and a missing tag here crashes the version sort.
+    tag_name: r.tagName ?? r.tag_name ?? '',
     name: r.name ?? '',
-    published_at: r.publishedAt ?? '',
-    prerelease: r.prerelease,
+    published_at: r.publishedAt ?? r.published_at ?? '',
+    prerelease: r.prerelease ?? false,
     body: r.body ?? '',
-    html_url: r.htmlUrl,
+    html_url: r.htmlUrl ?? r.html_url ?? '',
     assets: [],
   };
 }
@@ -289,7 +294,7 @@ export function AutoUpdate() {
           const list = await window.callerflash.updater.listReleases();
           if (!cancelled) {
             setListError(null);
-            setReleases(list.map(toGithubRelease));
+            setReleases(list.map(toGithubRelease).filter((r) => r.tag_name));
           }
           return;
         }

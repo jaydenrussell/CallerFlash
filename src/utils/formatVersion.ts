@@ -12,7 +12,9 @@
  * Stable / Beta versions are returned as-is (minus the optional "v" prefix).
  */
 export function formatVersion(version: string): string {
-  if (!version) return version;
+  // Non-strings (undefined/null from bad IPC payloads) must never reach the
+  // regex calls below — return '' so comparisons degrade instead of crashing.
+  if (!version || typeof version !== 'string') return '';
 
   // Strip the 'v' prefix if it exists
   let cleaned = version.replace(/^v/, '');
