@@ -14,7 +14,7 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::sync::Mutex;
+use tokio::sync::{watch, Mutex};
 use tokio_util::sync::CancellationToken;
 
 use crate::error::CommandError;
@@ -25,6 +25,32 @@ const MIN_REGISTER_EXPIRY: u32 = 30;
 const MAX_REGISTER_EXPIRY: u32 = 86400;
 const MIN_PORT: u16 = 1;
 const MAX_PORT: u16 = 65535;
+
+/// Consecutive registration-refresh failures tolerated before the session is
+/// torn down and fully re-dialed (fresh DNS + transport). A dead socket can
+/// never recover by retrying REGISTER over it, so persistent failures must
+/// escalate to a reconnect.
+const REFRESH_FAILURES_BEFORE_REDIAL: u32 = 3;
+
+/// Exponential backoff between reconnect attempts, in seconds:
+/// 2, 4, 8, ..., capped at 5 minutes. `attempt` starts at 1.
+fn reconnect_delay_secs(attempt: u32) -> u64 {
+    const CAP_SECS: u64 = 300;
+    if attempt == 0 {
+        return 0;
+    }
+    2u64.saturating_pow(attempt.min(9)).min(CAP_SECS)
+}
+
+/// Resolves when the shared desired-state flag flips to false (user pressed
+/// Disconnect). Also resolves if the sender is dropped.
+async fn desired_stopped(rx: &mut watch::Receiver<bool>) {
+    while *rx.borrow_and_update() {
+        if rx.changed().await.is_err() {
+            return;
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct SipConfig {
@@ -314,379 +340,535 @@ pub struct SipClient {
     pub connected: Arc<Mutex<bool>>,
     pub handle: AppHandle,
     pub task_handle: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
+    /// Shared "user wants a connection" flag. `false` stops the reconnect
+    /// supervisor and triggers a graceful unREGISTER inside the live session.
+    desired_tx: Arc<watch::Sender<bool>>,
 }
 
 impl SipClient {
     pub fn new(handle: AppHandle) -> Self {
+        let (desired_tx, _) = watch::channel(false);
         Self {
             connected: Arc::new(Mutex::new(false)),
             handle,
             task_handle: Arc::new(Mutex::new(None)),
+            desired_tx: Arc::new(desired_tx),
         }
     }
 
     pub async fn start(&self, config: SipConfig) {
         let handle = self.handle.clone();
         let connected = self.connected.clone();
+        let mut desired_rx = self.desired_tx.subscribe();
+        let _ = self.desired_tx.send(true);
+        *connected.lock().await = false;
 
+        // Supervisor: run connection sessions in a loop. A session that ends
+        // on its own (failed DNS/transport/registration, dead socket, panic)
+        // is retried with exponential backoff until the user disconnects.
         let join_handle = tokio::spawn(async move {
-            let future = std::panic::AssertUnwindSafe(async move {
-                let server = config.server.clone();
-                let protocol = config.protocol.as_deref().unwrap_or("UDP").to_uppercase();
-                let port = config
-                    .port
-                    .unwrap_or(if protocol == "TLS" { 5061 } else { 5060 });
+            let mut attempt: u32 = 0;
+            while *desired_rx.borrow_and_update() {
+                *connected.lock().await = false;
+                // The session gets its own receiver; the supervisor keeps one
+                // for observing user-stops between sessions.
+                let mut session_rx = desired_rx.clone();
+                // Fresh clones per attempt — the session body moves them.
+                // Supervisor keeps its own for post-session bookkeeping.
+                let sup_handle = handle.clone();
+                let sup_connected = connected.clone();
+                let handle = handle.clone();
+                let connected = connected.clone();
+                let config = config.clone();
+                let future = std::panic::AssertUnwindSafe(async move {
+                    let server = config.server.clone();
+                    let protocol = config.protocol.as_deref().unwrap_or("UDP").to_uppercase();
+                    let port = config
+                        .port
+                        .unwrap_or(if protocol == "TLS" { 5061 } else { 5060 });
 
-                let server_addr =
-                    match tokio::net::lookup_host(format!("{}:{}", server, port)).await {
-                        Ok(mut addrs) => match addrs.next() {
-                            Some(addr) => addr,
-                            None => {
+                    let server_addr =
+                        match tokio::net::lookup_host(format!("{}:{}", server, port)).await {
+                            Ok(mut addrs) => match addrs.next() {
+                                Some(addr) => addr,
+                                None => {
+                                    safe_emit(
+                                        &handle,
+                                        "sip:status",
+                                        SipStatus {
+                                            status: "error".to_string(),
+                                            message: Some(user_safe_sip_error(&format!(
+                                                "No addresses found for {}:{}",
+                                                server, port
+                                            ))),
+                                        },
+                                    );
+                                    return;
+                                }
+                            },
+                            Err(e) => {
                                 safe_emit(
                                     &handle,
                                     "sip:status",
                                     SipStatus {
                                         status: "error".to_string(),
                                         message: Some(user_safe_sip_error(&format!(
-                                            "No addresses found for {}:{}",
-                                            server, port
+                                            "DNS resolution failed: {}",
+                                            e
                                         ))),
                                     },
                                 );
                                 return;
                             }
-                        },
+                        };
+
+                    let cancel_token = CancellationToken::new();
+                    let (transport, local_port, tls_config) = match create_transport(
+                        &protocol,
+                        server_addr.ip(),
+                        port,
+                        &server,
+                        cancel_token.child_token(),
+                    )
+                    .await
+                    {
+                        Ok(t) => t,
                         Err(e) => {
                             safe_emit(
                                 &handle,
                                 "sip:status",
                                 SipStatus {
                                     status: "error".to_string(),
-                                    message: Some(user_safe_sip_error(&format!(
-                                        "DNS resolution failed: {}",
-                                        e
-                                    ))),
+                                    message: Some(user_safe_sip_error(&e)),
                                 },
                             );
                             return;
                         }
                     };
 
-                let cancel_token = CancellationToken::new();
-                let (transport, local_port, tls_config) = match create_transport(
-                    &protocol,
-                    server_addr.ip(),
-                    port,
-                    &server,
-                    cancel_token.child_token(),
-                )
-                .await
-                {
-                    Ok(t) => t,
-                    Err(e) => {
-                        safe_emit(
-                            &handle,
-                            "sip:status",
-                            SipStatus {
-                                status: "error".to_string(),
-                                message: Some(user_safe_sip_error(&e)),
-                            },
-                        );
-                        return;
+                    safe_emit(
+                        &handle,
+                        "sip:status",
+                        SipStatus {
+                            status: "connecting".to_string(),
+                            message: Some(format!("Bound to {} port {}", protocol, local_port)),
+                        },
+                    );
+
+                    // Build TransportLayer and Endpoint for transaction handling.
+                    // add_connection registers TCP/TLS (they have a remote address);
+                    // add_transport also registers UDP (no remote address) into the
+                    // listen set that serve_listens() and lookup() traverse.
+                    let transport_layer = TransportLayer::new(cancel_token.child_token());
+                    if let Some(tls_config) = tls_config {
+                        // Ensure any TLS connection created by the transport layer's
+                        // lookup() (which re-resolves the domain and may create a fresh
+                        // connection instead of reusing the pre-connected one) has the
+                        // same CA roots + SNI. Without this, the fallback connection
+                        // uses an empty TlsConfig and the TLS handshake fails.
+                        transport_layer.set_tls_config(tls_config);
                     }
-                };
+                    transport_layer.add_connection(transport.clone());
+                    transport_layer.add_transport(transport.clone());
 
-                safe_emit(
-                    &handle,
-                    "sip:status",
-                    SipStatus {
-                        status: "connecting".to_string(),
-                        message: Some(format!("Bound to {} port {}", protocol, local_port)),
-                    },
-                );
+                    let endpoint = RsEndpointBuilder::new()
+                        .with_user_agent("CallerFlash")
+                        .with_transport_layer(transport_layer)
+                        .with_cancel_token(cancel_token.child_token())
+                        .build();
 
-                // Build TransportLayer and Endpoint for transaction handling.
-                // add_connection registers TCP/TLS (they have a remote address);
-                // add_transport also registers UDP (no remote address) into the
-                // listen set that serve_listens() and lookup() traverse.
-                let transport_layer = TransportLayer::new(cancel_token.child_token());
-                if let Some(tls_config) = tls_config {
-                    // Ensure any TLS connection created by the transport layer's
-                    // lookup() (which re-resolves the domain and may create a fresh
-                    // connection instead of reusing the pre-connected one) has the
-                    // same CA roots + SNI. Without this, the fallback connection
-                    // uses an empty TlsConfig and the TLS handshake fails.
-                    transport_layer.set_tls_config(tls_config);
-                }
-                transport_layer.add_connection(transport.clone());
-                transport_layer.add_transport(transport.clone());
+                    let endpoint_inner = endpoint.inner.clone();
+                    let mut incoming = match endpoint.incoming_transactions() {
+                        Ok(rx) => rx,
+                        Err(e) => {
+                            log::error!("[sip] Failed to get incoming transactions: {}", e);
+                            safe_emit(
+                                &handle,
+                                "sip:status",
+                                SipStatus {
+                                    status: "error".to_string(),
+                                    message: Some(
+                                        "Internal error: failed to initialize SIP".to_string(),
+                                    ),
+                                },
+                            );
+                            return;
+                        }
+                    };
 
-                let endpoint = RsEndpointBuilder::new()
-                    .with_user_agent("CallerFlash")
-                    .with_transport_layer(transport_layer)
-                    .with_cancel_token(cancel_token.child_token())
-                    .build();
+                    let endpoint_serve = tokio::spawn({
+                        let inner = endpoint_inner.clone();
+                        async move {
+                            let _ = inner.serve().await;
+                        }
+                    });
 
-                let endpoint_inner = endpoint.inner.clone();
-                let mut incoming = match endpoint.incoming_transactions() {
-                    Ok(rx) => rx,
-                    Err(e) => {
-                        log::error!("[sip] Failed to get incoming transactions: {}", e);
-                        safe_emit(
-                            &handle,
-                            "sip:status",
-                            SipStatus {
-                                status: "error".to_string(),
-                                message: Some(
-                                    "Internal error: failed to initialize SIP".to_string(),
-                                ),
-                            },
-                        );
-                        return;
-                    }
-                };
-
-                let endpoint_serve = tokio::spawn({
-                    let inner = endpoint_inner.clone();
-                    async move {
-                        let _ = inner.serve().await;
-                    }
-                });
-
-                let server_transport_param = match protocol.as_str() {
-                    "TCP" => ";transport=tcp",
-                    "TLS" => ";transport=tls",
-                    _ => "",
-                };
-                let server_uri = match Uri::try_from(
-                    format!("sip:{}:{}{}", config.server, port, server_transport_param).as_str(),
-                ) {
-                    Ok(u) => u,
-                    Err(e) => {
-                        log::error!("[sip] Invalid server URI: {}", e);
-                        safe_emit(
-                            &handle,
-                            "sip:status",
-                            SipStatus {
-                                status: "error".to_string(),
-                                message: Some("Invalid server address".to_string()),
-                            },
-                        );
-                        return;
-                    }
-                };
-
-                let auth_username = config
-                    .auth_username
-                    .clone()
-                    .unwrap_or_else(|| config.username.clone());
-                let credential = Credential {
-                    username: auth_username,
-                    password: config.password.expose_secret().to_string(),
-                    realm: None,
-                };
-
-                let expiry = config.register_expiry.unwrap_or(300);
-                let refresh_ms = std::cmp::max((expiry as u64).saturating_sub(15) * 1000, 30_000);
-                let mut consecutive_failures = 0u32;
-
-                // Build initial REGISTER request
-                let call_id = rsipstack::transaction::make_call_id(Some("127.0.0.1"));
-                let from_to_uri = match Uri::try_from(
-                    format!("sip:{}@{}", config.username, config.server).as_str(),
-                ) {
-                    Ok(u) => u,
-                    Err(e) => {
-                        log::error!("[sip] Invalid From/To URI: {}", e);
-                        return;
-                    }
-                };
-                // Determine the local IP for the Contact header. The SIP server uses
-                // this to route incoming calls back to us; it must be our address,
-                // not the server's.
-                let local_ip = get_local_ip_for(std::net::SocketAddr::new(server_addr.ip(), port));
-                let local_ip_str = local_ip.to_string();
-                let contact_uri = match Uri::try_from({
-                    let transport_param = match protocol.as_str() {
+                    let server_transport_param = match protocol.as_str() {
                         "TCP" => ";transport=tcp",
                         "TLS" => ";transport=tls",
                         _ => "",
                     };
-                    format!(
-                        "sip:{}@{}:{}{}",
-                        config.username, local_ip_str, local_port, transport_param
-                    )
-                    .as_str()
-                }) {
-                    Ok(u) => u,
-                    Err(e) => {
-                        log::error!("[sip] Invalid Contact URI: {}", e);
-                        return;
-                    }
-                };
+                    let server_uri = match Uri::try_from(
+                        format!("sip:{}:{}{}", config.server, port, server_transport_param)
+                            .as_str(),
+                    ) {
+                        Ok(u) => u,
+                        Err(e) => {
+                            log::error!("[sip] Invalid server URI: {}", e);
+                            safe_emit(
+                                &handle,
+                                "sip:status",
+                                SipStatus {
+                                    status: "error".to_string(),
+                                    message: Some("Invalid server address".to_string()),
+                                },
+                            );
+                            return;
+                        }
+                    };
 
-                let mut cseq = 1u32;
+                    let auth_username = config
+                        .auth_username
+                        .clone()
+                        .unwrap_or_else(|| config.username.clone());
+                    let credential = Credential {
+                        username: auth_username,
+                        password: config.password.expose_secret().to_string(),
+                        realm: None,
+                    };
 
-                let _ = handle.emit(
+                    let expiry = config.register_expiry.unwrap_or(300);
+                    let refresh_ms =
+                        std::cmp::max((expiry as u64).saturating_sub(15) * 1000, 30_000);
+                    let mut consecutive_failures = 0u32;
+
+                    // Build initial REGISTER request
+                    let call_id = rsipstack::transaction::make_call_id(Some("127.0.0.1"));
+                    let from_to_uri = match Uri::try_from(
+                        format!("sip:{}@{}", config.username, config.server).as_str(),
+                    ) {
+                        Ok(u) => u,
+                        Err(e) => {
+                            log::error!("[sip] Invalid From/To URI: {}", e);
+                            safe_emit(
+                                &handle,
+                                "sip:status",
+                                SipStatus {
+                                    status: "error".to_string(),
+                                    message: Some("Invalid username or server address".to_string()),
+                                },
+                            );
+                            return;
+                        }
+                    };
+                    // Determine the local IP for the Contact header. The SIP server uses
+                    // this to route incoming calls back to us; it must be our address,
+                    // not the server's.
+                    let local_ip =
+                        get_local_ip_for(std::net::SocketAddr::new(server_addr.ip(), port));
+                    let local_ip_str = local_ip.to_string();
+                    let contact_uri = match Uri::try_from({
+                        let transport_param = match protocol.as_str() {
+                            "TCP" => ";transport=tcp",
+                            "TLS" => ";transport=tls",
+                            _ => "",
+                        };
+                        format!(
+                            "sip:{}@{}:{}{}",
+                            config.username, local_ip_str, local_port, transport_param
+                        )
+                        .as_str()
+                    }) {
+                        Ok(u) => u,
+                        Err(e) => {
+                            log::error!("[sip] Invalid Contact URI: {}", e);
+                            safe_emit(
+                                &handle,
+                                "sip:status",
+                                SipStatus {
+                                    status: "error".to_string(),
+                                    message: Some(
+                                        "Could not determine local contact address".to_string(),
+                                    ),
+                                },
+                            );
+                            return;
+                        }
+                    };
+
+                    let mut cseq = 1u32;
+
+                    let _ = handle.emit(
                     "sip:log",
                     serde_json::json!({"message": format!("[SIP] Starting registration — server: {}:{}, expiry: {}, protocol: {}", config.server, port, expiry, protocol)}),
                 );
 
-                #[allow(clippy::too_many_arguments)]
-                async fn do_register(
-                    endpoint_inner: &Arc<rsipstack::transaction::endpoint::EndpointInner>,
-                    server_uri: &Uri,
-                    from_to_uri: &Uri,
-                    contact_uri: &Uri,
-                    call_id: &sip::headers::CallId,
-                    cseq: &mut u32,
-                    expiry: u32,
-                    credential: &Credential,
-                    handle: &AppHandle,
-                    connected: &Arc<Mutex<bool>>,
-                    consecutive_failures: &mut u32,
-                    local_sip_addr: &SipAddr,
-                ) -> bool {
-                    *cseq += 1;
-                    let via = match endpoint_inner.get_via(Some(local_sip_addr.clone()), None) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            log::error!("[sip] Failed to create Via: {}", e);
-                            safe_emit(
-                                handle,
-                                "sip:status",
-                                SipStatus {
-                                    status: "error".to_string(),
-                                    message: Some(format!("SIP internal error (Via): {}", e)),
-                                },
-                            );
-                            *consecutive_failures += 1;
-                            return false;
-                        }
-                    };
-                    let from = typed::From {
-                        display_name: None,
-                        uri: from_to_uri.clone(),
-                        params: vec![],
-                    }
-                    .with_tag(rsipstack::transaction::make_tag());
-                    let to = typed::To {
-                        display_name: None,
-                        uri: from_to_uri.clone(),
-                        params: vec![],
-                    };
-
-                    let mut request = endpoint_inner.make_request(
-                        Method::Register,
-                        server_uri.clone(),
-                        via,
-                        from,
-                        to,
-                        *cseq,
-                        None,
-                    );
-
-                    let contact = typed::Contact {
-                        display_name: None,
-                        uri: contact_uri.clone(),
-                        params: vec![sip::Param::Expires(sip::param::Expires::new(
-                            expiry.to_string(),
-                        ))],
-                    };
-
-                    request.headers.unique_push(call_id.clone().into());
-                    request.headers.unique_push(contact.into());
-                    request
-                        .headers
-                        .unique_push(Header::Expires(sip::headers::Expires::from(
-                            expiry.to_string(),
-                        )));
-                    request
-                        .headers
-                        .unique_push(sip::headers::UserAgent::new("CallerFlash").into());
-
-                    let key = match TransactionKey::from_request(&request, TransactionRole::Client)
-                    {
-                        Ok(k) => k,
-                        Err(e) => {
-                            log::error!("[sip] Failed to create transaction key: {}", e);
-                            safe_emit(
-                                handle,
-                                "sip:status",
-                                SipStatus {
-                                    status: "error".to_string(),
-                                    message: Some(format!(
-                                        "SIP internal error (transaction key): {}",
-                                        e
-                                    )),
-                                },
-                            );
-                            *consecutive_failures += 1;
-                            return false;
-                        }
-                    };
-
-                    let mut tx =
-                        Transaction::new_client(key, request, endpoint_inner.clone(), None);
-
-                    if let Err(e) = tx.send().await {
-                        log::error!("[sip] Failed to send REGISTER: {}", e);
-                        safe_emit(
-                            handle,
-                            "sip:status",
-                            SipStatus {
-                                status: "error".to_string(),
-                                message: Some(format!("Failed to send REGISTER: {}", e)),
-                            },
-                        );
-                        *consecutive_failures += 1;
-                        return false;
-                    }
-
-                    let mut auth_sent = false;
-
-                    loop {
-                        // Bound each REGISTER response wait so a server that never
-                        // replies cannot leave the client stuck "connecting" forever.
-                        let recv =
-                            tokio::time::timeout(std::time::Duration::from_secs(15), tx.receive())
-                                .await;
-                        let msg = match recv {
-                            Ok(Some(m)) => m,
-                            Ok(None) => break,
-                            Err(_) => {
-                                log::error!(
-                                    "[sip] REGISTER timed out after 15s — no response from server"
-                                );
+                    #[allow(clippy::too_many_arguments)]
+                    async fn do_register(
+                        endpoint_inner: &Arc<rsipstack::transaction::endpoint::EndpointInner>,
+                        server_uri: &Uri,
+                        from_to_uri: &Uri,
+                        contact_uri: &Uri,
+                        call_id: &sip::headers::CallId,
+                        cseq: &mut u32,
+                        expiry: u32,
+                        credential: &Credential,
+                        handle: &AppHandle,
+                        connected: &Arc<Mutex<bool>>,
+                        consecutive_failures: &mut u32,
+                        local_sip_addr: &SipAddr,
+                    ) -> bool {
+                        *cseq += 1;
+                        let via = match endpoint_inner.get_via(Some(local_sip_addr.clone()), None) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                log::error!("[sip] Failed to create Via: {}", e);
                                 safe_emit(
                                     handle,
                                     "sip:status",
                                     SipStatus {
                                         status: "error".to_string(),
-                                        message: Some(
-                                            "Registration timed out — no response from server"
-                                                .to_string(),
-                                        ),
+                                        message: Some(format!("SIP internal error (Via): {}", e)),
                                     },
                                 );
                                 *consecutive_failures += 1;
                                 return false;
                             }
                         };
-                        if let SipMessage::Response(resp) = msg {
-                            log::info!(
-                                "[sip] REGISTER response: {} {}",
-                                resp.status_code.code(),
-                                resp.reason_phrase().unwrap_or("")
+                        let from = typed::From {
+                            display_name: None,
+                            uri: from_to_uri.clone(),
+                            params: vec![],
+                        }
+                        .with_tag(rsipstack::transaction::make_tag());
+                        let to = typed::To {
+                            display_name: None,
+                            uri: from_to_uri.clone(),
+                            params: vec![],
+                        };
+
+                        let mut request = endpoint_inner.make_request(
+                            Method::Register,
+                            server_uri.clone(),
+                            via,
+                            from,
+                            to,
+                            *cseq,
+                            None,
+                        );
+
+                        let contact = typed::Contact {
+                            display_name: None,
+                            uri: contact_uri.clone(),
+                            params: vec![sip::Param::Expires(sip::param::Expires::new(
+                                expiry.to_string(),
+                            ))],
+                        };
+
+                        request.headers.unique_push(call_id.clone().into());
+                        request.headers.unique_push(contact.into());
+                        request
+                            .headers
+                            .unique_push(Header::Expires(sip::headers::Expires::from(
+                                expiry.to_string(),
+                            )));
+                        request
+                            .headers
+                            .unique_push(sip::headers::UserAgent::new("CallerFlash").into());
+
+                        let key =
+                            match TransactionKey::from_request(&request, TransactionRole::Client) {
+                                Ok(k) => k,
+                                Err(e) => {
+                                    log::error!("[sip] Failed to create transaction key: {}", e);
+                                    safe_emit(
+                                        handle,
+                                        "sip:status",
+                                        SipStatus {
+                                            status: "error".to_string(),
+                                            message: Some(format!(
+                                                "SIP internal error (transaction key): {}",
+                                                e
+                                            )),
+                                        },
+                                    );
+                                    *consecutive_failures += 1;
+                                    return false;
+                                }
+                            };
+
+                        let mut tx =
+                            Transaction::new_client(key, request, endpoint_inner.clone(), None);
+
+                        if let Err(e) = tx.send().await {
+                            log::error!("[sip] Failed to send REGISTER: {}", e);
+                            safe_emit(
+                                handle,
+                                "sip:status",
+                                SipStatus {
+                                    status: "error".to_string(),
+                                    message: Some(format!("Failed to send REGISTER: {}", e)),
+                                },
                             );
-                            match resp.status_code {
-                                StatusCode::Unauthorized
-                                | StatusCode::ProxyAuthenticationRequired => {
-                                    if auth_sent {
+                            *consecutive_failures += 1;
+                            return false;
+                        }
+
+                        let mut auth_sent = false;
+
+                        loop {
+                            // Bound each REGISTER response wait so a server that never
+                            // replies cannot leave the client stuck "connecting" forever.
+                            let recv = tokio::time::timeout(
+                                std::time::Duration::from_secs(15),
+                                tx.receive(),
+                            )
+                            .await;
+                            let msg = match recv {
+                                Ok(Some(m)) => m,
+                                Ok(None) => break,
+                                Err(_) => {
+                                    log::error!(
+                                    "[sip] REGISTER timed out after 15s — no response from server"
+                                );
+                                    safe_emit(
+                                        handle,
+                                        "sip:status",
+                                        SipStatus {
+                                            status: "error".to_string(),
+                                            message: Some(
+                                                "Registration timed out — no response from server"
+                                                    .to_string(),
+                                            ),
+                                        },
+                                    );
+                                    *consecutive_failures += 1;
+                                    return false;
+                                }
+                            };
+                            if let SipMessage::Response(resp) = msg {
+                                log::info!(
+                                    "[sip] REGISTER response: {} {}",
+                                    resp.status_code.code(),
+                                    resp.reason_phrase().unwrap_or("")
+                                );
+                                match resp.status_code {
+                                    StatusCode::Unauthorized
+                                    | StatusCode::ProxyAuthenticationRequired => {
+                                        if auth_sent {
+                                            let reason =
+                                                resp.reason_phrase().unwrap_or("").to_string();
+                                            log::error!(
+                                                "[sip] Auth retry failed: {} {}",
+                                                resp.status_code.code(),
+                                                reason
+                                            );
+                                            safe_emit(
+                                                handle,
+                                                "sip:status",
+                                                SipStatus {
+                                                    status: "error".to_string(),
+                                                    message: Some(format!(
+                                                        "Authentication retry failed: {} {}",
+                                                        resp.status_code.code(),
+                                                        reason
+                                                    )),
+                                                },
+                                            );
+                                            *consecutive_failures += 1;
+                                            return false;
+                                        }
+
+                                        // Extract public address from 401 response top Via header (rport/received)
+                                        // and update Contact header before authenticated retry.
+                                        // This ensures the Contact uses the public IP:port instead of local LAN IP.
+                                        if let Ok(via) = resp.top_via_header() {
+                                            if let Ok((_, public_addr)) =
+                                                SipConnection::parse_target_from_via(&via)
+                                            {
+                                                let public_addr_clone = public_addr.clone();
+                                                // Parse the existing Contact to preserve params BEFORE removing it
+                                                let existing_contact =
+                                                    tx.original.headers.iter().find_map(|h| {
+                                                        if let Header::Contact(contact) = h {
+                                                            contact.typed().ok()
+                                                        } else {
+                                                            None
+                                                        }
+                                                    });
+                                                tx.original.headers.remove_first(|h| {
+                                                    matches!(h, Header::Contact(_))
+                                                });
+                                                if let Some(mut tc) = existing_contact {
+                                                    tc.uri.host_with_port = public_addr;
+                                                    tx.original.headers.unique_push(tc.into());
+                                                    log::info!(
+                                                "[sip] Updated Contact header with public address: {}",
+                                                public_addr_clone
+                                            );
+                                                }
+                                            }
+                                        }
+
+                                        *cseq += 1;
+                                        match handle_client_authenticate(
+                                            *cseq, &tx, resp, credential,
+                                        )
+                                        .await
+                                        {
+                                            Ok(auth_tx) => {
+                                                tx = auth_tx;
+                                                if let Err(e) = tx.send().await {
+                                                    log::error!(
+                                                        "[sip] Failed to send auth REGISTER: {}",
+                                                        e
+                                                    );
+                                                    *consecutive_failures += 1;
+                                                    return false;
+                                                }
+                                                auth_sent = true;
+                                            }
+                                            Err(e) => {
+                                                log::error!(
+                                                    "[sip] Auth challenge handling failed: {}",
+                                                    e
+                                                );
+                                                safe_emit(
+                                                    handle,
+                                                    "sip:status",
+                                                    SipStatus {
+                                                        status: "error".to_string(),
+                                                        message: Some(format!(
+                                                            "Auth challenge handling failed: {}",
+                                                            e
+                                                        )),
+                                                    },
+                                                );
+                                                *consecutive_failures += 1;
+                                                return false;
+                                            }
+                                        }
+                                    }
+                                    StatusCode::OK => {
+                                        *connected.lock().await = true;
+                                        *consecutive_failures = 0;
+                                        safe_emit(
+                                            handle,
+                                            "sip:status",
+                                            SipStatus {
+                                                status: "registered".to_string(),
+                                                message: None,
+                                            },
+                                        );
+                                        log::info!("[sip] Registered successfully");
+                                        return true;
+                                    }
+                                    _ => {
                                         let reason = resp.reason_phrase().unwrap_or("").to_string();
+                                        let code = resp.status_code.code();
                                         log::error!(
-                                            "[sip] Auth retry failed: {} {}",
-                                            resp.status_code.code(),
+                                            "[sip] Registration failed: {} {}",
+                                            code,
                                             reason
                                         );
                                         safe_emit(
@@ -695,300 +877,301 @@ impl SipClient {
                                             SipStatus {
                                                 status: "error".to_string(),
                                                 message: Some(format!(
-                                                    "Authentication retry failed: {} {}",
-                                                    resp.status_code.code(),
-                                                    reason
+                                                    "Registration failed: {} {}",
+                                                    code, reason
                                                 )),
                                             },
                                         );
                                         *consecutive_failures += 1;
                                         return false;
                                     }
-
-                                    // Extract public address from 401 response top Via header (rport/received)
-                                    // and update Contact header before authenticated retry.
-                                    // This ensures the Contact uses the public IP:port instead of local LAN IP.
-                                    if let Ok(via) = resp.top_via_header() {
-                                        if let Ok((_, public_addr)) =
-                                            SipConnection::parse_target_from_via(&via)
-                                        {
-                                            let public_addr_clone = public_addr.clone();
-                                            // Parse the existing Contact to preserve params BEFORE removing it
-                                            let existing_contact =
-                                                tx.original.headers.iter().find_map(|h| {
-                                                    if let Header::Contact(contact) = h {
-                                                        contact.typed().ok()
-                                                    } else {
-                                                        None
-                                                    }
-                                                });
-                                            tx.original
-                                                .headers
-                                                .remove_first(|h| matches!(h, Header::Contact(_)));
-                                            if let Some(mut tc) = existing_contact {
-                                                tc.uri.host_with_port = public_addr;
-                                                tx.original.headers.unique_push(tc.into());
-                                                log::info!(
-                                                "[sip] Updated Contact header with public address: {}",
-                                                public_addr_clone
-                                            );
-                                            }
-                                        }
-                                    }
-
-                                    *cseq += 1;
-                                    match handle_client_authenticate(*cseq, &tx, resp, credential)
-                                        .await
-                                    {
-                                        Ok(auth_tx) => {
-                                            tx = auth_tx;
-                                            if let Err(e) = tx.send().await {
-                                                log::error!(
-                                                    "[sip] Failed to send auth REGISTER: {}",
-                                                    e
-                                                );
-                                                *consecutive_failures += 1;
-                                                return false;
-                                            }
-                                            auth_sent = true;
-                                        }
-                                        Err(e) => {
-                                            log::error!(
-                                                "[sip] Auth challenge handling failed: {}",
-                                                e
-                                            );
-                                            safe_emit(
-                                                handle,
-                                                "sip:status",
-                                                SipStatus {
-                                                    status: "error".to_string(),
-                                                    message: Some(format!(
-                                                        "Auth challenge handling failed: {}",
-                                                        e
-                                                    )),
-                                                },
-                                            );
-                                            *consecutive_failures += 1;
-                                            return false;
-                                        }
-                                    }
-                                }
-                                StatusCode::OK => {
-                                    *connected.lock().await = true;
-                                    *consecutive_failures = 0;
-                                    safe_emit(
-                                        handle,
-                                        "sip:status",
-                                        SipStatus {
-                                            status: "registered".to_string(),
-                                            message: None,
-                                        },
-                                    );
-                                    log::info!("[sip] Registered successfully");
-                                    return true;
-                                }
-                                _ => {
-                                    let reason = resp.reason_phrase().unwrap_or("").to_string();
-                                    let code = resp.status_code.code();
-                                    log::error!("[sip] Registration failed: {} {}", code, reason);
-                                    safe_emit(
-                                        handle,
-                                        "sip:status",
-                                        SipStatus {
-                                            status: "error".to_string(),
-                                            message: Some(format!(
-                                                "Registration failed: {} {}",
-                                                code, reason
-                                            )),
-                                        },
-                                    );
-                                    *consecutive_failures += 1;
-                                    return false;
                                 }
                             }
                         }
+
+                        *consecutive_failures += 1;
+                        safe_emit(
+                            handle,
+                            "sip:status",
+                            SipStatus {
+                                status: "error".to_string(),
+                                message: Some(
+                                    "Registration failed — connection closed unexpectedly"
+                                        .to_string(),
+                                ),
+                            },
+                        );
+                        false
                     }
 
-                    *consecutive_failures += 1;
-                    false
-                }
+                    // Initial registration — its return value is NOT discarded anymore.
+                    // If it fails, we abort the task immediately (do_register already
+                    // emitted a sip:status error event).
+                    let local_sip_addr = match &transport {
+                        // Use the transport's own address as-is so get_via can find it
+                        // in the transport layer. For UDP the host will be 0.0.0.0 but
+                        // the SIP server sends responses to the UDP packet's source IP.
+                        SipConnection::Udp(u) => u.get_addr().clone(),
+                        SipConnection::Tcp(t) => t.get_addr().clone(),
+                        SipConnection::Tls(t) => t.get_addr().clone(),
+                        _ => {
+                            log::error!("[sip] Unsupported transport type for Via");
+                            safe_emit(
+                                &handle,
+                                "sip:status",
+                                SipStatus {
+                                    status: "error".to_string(),
+                                    message: Some("Unsupported transport type".to_string()),
+                                },
+                            );
+                            cancel_token.cancel();
+                            endpoint_serve.abort();
+                            return;
+                        }
+                    };
+                    let registered = do_register(
+                        &endpoint_inner,
+                        &server_uri,
+                        &from_to_uri,
+                        &contact_uri,
+                        &call_id,
+                        &mut cseq,
+                        expiry,
+                        &credential,
+                        &handle,
+                        &connected,
+                        &mut consecutive_failures,
+                        &local_sip_addr,
+                    )
+                    .await;
 
-                // Initial registration — its return value is NOT discarded anymore.
-                // If it fails, we abort the task immediately (do_register already
-                // emitted a sip:status error event).
-                let local_sip_addr = match &transport {
-                    // Use the transport's own address as-is so get_via can find it
-                    // in the transport layer. For UDP the host will be 0.0.0.0 but
-                    // the SIP server sends responses to the UDP packet's source IP.
-                    SipConnection::Udp(u) => u.get_addr().clone(),
-                    SipConnection::Tcp(t) => t.get_addr().clone(),
-                    SipConnection::Tls(t) => t.get_addr().clone(),
-                    _ => {
-                        log::error!("[sip] Unsupported transport type for Via");
+                    if !registered {
+                        log::error!("[sip] Initial registration failed — aborting task");
                         cancel_token.cancel();
                         endpoint_serve.abort();
                         return;
                     }
-                };
-                let registered = do_register(
-                    &endpoint_inner,
-                    &server_uri,
-                    &from_to_uri,
-                    &contact_uri,
-                    &call_id,
-                    &mut cseq,
-                    expiry,
-                    &credential,
-                    &handle,
-                    &connected,
-                    &mut consecutive_failures,
-                    &local_sip_addr,
-                )
-                .await;
 
-                if !registered {
-                    log::error!("[sip] Initial registration failed — aborting task");
-                    cancel_token.cancel();
-                    endpoint_serve.abort();
-                    return;
-                }
+                    // TCP/TLS/UDP keepalive: send CRLF every 20s to keep the router's NAT
+                    // mapping alive. Consumer routers drop idle NAT mappings in 30-120
+                    // seconds depending on transport (UDP is typically ~30s, TCP ~60-120s).
+                    let keepalive_transport = transport.clone();
+                    let keepalive_server_addr = SipAddr::from(server_addr);
+                    let keepalive_cancel = cancel_token.child_token();
+                    tokio::spawn(async move {
+                        let mut interval =
+                            tokio::time::interval(std::time::Duration::from_secs(20));
+                        // Skip the immediate first tick
+                        interval.tick().await;
+                        loop {
+                            tokio::select! {
+                                _ = interval.tick() => {
+                                    log::debug!("[sip] Sending keepalive...");
+                                    let ka = b"\r\n\r\n";
+                                    let result = match &keepalive_transport {
+                                        SipConnection::Tcp(tcp) => tcp.send_raw(ka).await,
+                                        SipConnection::Tls(tls) => tls.send_raw(ka).await,
+                                        SipConnection::Udp(udp) => udp.send_raw(ka, &keepalive_server_addr).await,
+                                        _ => Ok(()),
+                                    };
+                                    if let Err(e) = result {
+                                        log::error!("[sip] Keepalive send failed: {}", e);
+                                    } else {
+                                        log::debug!("[sip] Keepalive sent OK");
+                                    }
+                                }
+                                _ = keepalive_cancel.cancelled() => break,
+                            }
+                        }
+                    });
 
-                // TCP/TLS/UDP keepalive: send CRLF every 20s to keep the router's NAT
-                // mapping alive. Consumer routers drop idle NAT mappings in 30-120
-                // seconds depending on transport (UDP is typically ~30s, TCP ~60-120s).
-                let keepalive_transport = transport.clone();
-                let keepalive_server_addr = SipAddr::from(server_addr);
-                let keepalive_cancel = cancel_token.child_token();
-                tokio::spawn(async move {
-                    let mut interval = tokio::time::interval(std::time::Duration::from_secs(20));
-                    // Skip the immediate first tick
-                    interval.tick().await;
+                    // Main loop: re-registration + INVITE listener + graceful stop.
+                    // This loop only runs when the initial registration succeeded
+                    // (the !registered check above exits on failure).
                     loop {
+                        let base_ms = refresh_ms;
+                        let backoff_ms = base_ms * 2u64.pow(consecutive_failures.min(6));
+                        let delay_ms = backoff_ms.min(60_000);
+
                         tokio::select! {
-                            _ = interval.tick() => {
-                                log::debug!("[sip] Sending keepalive...");
-                                let ka = b"\r\n\r\n";
-                                let result = match &keepalive_transport {
-                                    SipConnection::Tcp(tcp) => tcp.send_raw(ka).await,
-                                    SipConnection::Tls(tls) => tls.send_raw(ka).await,
-                                    SipConnection::Udp(udp) => udp.send_raw(ka, &keepalive_server_addr).await,
-                                    _ => Ok(()),
-                                };
-                                if let Err(e) = result {
-                                    log::error!("[sip] Keepalive send failed: {}", e);
+                            Some(mut tx) = incoming.recv() => {
+                                log::info!("[sip] Incoming transaction: method={}", tx.original.method);
+                                if tx.original.method == Method::Invite {
+                                    log::info!("[sip] INVITE received — emitting sip:invite");
+                                    let (caller_number, caller_name) =
+                                        extract_invite_caller(&SipMessage::Request(tx.original.clone()));
+
+                                    let invite_data = InviteData {
+                                        caller_number,
+                                        caller_name,
+                                    };
+                                    safe_emit(&handle, "sip:invite", invite_data);
+
+                                    // No response is sent: CallerFlash is caller-ID only, so staying
+                                    // silent lets voip.ms keep ringing/forwarding to other devices
+                                    // registered on the DID. Watch the transaction until voip.ms
+                                    // cancels it (branch ended — another device answered, or the
+                                    // caller hung up) or until a timeout, then report the end.
+                                    let end_handle = handle.clone();
+                                    tokio::spawn(async move {
+                                        let outcome = tokio::time::timeout(
+                                            std::time::Duration::from_secs(90),
+                                            async {
+                                                loop {
+                                                    match tx.receive().await {
+                                                        Some(SipMessage::Request(req))
+                                                            if req.method == Method::Cancel =>
+                                                        {
+                                                            break "cancel";
+                                                        }
+                                                        Some(_) => continue,
+                                                        None => break "closed",
+                                                    }
+                                                }
+                                            },
+                                        )
+                                        .await;
+
+                                        let reason = match outcome {
+                                            Ok(r) => r.to_string(),
+                                            Err(_) => "timeout".to_string(),
+                                        };
+                                        log::info!("[sip] Inbound INVITE branch ended: {}", reason);
+                                        safe_emit(
+                                            &end_handle,
+                                            "sip:invite:ended",
+                                            InviteEndData { reason },
+                                        );
+                                    });
                                 } else {
-                                    log::debug!("[sip] Keepalive sent OK");
+                                    log::info!("[sip] Other incoming method: {}", tx.original.method);
                                 }
                             }
-                            _ = keepalive_cancel.cancelled() => break,
-                        }
-                    }
-                });
+                            _ = tokio::time::sleep(std::time::Duration::from_millis(delay_ms)) => {
+                                if !*connected.lock().await {
+                                    break;
+                                }
 
-                // Main loop: re-registration + INVITE listener.
-                // This loop only runs when the initial registration succeeded
-                // (the !registered check above exits on failure).
-                loop {
-                    let base_ms = refresh_ms;
-                    let backoff_ms = base_ms * 2u64.pow(consecutive_failures.min(6));
-                    let delay_ms = backoff_ms.min(60_000);
+                                log::info!("[sip] Registration refresh due (expiry={}s)", expiry);
+                                let still_registered = do_register(
+                                    &endpoint_inner,
+                                    &server_uri,
+                                    &from_to_uri,
+                                    &contact_uri,
+                                    &call_id,
+                                    &mut cseq,
+                                    expiry,
+                                    &credential,
+                                    &handle,
+                                    &connected,
+                                    &mut consecutive_failures,
+                                    &local_sip_addr,
+                                ).await;
 
-                    tokio::select! {
-                        Some(mut tx) = incoming.recv() => {
-                            log::info!("[sip] Incoming transaction: method={}", tx.original.method);
-                            if tx.original.method == Method::Invite {
-                                log::info!("[sip] INVITE received — emitting sip:invite");
-                                let (caller_number, caller_name) =
-                                    extract_invite_caller(&SipMessage::Request(tx.original.clone()));
-
-                                let invite_data = InviteData {
-                                    caller_number,
-                                    caller_name,
-                                };
-                                safe_emit(&handle, "sip:invite", invite_data);
-
-                                // No response is sent: CallerFlash is caller-ID only, so staying
-                                // silent lets voip.ms keep ringing/forwarding to other devices
-                                // registered on the DID. Watch the transaction until voip.ms
-                                // cancels it (branch ended — another device answered, or the
-                                // caller hung up) or until a timeout, then report the end.
-                                let end_handle = handle.clone();
-                                tokio::spawn(async move {
-                                    let outcome = tokio::time::timeout(
-                                        std::time::Duration::from_secs(90),
-                                        async {
-                                            loop {
-                                                match tx.receive().await {
-                                                    Some(SipMessage::Request(req))
-                                                        if req.method == Method::Cancel =>
-                                                    {
-                                                        break "cancel";
-                                                    }
-                                                    Some(_) => continue,
-                                                    None => break "closed",
-                                                }
-                                            }
-                                        },
-                                    )
-                                    .await;
-
-                                    let reason = match outcome {
-                                        Ok(r) => r.to_string(),
-                                        Err(_) => "timeout".to_string(),
-                                    };
-                                    log::info!("[sip] Inbound INVITE branch ended: {}", reason);
+                                if !still_registered {
                                     safe_emit(
-                                        &end_handle,
-                                        "sip:invite:ended",
-                                        InviteEndData { reason },
+                                        &handle,
+                                        "sip:status",
+                                        SipStatus {
+                                            status: "error".to_string(),
+                                            message: Some("Registration refresh failed".to_string()),
+                                        },
                                     );
-                                });
-                            } else {
-                                log::info!("[sip] Other incoming method: {}", tx.original.method);
+                                    // A dead socket never recovers by retrying over
+                                    // it — after a few consecutive failures tear the
+                                    // session down so the supervisor re-dials fresh.
+                                    if consecutive_failures >= REFRESH_FAILURES_BEFORE_REDIAL {
+                                        log::error!(
+                                            "[sip] {} consecutive refresh failures — redialing",
+                                            consecutive_failures
+                                        );
+                                        break;
+                                    }
+                                }
                             }
-                        }
-                        _ = tokio::time::sleep(std::time::Duration::from_millis(delay_ms)) => {
-                            if !*connected.lock().await {
-                                break;
-                            }
-
-                            log::info!("[sip] Registration refresh due (expiry={}s)", expiry);
-                            let still_registered = do_register(
-                                &endpoint_inner,
-                                &server_uri,
-                                &from_to_uri,
-                                &contact_uri,
-                                &call_id,
-                                &mut cseq,
-                                expiry,
-                                &credential,
-                                &handle,
-                                &connected,
-                                &mut consecutive_failures,
-                                &local_sip_addr,
-                            ).await;
-
-                            if !still_registered {
+                            _ = desired_stopped(&mut session_rx) => {
+                                // User pressed Disconnect while we were waiting for
+                                // calls: send a best-effort unREGISTER (Expires: 0)
+                                // so the server drops our registration immediately
+                                // instead of keeping it until expiry.
+                                log::info!("[sip] Disconnect requested — sending best-effort unREGISTER");
+                                let _ = tokio::time::timeout(
+                                    std::time::Duration::from_secs(3),
+                                    do_register(
+                                        &endpoint_inner,
+                                        &server_uri,
+                                        &from_to_uri,
+                                        &contact_uri,
+                                        &call_id,
+                                        &mut cseq,
+                                        0, // Expires: 0 == unregister
+                                        &credential,
+                                        &handle,
+                                        &connected,
+                                        &mut consecutive_failures,
+                                        &local_sip_addr,
+                                    ),
+                                )
+                                .await;
+                                *connected.lock().await = false;
                                 safe_emit(
                                     &handle,
                                     "sip:status",
                                     SipStatus {
-                                        status: "error".to_string(),
-                                        message: Some("Registration refresh failed".to_string()),
+                                        status: "disconnected".to_string(),
+                                        message: None,
                                     },
                                 );
+                                break;
                             }
+                            _ = cancel_token.cancelled() => break,
                         }
-                        _ = cancel_token.cancelled() => break,
                     }
+
+                    cancel_token.cancel();
+                    endpoint_serve.abort();
+                });
+
+                if future.catch_unwind().await.is_err() {
+                    log::error!("[sip] connection task panicked");
+                    // Terminal-status guarantee: even a panicking session must
+                    // leave the UI/tray in a truthful state.
+                    safe_emit(
+                        &sup_handle,
+                        "sip:status",
+                        SipStatus {
+                            status: "error".to_string(),
+                            message: Some("Internal SIP error".to_string()),
+                        },
+                    );
                 }
 
-                cancel_token.cancel();
-                endpoint_serve.abort();
-            });
+                // User asked to stop while the session was running.
+                if !*desired_rx.borrow_and_update() {
+                    break;
+                }
 
-            if let Err(panic) = future.catch_unwind().await {
-                log::error!("[sip] connection task panicked: {:?}", panic);
+                // A session that had achieved registration earns a fresh
+                // backoff budget; repeated failures ramp up.
+                if *sup_connected.lock().await {
+                    attempt = 0;
+                }
+                *sup_connected.lock().await = false;
+                attempt = attempt.saturating_add(1);
+                let secs = reconnect_delay_secs(attempt);
+                log::info!("[sip] session ended — reconnect attempt {attempt} in {secs}s");
+                safe_emit(
+                    &sup_handle,
+                    "sip:status",
+                    SipStatus {
+                        status: "connecting".to_string(),
+                        message: Some(format!("Reconnecting in {}s", secs)),
+                    },
+                );
+                tokio::select! {
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(secs)) => {}
+                    _ = desired_stopped(&mut desired_rx) => break,
+                }
             }
         });
 
@@ -1000,13 +1183,34 @@ impl SipClient {
     }
 
     pub fn disconnect(&self) {
+        // Signal every layer: the supervisor's backoff sleep, the live
+        // session's graceful-stop arm, and any future reconnect attempt.
+        let _ = self.desired_tx.send(false);
         let connected = self.connected.clone();
         let task_handle = self.task_handle.clone();
         tokio::spawn(async move {
             *connected.lock().await = false;
-            let mut handle = task_handle.lock().await;
-            if let Some(h) = handle.take() {
-                h.abort();
+            // Grace period lets an active session send its best-effort
+            // unREGISTER (bounded by a 3s timeout there); after that we
+            // hard-abort so shutdown can never hang.
+            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(3500);
+            loop {
+                let mut guard = task_handle.lock().await;
+                match guard.as_ref() {
+                    Some(h) if !h.is_finished() => {
+                        if std::time::Instant::now() >= deadline {
+                            h.abort();
+                            guard.take();
+                            return;
+                        }
+                        drop(guard);
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    }
+                    _ => {
+                        guard.take();
+                        return;
+                    }
+                }
             }
         });
     }
@@ -1140,6 +1344,22 @@ pub async fn sip_test_connection(config: SipConfig) -> Result<serde_json::Value,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reconnect_backoff_is_exponential_and_capped() {
+        assert_eq!(reconnect_delay_secs(0), 0);
+        assert_eq!(reconnect_delay_secs(1), 2);
+        assert_eq!(reconnect_delay_secs(2), 4);
+        assert_eq!(reconnect_delay_secs(3), 8);
+        assert_eq!(reconnect_delay_secs(6), 64);
+        assert_eq!(reconnect_delay_secs(8), 256);
+        assert_eq!(reconnect_delay_secs(9), 300);
+        assert_eq!(reconnect_delay_secs(50), 300);
+        let seq: Vec<u64> = (1..=12).map(reconnect_delay_secs).collect();
+        for w in seq.windows(2) {
+            assert!(w[0] < w[1] || w[1] == 300, "non-monotonic: {w:?}");
+        }
+    }
 
     #[test]
     fn test_sip_config_validation_passes_valid() {
