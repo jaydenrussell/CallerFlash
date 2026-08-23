@@ -385,6 +385,39 @@ fn run_startup_checks(app: AppHandle) -> error::StartupReport {
     startup::run_self_check(data_dir)
 }
 
+/// Decide whether the main window should stay hidden at launch.
+///
+/// The window is created hidden (tauri.conf.json `visible: false`) so that
+/// "start minimized" never flashes a window. We show it here unless the
+/// persisted settings say `startMinimized: true` AND this is not the first
+/// run of a new version — new versions always show the UI once, mirroring the
+/// renderer's `isFirstRunAfterUpdate` logic.
+///
+/// Any read/parse failure fails visible (window shown) rather than leaving
+/// the user with an invisible app and only a tray icon.
+fn should_start_hidden(app: &AppHandle, data_dir: &std::path::Path) -> bool {
+    let raw = match std::fs::read_to_string(data_dir.join("settings.json")) {
+        Ok(raw) => raw,
+        Err(_) => return false,
+    };
+    let settings: serde_json::Value = match serde_json::from_str(&raw) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    let start_minimized = settings
+        .get("appPreferences")
+        .and_then(|p| p.get("startMinimized"))
+        .and_then(|b| b.as_bool())
+        .unwrap_or(false);
+    if !start_minimized {
+        return false;
+    }
+    // First run after an update always shows the UI.
+    let current_version = app.package_info().version.to_string();
+    let last_run_version = settings.get("lastRunVersion").and_then(|s| s.as_str());
+    last_run_version != Some(current_version.as_str())
+}
+
 // ── App entry point ────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -397,15 +430,27 @@ pub fn run() {
             }
         }))
         // Debug logs in dev builds; Info in release to cut leak surface and noise.
-        .plugin(
+        // LogDir target keeps a persistent on-disk log for post-mortem
+        // diagnosis — stdout is invisible in release (no console attached),
+        // so without this, warn/error output would be lost. Rotated at 512 KB.
+        .plugin({
+            use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
             tauri_plugin_log::Builder::default()
                 .level(if cfg!(debug_assertions) {
                     log::LevelFilter::Debug
                 } else {
                     log::LevelFilter::Info
                 })
-                .build(),
-        )
+                .targets([
+                    Target::new(TargetKind::Stdout),
+                    Target::new(TargetKind::LogDir {
+                        file_name: Some("callerflash".into()),
+                    }),
+                ])
+                .max_file_size(512_000)
+                .rotation_strategy(RotationStrategy::KeepAll)
+                .build()
+        })
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::default().build())
@@ -486,6 +531,19 @@ pub fn run() {
 
             #[cfg(feature = "migration")]
             migrate::run_migration(&data_dir);
+
+            // Show the main window unless the user opted into start-minimized
+            // (and this isn't a new version's first run). Done here, before the
+            // webview loads, so the window never flashes.
+            let start_hidden = should_start_hidden(app.handle(), &data_dir);
+            if !start_hidden {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            } else {
+                log::info!("[startup] Launching hidden to system tray (start minimized)");
+            }
 
             Ok(())
         })

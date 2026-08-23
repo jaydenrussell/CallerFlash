@@ -470,7 +470,8 @@ export const useAppStore = create<AppState>((set) => ({
           s.addDiagnosticLog({ level: 'success', category: 'SIP', message: 'Connection established to ' + s.sipConfig.server });
         }
       });
-    } else {
+    } else if (import.meta.env.DEV) {
+      // Dev-only simulation so the UI can be exercised without a backend.
       setTimeout(() => {
         useAppStore.setState({ sipConnected: true });
         s.addDiagnosticLog({ level: 'success', category: 'SIP', message: 'TCP connection established on port 5060' });
@@ -480,6 +481,14 @@ export const useAppStore = create<AppState>((set) => ({
           s.addDiagnosticLog({ level: 'info', category: 'SIP', message: 'Ready for incoming calls' });
         }, 1200);
       }, 800);
+    } else {
+      // No bridge in a packaged build means something is broken — never fake success.
+      useAppStore.setState({ isConnecting: false });
+      s.addDiagnosticLog({
+        level: 'error',
+        category: 'SIP',
+        message: 'SIP bridge unavailable — connection cannot be established',
+      });
     }
   },
   disconnectSip: () => {
@@ -571,8 +580,6 @@ export const useAppStore = create<AppState>((set) => ({
       lastCheckedAt: next.lastChecked ? next.lastChecked.toISOString() : undefined,
       releasePageUrl: next.releasePageUrl || undefined,
     });
-    // Notify main process so periodic check timer reschedules immediately
-    window.callerflash?.updater?.notifySettingsChanged?.();
     return { updateInfo: next };
   }),
 
@@ -587,26 +594,18 @@ export const useAppStore = create<AppState>((set) => ({
 
   clipboardText: '',
   setClipboardText: (text) => set({ clipboardText: text }),
-})); 
+}));
 
 // Init storage migration (handles SIP password decryption internally).
 // Deliberately NOT called here: window.callerflash does not exist at module
 // scope. App.tsx invokes runStorageMigration() on mount, once the bridge is up.
 
-// ── Sync start-with-Windows toggle with actual Windows state ─────────
-if (typeof window !== 'undefined' && window.callerflash?.app?.getStartWithWindows) {
-  window.callerflash.app.getStartWithWindows().then((enabled) => {
-    if (enabled === null) return;
-    const current = useAppStore.getState().appPreferences.startWithWindows;
-    if (current !== enabled) {
-      useAppStore.setState((s) => ({
-        appPreferences: { ...s.appPreferences, startWithWindows: enabled },
-      }));
-      // Persist the corrected value so it survives restart
-      const corrected = { ...useAppStore.getState().appPreferences, startWithWindows: enabled };
-      const cache = secureStorage.cache;
-      secureStorage.save({ ...cache, appPreferences: corrected });
-      // Synced startWithWindows from actual Windows state
-    }
-  });
+/**
+ * Record the running version in native storage so both the renderer
+ * ("first run after update" banner logic) and the Rust side (initial window
+ * visibility decision) can detect a new version on next launch. Must be
+ * called after the bridge is installed — i.e. from App.tsx.
+ */
+export function persistLastRunVersion(version: string): void {
+  void secureStorage.save({ ...secureStorage.cache, lastRunVersion: version });
 }

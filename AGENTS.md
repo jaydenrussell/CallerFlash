@@ -14,7 +14,7 @@ CallerFlash: a Windows SIP caller-ID app (registers to a SIP trunk, shows toast 
 
 - `src-tauri/src/` — Rust backend (compiled with `cargo`):
   - `sip.rs` — SIP client via `rsipstack`; emits `sip:status` events with states `connecting` / `registered` / `error` / `disconnected`; `sip_connect`, `sip_disconnect`, `sip_test_connection` commands.
-  - `tray.rs` — system tray. Icon/tooltip are driven by a backend listener on `sip:status` (status→color: green=registered, red=error, amber=connecting, blue=idle). `tray_set_sip_status` updates the tooltip only.
+  - `tray.rs` — system tray. Icon AND tooltip are driven by a backend listener on `sip:status`: a solid colored status dot is composited onto the logo bitmap (green=registered, red=error, amber=connecting, blue=idle); failures fall back to `default_window_icon`. `tray_set_sip_status` updates the tooltip text.
   - `diagnostics.rs` — append/load diagnostic log store.
   - `lib.rs` — Tauri builder + `invoke_handler` registration (every new `#[tauri::command]` must be added here and re-exported via `pub use`).
   - `main.rs` — entry point, calls `app_lib::run()`.

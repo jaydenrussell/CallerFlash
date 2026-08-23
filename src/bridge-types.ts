@@ -122,8 +122,6 @@ export interface CallerFlashUpdaterApi {
     body: string | null;
     htmlUrl: string;
   }>>;
-  /** Notify the backend that update settings changed so any periodic check reschedules. */
-  notifySettingsChanged?: () => void;
   onStatus: (callback: (data: { status: string; version?: string; progress?: number; downloadUrl?: string; message?: string }) => void) => () => void;
   onProgress: (callback: (data: { percent: number }) => void) => () => void;
   onDiagnostic: (callback: (data: { level: string; message: string; details?: string }) => void) => () => void;

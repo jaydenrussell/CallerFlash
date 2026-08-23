@@ -34,7 +34,12 @@ export function Dashboard() {
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
   };
 
-  const todayCalls = callHistory.filter((c) => c.timestamp.getDate() === new Date().getDate()).length;
+  const isSameCalendarDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
+  const now = new Date();
+  const todayCalls = callHistory.filter((c) => isSameCalendarDay(c.timestamp, now)).length;
 
   return (
     <div className="flex flex-col h-full gap-3 animate-fade-in">

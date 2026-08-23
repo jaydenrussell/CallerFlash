@@ -11,12 +11,42 @@ import { About } from './components/About';
 import { ToastContainer } from './components/ToastNotification';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { StartupBanner } from './components/StartupBanner';
-import { useAppStore, runStorageMigration, type DiagnosticLog } from './store/useAppStore';
+import { useAppStore, runStorageMigration, persistLastRunVersion, type DiagnosticLog } from './store/useAppStore';
 import { useShallow } from 'zustand/react/shallow';
 import { sanitizeCallerNumberForClipboard, sanitizeCallerName } from './security/secretRedactor';
+import { isUpdateCheckDue, UPDATE_SCHEDULER_TICK_MS } from './utils/updateSchedule';
 
 // Threshold below which the sidebar collapses to icons only
 const SIDEBAR_COLLAPSE_BREAKPOINT = 720;
+
+// Background update check shared by the startup check and the periodic
+// scheduler. Uses the store directly (no hooks) so both call sites stay in
+// sync, including persisting lastChecked on the "up to date" path — without
+// that, the scheduler would re-fire on every tick.
+async function backgroundUpdateCheck(trigger: 'startup' | 'scheduled'): Promise<void> {
+  const check = window.callerflash?.updater?.check;
+  if (!check) return;
+  const log = (level: DiagnosticLog['level'], message: string) =>
+    useAppStore.getState().addDiagnosticLog({ level, category: 'UPDATE', message });
+  log('info', trigger === 'startup' ? 'Checking for updates on startup…' : `Scheduled update check…`);
+  try {
+    const result = await check('stable');
+    if (result?.version) {
+      useAppStore.getState().setUpdateInfo({
+        latestVersion: result.version,
+        updateAvailable: true,
+        lastChecked: new Date(),
+      });
+      log('info', `Update available: ${result.version}`);
+    } else if (result?.upToDate) {
+      useAppStore.getState().setUpdateInfo({ updateAvailable: false, lastChecked: new Date() });
+      log('info', 'App is up to date.');
+    }
+  } catch (e) {
+    // Failed checks do NOT advance lastChecked so the scheduler retries soon.
+    log('error', `Update check failed: ${e}`);
+  }
+}
 
 function useWindowWidth() {
   const [width, setWidth] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1280));
@@ -80,6 +110,30 @@ export default function App() {
     }
   }, []);
 
+  // Reconcile the start-with-Windows toggle with actual Windows state (Run key
+  // + StartupApproved, which the user can flip in Task Manager). This must run
+  // post-mount: window.callerflash installs on DOMContentLoaded, so any
+  // module-scope check would silently miss the bridge.
+  useEffect(() => {
+    let cancelled = false;
+    window.callerflash?.app?.getStartWithWindows?.().then((enabled) => {
+      if (cancelled || enabled === null || enabled === undefined) return;
+      const current = useAppStore.getState().appPreferences.startWithWindows;
+      if (current !== enabled) {
+        // Persist the corrected value so the reconciled state survives restart.
+        useAppStore.getState().setAppPreferences({ startWithWindows: enabled });
+        addDiagnosticLog({
+          level: 'info',
+          category: 'SYSTEM',
+          message: `Start with Windows reconciled to actual system state: ${enabled ? 'enabled' : 'disabled'}`,
+        });
+      }
+    }).catch(() => {
+      // Bridge or registry unavailable — leave the stored value as-is.
+    });
+    return () => { cancelled = true; };
+  }, [addDiagnosticLog]);
+
   // Suppress the default browser right-click menu everywhere except text inputs
   // and contenteditable elements — matches Windows 11 shell behavior.
   useEffect(() => {
@@ -141,6 +195,9 @@ export default function App() {
     } catch (e) {
       addDiagnosticLog({ level: 'error', category: 'SYSTEM', message: `Failed to write UI settings: ${e}` });
     }
+    // Also record it in native storage so the Rust side can decide whether
+    // this launch is a new version (it shows the window once in that case).
+    persistLastRunVersion(__APP_VERSION__);
   }, [isFirstRunAfterUpdate]);
 
   // Load persisted diagnostics from disk (survives app restarts)
@@ -165,34 +222,31 @@ export default function App() {
     runStorageMigration();
   }, []);
 
-  // If "Start minimized" is enabled, hide to the system tray as soon as
-  // the renderer mounts. The user sees only the tray icon.
-  // We override this on the first run after a fresh install or an update so the user actually sees the app UI.
+  // Window visibility at launch is decided by the Rust side BEFORE the
+  // webview loads (main window is created hidden in tauri.conf.json), so
+  // "start minimized" never flashes the window. Here we only keep isMinimized
+  // in sync and re-show when the first-run-after-update override applies.
   useEffect(() => {
-    if (!appPreferences.startMinimized || isFirstRunAfterUpdate) {
-      if (isFirstRunAfterUpdate) {
-        setIsMinimized(false);
-        if (window.callerflash?.window?.show) {
-          window.callerflash.window.show();
-        }
-      }
-      return;
-    }
-    
-    setIsMinimized(true);
-    // Defer one tick so the IPC channel is wired up by the preload bridge.
-    const t = setTimeout(() => {
-      if (window.callerflash?.window?.hideToTray) {
+    if (appPreferences.startMinimized && !isFirstRunAfterUpdate) {
+      setIsMinimized(true);
+      // Belt and braces: the window should already be hidden; make sure it is.
+      const t = setTimeout(() => {
+        if (!window.callerflash?.window?.hideToTray) return;
         window.callerflash.window.hideToTray();
-      }
-      addDiagnosticLog({
-        level: 'info',
-        category: 'SYSTEM',
-        message: 'Application launched in background mode (hidden to system tray)',
-      });
-    }, 50);
-    return () => clearTimeout(t);
-  }, [appPreferences.startMinimized, isFirstRunAfterUpdate]);
+        addDiagnosticLog({
+          level: 'info',
+          category: 'SYSTEM',
+          message: 'Application launched in background mode (hidden to system tray)',
+        });
+      }, 50);
+      return () => clearTimeout(t);
+    }
+
+    setIsMinimized(false);
+    if (isFirstRunAfterUpdate && window.callerflash?.window?.show) {
+      window.callerflash.window.show();
+    }
+  }, [appPreferences.startMinimized, isFirstRunAfterUpdate, setIsMinimized, addDiagnosticLog]);
 
   // Auto-connect on startup if SIP settings are fully configured
   useEffect(() => {
@@ -367,21 +421,21 @@ export default function App() {
 
   // Background update check on app startup (Tauri only).
   useEffect(() => {
+    void backgroundUpdateCheck('startup');
+  }, []);
+
+  // Periodic update checks driven by the user-selected frequency
+  // (off/daily/weekly/monthly). The interval re-evaluates from the store on
+  // every tick, so changing the frequency takes effect without remounting.
+  useEffect(() => {
     if (!window.callerflash?.updater?.check) return;
-    addDiagnosticLog({ level: 'info', category: 'UPDATE', message: 'Checking for updates on startup…' });
-    window.callerflash.updater.check('stable').then((result) => {
-      if (result?.version) {
-        useAppStore.getState().setUpdateInfo({
-          latestVersion: result.version,
-          updateAvailable: true,
-          lastChecked: new Date(),
-        });
-        addDiagnosticLog({ level: 'info', category: 'UPDATE', message: `Update available: ${result.version}` });
-      } else if (result?.upToDate) {
-        addDiagnosticLog({ level: 'info', category: 'UPDATE', message: 'App is up to date.' });
-      }
-    }).catch((e) => addDiagnosticLog({ level: 'error', category: 'UPDATE', message: `Update check failed: ${e}` }));
-  }, [addDiagnosticLog]);
+    const id = setInterval(() => {
+      const { updateCheckFrequency, lastChecked } = useAppStore.getState().updateInfo;
+      if (!isUpdateCheckDue(updateCheckFrequency, lastChecked ?? null, Date.now())) return;
+      void backgroundUpdateCheck('scheduled');
+    }, UPDATE_SCHEDULER_TICK_MS);
+    return () => clearInterval(id);
+  }, []);
 
   return (
     <div className="h-screen w-screen flex flex-col bg-win-bg overflow-hidden min-w-[360px]">

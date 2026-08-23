@@ -87,4 +87,37 @@ describe("Dashboard", () => {
     const { container } = render(<Dashboard />);
     expect(container).toBeTruthy();
   });
+
+  it("counts only calls received today", () => {
+    const now = new Date();
+    mockStore.callHistory = [
+      { id: "1", callerNumber: "+15550001", callerName: "A", timestamp: now, duration: 0, direction: "inbound" },
+      {
+        id: "2",
+        callerNumber: "+15550002",
+        callerName: "B",
+        timestamp: new Date(now.getTime() - 24 * 60 * 60 * 1000),
+        duration: 0,
+        direction: "inbound",
+      },
+    ];
+    const { container } = render(<Dashboard />);
+    expect(callsTodayValue(container)).toBe("1");
+  });
+
+  it("does not count calls from the same day-of-month in a previous month", () => {
+    // Regression: old code compared getDate() only, so a Jul 23 call counted on Aug 23.
+    const now = new Date();
+    const lastMonthSameDay = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate(), 12, 0, 0);
+    mockStore.callHistory = [
+      { id: "1", callerNumber: "+15550001", callerName: "A", timestamp: lastMonthSameDay, duration: 0, direction: "inbound" },
+    ];
+    const { container } = render(<Dashboard />);
+    expect(callsTodayValue(container)).toBe("0");
+  });
 });
+
+function callsTodayValue(container: HTMLElement): string | null {
+  const valueEl = container.querySelector<HTMLElement>(".grid.grid-cols-2 > div:nth-child(2) p.font-bold");
+  return valueEl?.textContent ?? null;
+}
