@@ -222,4 +222,4 @@ jobs:
             -f tag_name="${{ github.ref_name }}" \
             -f target_commitish="${{ needs.promote.outputs.target_branch }}" \
             --jq '.body')
-          gh release create "${{ github.ref_name }}" $(find artifacts -type f) --notes "$BODY" $FLAG
+          gh release create "${{ github.ref_name }}" $(find artifacts -type f) --title "${{ github.ref_name }}" --notes "$BODY" $FLAG

@@ -19,6 +19,9 @@ fn tagged_endpoint(tag: &str) -> String {
 
 fn http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
+        // GitHub's REST API rejects requests without a User-Agent (403);
+        // reqwest sends none by default.
+        .user_agent(concat!("CallerFlash/", env!("CARGO_PKG_VERSION")))
         .timeout(std::time::Duration::from_secs(15))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {e}"))
