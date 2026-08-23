@@ -10,6 +10,7 @@ import { AutoUpdate } from './components/AutoUpdate';
 import { About } from './components/About';
 import { ToastContainer } from './components/ToastNotification';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { StartupBanner } from './components/StartupBanner';
 import { useAppStore, runStorageMigration, type DiagnosticLog } from './store/useAppStore';
 import { useShallow } from 'zustand/react/shallow';
 import { sanitizeCallerNumberForClipboard, sanitizeCallerName } from './security/secretRedactor';
@@ -384,6 +385,7 @@ export default function App() {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-win-bg overflow-hidden min-w-[360px]">
+      <StartupBanner />
       <div className="flex flex-1 overflow-hidden min-h-0">
         <Sidebar collapsed={sidebarCollapsed} />
         <MainContent />

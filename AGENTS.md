@@ -19,7 +19,7 @@ CallerFlash: a Windows SIP caller-ID app (registers to a SIP trunk, shows toast 
   - `lib.rs` — Tauri builder + `invoke_handler` registration (every new `#[tauri::command]` must be added here and re-exported via `pub use`).
   - `main.rs` — entry point, calls `app_lib::run()`.
 - `src/` — React frontend (Vite + TypeScript, Zustand store):
-  - `tauri-bridge.ts` — wraps Tauri `invoke`/`listen`/`emit` into `window.callerflash`. **Add any new backend command here AND in `electron-bridge.d.ts`** (the `CallerFlashBridge` interface) or TypeScript will error.
+  - `tauri-bridge.ts` — wraps Tauri `invoke`/`listen`/`emit` into `window.callerflash`. The bridge types live in **`src/bridge-types.ts`** (single source of truth); `tauri-bridge.ts` `satisfies CallerFlashBridge`, so adding a command without declaring it in `bridge-types.ts` fails `tsc`.
   - `store/useAppStore.ts` — app state; `sipConnected` / `sipRegistered` / `isConnecting` drive the UI.
   - `components/SipSettings.tsx`, `Sidebar.tsx`, `Dashboard.tsx`, `Diagnostics.tsx` — UI.
 - `src-tauri/Cargo.toml` — Tauri `2.11.x`; tray features require `"tray-icon"` + `"image-png"`.

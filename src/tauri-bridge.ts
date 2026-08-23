@@ -1,5 +1,3 @@
-/// <reference types="./electron-bridge.d.ts" />
-
 /**
  * Tauri backend bridge — wraps Tauri invoke/listen/emit into the
  * `window.callerflash` interface so the existing React UI works
@@ -10,6 +8,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, emit } from '@tauri-apps/api/event';
 import { Update } from '@tauri-apps/plugin-updater';
 import { sanitizeSipServer } from './security/secretRedactor';
+import type { CallerFlashBridge } from './bridge-types';
 
 // Bridge logs only in dev mode — production builds tree-shake these.
 const log = (...args: unknown[]) => { if (import.meta.env.DEV) console.log('[tauri-bridge]', ...args); };
