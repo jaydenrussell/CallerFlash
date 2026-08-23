@@ -30,18 +30,26 @@ fn status_color(status: &str) -> (u8, u8, u8) {
 #[cfg(test)]
 const CANVAS: u32 = 32;
 // Arc geometry (pixels, angles in radians). Center sits off-canvas so the
-// band sweeps diagonally through the icon center.
-const ARC_CX: f32 = 3.5;
-const ARC_CY: f32 = 3.5;
-const ARC_R_IN: f32 = 14.5;
-const ARC_R_OUT: f32 = 19.5;
-const ARC_R_MID: f32 = 17.0;
-// 37deg .. 53deg around the off-canvas center => midpoint lands at ~(15.5, 15.5).
-const ARC_A0: f32 = 0.645_771_8;
-const ARC_A1: f32 = 0.925_024_5;
-const CAP_R: f32 = 3.6;
-const HALO_GROW: f32 = 1.1;
-const HALO_ALPHA: f32 = 0.55;
+// band sweeps diagonally through the icon center. Sized so the handset
+// spans ~18px of the 32px canvas: Windows shows the tray at 16px logical,
+// and anything smaller disappears after downscaling.
+const ARC_CX: f32 = 2.8;
+const ARC_CY: f32 = 2.8;
+const ARC_R_IN: f32 = 15.0;
+const ARC_R_OUT: f32 = 21.0;
+const ARC_R_MID: f32 = 18.0;
+// 35deg .. 55deg around the off-canvas center => midpoint lands at ~(15.5, 15.5).
+const ARC_A0: f32 = 0.610_865_2;
+const ARC_A1: f32 = 0.959_931_1;
+const CAP_R: f32 = 4.6;
+// Layered contrast so the glyph reads over any logo artwork: a near-white
+// rim hugging the glyph (separates from saturated hues like the magenta
+// logo body) over a faint dark shadow (separates from light/transparent
+// areas). Both are the glyph shape dilated outward.
+const RIM_GROW: f32 = 1.4;
+const RIM_ALPHA: f32 = 0.95;
+const SHADOW_GROW: f32 = 2.4;
+const SHADOW_ALPHA: f32 = 0.45;
 
 fn point_at(angle: f32, grow: f32) -> (f32, f32) {
     let r = ARC_R_MID + grow * 0.5;
@@ -88,23 +96,29 @@ fn compose_tray_icon(base_rgba: &[u8], size: u32, rgb: (u8, u8, u8)) -> Vec<u8> 
     for y in 0..size {
         for x in 0..size {
             let mut cov_glyph = 0.0f32;
-            let mut cov_halo = 0.0f32;
+            let mut cov_rim = 0.0f32;
+            let mut cov_shadow = 0.0f32;
             for (sx, sy) in samples {
                 let px = x as f32 + sx;
                 let py = y as f32 + sy;
                 if in_phone_shape(px, py, 0.0) {
                     cov_glyph += 0.25;
-                } else if in_phone_shape(px, py, HALO_GROW) {
-                    cov_halo += 0.25;
+                } else if in_phone_shape(px, py, RIM_GROW) {
+                    cov_rim += 0.25;
+                } else if in_phone_shape(px, py, SHADOW_GROW) {
+                    cov_shadow += 0.25;
                 }
             }
-            if cov_glyph == 0.0 && cov_halo == 0.0 {
+            if cov_glyph == 0.0 && cov_rim == 0.0 && cov_shadow == 0.0 {
                 continue;
             }
             let idx = ((y * size + x) * 4) as usize;
             let px = &mut out[idx..idx + 4];
-            if cov_halo > 0.0 {
-                blend_pixel(px, (10, 12, 18), cov_halo * HALO_ALPHA);
+            if cov_shadow > 0.0 {
+                blend_pixel(px, (10, 12, 18), cov_shadow * SHADOW_ALPHA);
+            }
+            if cov_rim > 0.0 {
+                blend_pixel(px, (250, 250, 252), cov_rim * RIM_ALPHA);
             }
             if cov_glyph > 0.0 {
                 blend_pixel(px, rgb, cov_glyph);
@@ -221,6 +235,11 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         update_version: std::sync::Mutex::new(None),
     });
 
+    // Render the status glyph immediately at startup (idle blue). Without
+    // this the tray shows a bare logo until the first sip:status event,
+    // which reads as "the phone icon is missing".
+    apply_sip_status(app, "Offline");
+
     Ok(())
 }
 
@@ -315,5 +334,33 @@ mod tests {
         let base = solid(CANVAS, [10, 20, 30, 40]);
         let out = compose_tray_icon(&base, CANVAS, status_color("registered"));
         assert_eq!(out.len(), (CANVAS * CANVAS * 4) as usize);
+    }
+
+    #[test]
+    fn glyph_footprint_is_large_enough_for_tray_downscaling() {
+        // Windows renders the tray at 16px logical; the glyph + rim must
+        // occupy enough of the 32px canvas to survive that 2x shrink.
+        let base = solid(CANVAS, [128, 128, 128, 255]);
+        let out = compose_tray_icon(&base, CANVAS, status_color("registered"));
+        let modified = (0..(CANVAS * CANVAS) as usize)
+            .filter(|&i| out[i * 4..i * 4 + 3] != base[i * 4..i * 4 + 3])
+            .count();
+        assert!(
+            modified >= 150,
+            "only {modified} px touched; glyph too small"
+        );
+    }
+
+    #[test]
+    fn white_rim_separates_glyph_from_logo() {
+        // Somewhere just outside the glyph body the composite must be
+        // near-white regardless of the underlying logo color.
+        let base = solid(CANVAS, [128, 128, 128, 255]);
+        let out = compose_tray_icon(&base, CANVAS, status_color("registered"));
+        let has_rim = (0..(CANVAS * CANVAS) as usize).any(|i| {
+            let p = &out[i * 4..i * 4 + 3];
+            p[0] > 220 && p[1] > 220 && p[2] > 220
+        });
+        assert!(has_rim, "no near-white rim pixels found");
     }
 }
