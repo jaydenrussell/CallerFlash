@@ -128,6 +128,20 @@ function hydrateCallHistory(raw: unknown): CallRecord[] {
     .slice(0, MAX_CALL_HISTORY);
 }
 
+// ── Hydration gate ───────────────────────────────────────────────────
+// Writes must never race the async native load: early writers used to
+// spread a cache seeded from sanitized localStorage (which strips the
+// password) and could blank the DPAPI-backed SIP password on disk.
+let storageHydrationPromise: Promise<void> | null = null;
+
+function markStorageHydration(promise: Promise<void>): void {
+  storageHydrationPromise = promise;
+}
+
+async function whenStorageHydrated(): Promise<void> {
+  if (storageHydrationPromise) await storageHydrationPromise;
+}
+
 // ── Secure storage wrapper (communicates with main process) ─────────
 class SecureStorage {
   private _cache: PersistedUiSettings | null = null;
@@ -177,9 +191,9 @@ class SecureStorage {
     return data;
   }
 
-  async save(settings: Partial<PersistedUiSettings>): Promise<void> {
+  save(settings: Partial<PersistedUiSettings> & Record<string, unknown>): Promise<void> {
     // Queue writes to prevent race conditions.
-    // Catch rejections to prevent the chain from breaking — if one save
+    // Catch rejections to prevent the chain from breaking - if one save
     // fails, subsequent saves must still be able to execute.
     this.writeQueue = this.writeQueue
       .then(() => this.doSave(settings))
@@ -189,8 +203,16 @@ class SecureStorage {
     return this.writeQueue;
   }
 
-  private async doSave(settings: Partial<PersistedUiSettings>): Promise<void> {
-    const toSave = { ...settings, version: STORAGE_VERSION };
+  private async doSave(settings: Partial<PersistedUiSettings> & Record<string, unknown>): Promise<void> {
+    // Merge against cache only AFTER hydration completes - early writers
+    // (update scheduler, lastRunVersion stamp) would otherwise spread a
+    // localStorage-seeded cache and erase stored credentials.
+    await whenStorageHydrated();
+    const toSave = {
+      ...(this._cache ?? {}),
+      ...settings,
+      version: STORAGE_VERSION,
+    } as PersistedUiSettings & Record<string, unknown>;
     this._cache = toSave;
 
     if (this.hasNativeStorage) {
@@ -320,7 +342,9 @@ let storageMigrationStarted = false;
 export function runStorageMigration(): void {
   if (storageMigrationStarted) return;
   storageMigrationStarted = true;
-  void initStorageMigration();
+  // Publish the hydration promise so queued writes wait for the native
+  // load instead of racing it with a sanitized-cache snapshot.
+  markStorageHydration(initStorageMigration());
 }
 
 // ── Store interface ──────────────────────────────────────────────────
@@ -438,10 +462,7 @@ export const useAppStore = create<AppState>((set) => ({
     useAppStore.setState({ sipConfig: next });
 
     try {
-      await secureStorage.save({
-        ...secureStorage.cache,
-        sipConfig: next,
-      });
+      await secureStorage.save({ sipConfig: next });
     } catch {
       // SIP config save failure is non-fatal — localStorage fallback persists
     }
@@ -513,20 +534,14 @@ export const useAppStore = create<AppState>((set) => ({
   toastConfig: defaultToastConfig,
   setToastConfig: (config) => set((s) => {
     const next = { ...s.toastConfig, ...config };
-    secureStorage.save({
-      ...secureStorage.cache,
-      toastConfig: next,
-    });
+    secureStorage.save({ toastConfig: next });
     return { toastConfig: next };
   }),
 
   appPreferences: defaultAppPreferences,
   setAppPreferences: (prefs) => set((s) => {
     const nextPreferences = { ...s.appPreferences, ...prefs };
-    secureStorage.save({
-      ...secureStorage.cache,
-      appPreferences: nextPreferences,
-    });
+    secureStorage.save({ appPreferences: nextPreferences });
     return { appPreferences: nextPreferences };
   }),
   isMinimized: defaultAppPreferences.startMinimized,
@@ -539,7 +554,7 @@ export const useAppStore = create<AppState>((set) => ({
     return { callHistory };
   }),
   clearCallHistory: () => set(() => {
-    secureStorage.save({ ...secureStorage.cache, callHistory: [] });
+    secureStorage.save({ callHistory: [] });
     return { callHistory: [] };
   }),
 
@@ -578,7 +593,6 @@ export const useAppStore = create<AppState>((set) => ({
     const next = { ...s.updateInfo, ...info };
     // Persist user-configurable fields (not transient state)
     secureStorage.save({
-      ...secureStorage.cache,
       updateChannel: next.updateChannel,
       updateCheckFrequency: next.updateCheckFrequency,
       lastCheckedAt: next.lastChecked ? next.lastChecked.toISOString() : undefined,
@@ -589,10 +603,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   toastDragPosition: persistedUi.toastDragPosition ?? null,
   setToastDragPosition: (pos) => set((_s) => {
-    secureStorage.save({
-      ...secureStorage.cache,
-      toastDragPosition: pos,
-    });
+    secureStorage.save({ toastDragPosition: pos });
     return { toastDragPosition: pos };
   }),
 
@@ -611,5 +622,5 @@ export const useAppStore = create<AppState>((set) => ({
  * called after the bridge is installed — i.e. from App.tsx.
  */
 export function persistLastRunVersion(version: string): void {
-  void secureStorage.save({ ...secureStorage.cache, lastRunVersion: version });
+  void secureStorage.save({ lastRunVersion: version });
 }

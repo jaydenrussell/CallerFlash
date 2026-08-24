@@ -88,10 +88,51 @@ impl SecureStorage {
         data
     }
 
+    fn read_raw_parsed(&self) -> Option<serde_json::Value> {
+        let raw = fs::read_to_string(&self.settings_path).ok()?;
+        serde_json::from_str::<serde_json::Value>(&raw).ok()
+    }
+
+    /// Merge `incoming` over whatever is currently stored, then persist.
+    ///
+    /// Merging (instead of replacing) means a partial or stale writer can
+    /// never wipe keys it did not send. On top of that, an empty password
+    /// never blanks a stored credential unless the caller passes the
+    /// explicit `__clearSipPassword` sentinel - the belt-and-braces guard
+    /// for the renderer-side hydration race that once erased credentials.
     pub fn save_data(&self, data: &serde_json::Value) -> Result<(), CommandError> {
-        let mut data = data.clone();
-        encrypt_password_field(&mut data);
-        let output = serde_json::to_string_pretty(&data)
+        const CLEAR_FLAG: &str = "__clearSipPassword";
+        let mut incoming = data.clone();
+        let explicit_clear = incoming
+            .get(CLEAR_FLAG)
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if let Some(obj) = incoming.as_object_mut() {
+            obj.remove(CLEAR_FLAG);
+        }
+
+        let mut merged = self
+            .read_raw_parsed()
+            .unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new()));
+        if let (Some(dst), Some(src)) = (merged.as_object_mut(), incoming.as_object()) {
+            for (key, value) in src {
+                match (dst.get_mut(key), value) {
+                    (Some(serde_json::Value::Object(existing)), serde_json::Value::Object(new)) => {
+                        if key == "sipConfig" || key == "sip" {
+                            merge_sip_section(existing, new, explicit_clear);
+                        } else {
+                            *existing = new.clone();
+                        }
+                    }
+                    _ => {
+                        dst.insert(key.clone(), value.clone());
+                    }
+                }
+            }
+        }
+
+        encrypt_password_field(&mut merged);
+        let output = serde_json::to_string_pretty(&merged)
             .map_err(|e| CommandError::config(format!("Serialize: {}", e)))?;
 
         if self.settings_path.exists() {
@@ -106,6 +147,37 @@ impl SecureStorage {
             .map_err(|e| CommandError::io(format!("Failed to rename settings: {}", e)))?;
 
         Ok(())
+    }
+}
+
+/// Shallow-merge a sip config section while protecting any stored
+/// credential: a blank incoming password is ignored unless
+/// `explicit_clear` is set.
+fn merge_sip_section(
+    existing: &mut serde_json::Map<String, serde_json::Value>,
+    incoming: &serde_json::Map<String, serde_json::Value>,
+    explicit_clear: bool,
+) {
+    let stored_password = existing
+        .get("password")
+        .and_then(|p| p.as_str())
+        .map(str::to_owned);
+    for (k, v) in incoming {
+        existing.insert(k.clone(), v.clone());
+    }
+    let Some(stored) = stored_password else {
+        return;
+    };
+    if stored.is_empty() {
+        return;
+    }
+    let incoming_blank =
+        matches!(existing.get("password"), Some(serde_json::Value::String(s)) if s.is_empty());
+    if incoming_blank && !explicit_clear {
+        log::warn!("[storage] Ignored write that would blank the stored SIP password");
+        existing.insert("password".to_string(), serde_json::Value::String(stored));
+    } else if incoming_blank && explicit_clear {
+        log::info!("[storage] SIP password cleared by explicit request");
     }
 }
 
@@ -233,6 +305,96 @@ mod tests {
         storage.save_data(&data).unwrap();
         let loaded = storage.load_data();
         assert_eq!(loaded["sip"]["password"], serde_json::json!(""));
+    }
+
+    #[test]
+    fn test_save_merges_top_level_keys_instead_of_replacing() {
+        let (storage, _dir) = temp_storage();
+        storage
+            .save_data(&serde_json::json!({"sipConfig": {"server": "a.example.com"}}))
+            .unwrap();
+        storage
+            .save_data(&serde_json::json!({"updateChannel": "beta"}))
+            .unwrap();
+        let loaded = storage.load_data();
+        assert_eq!(loaded["updateChannel"], serde_json::json!("beta"));
+        assert_eq!(
+            loaded["sipConfig"]["server"],
+            serde_json::json!("a.example.com")
+        );
+    }
+
+    #[test]
+    fn test_blank_write_cannot_erase_stored_password() {
+        let (storage, _dir) = temp_storage();
+        storage
+            .save_data(&serde_json::json!(
+                {"sipConfig": {"server": "a", "password": "hunter2"}}
+            ))
+            .unwrap();
+        // Simulate a stale/partial writer sending a blanked section.
+        storage
+            .save_data(&serde_json::json!(
+                {"sipConfig": {"server": "b", "password": ""}}
+            ))
+            .unwrap();
+        let loaded = storage.load_data();
+        assert_eq!(loaded["sipConfig"]["password"], "hunter2");
+        assert_eq!(loaded["sipConfig"]["server"], "b");
+    }
+
+    #[test]
+    fn test_missing_password_key_preserves_stored_password() {
+        let (storage, _dir) = temp_storage();
+        storage
+            .save_data(&serde_json::json!(
+                {"sip": {"server": "a", "password": "hunter2"}}
+            ))
+            .unwrap();
+        storage
+            .save_data(&serde_json::json!({"sip": {"port": 5061}}))
+            .unwrap();
+        let loaded = storage.load_data();
+        assert_eq!(loaded["sip"]["password"], "hunter2");
+        assert_eq!(loaded["sip"]["port"], 5061);
+    }
+
+    #[test]
+    fn test_explicit_clear_flag_erases_password() {
+        let (storage, _dir) = temp_storage();
+        storage
+            .save_data(&serde_json::json!(
+                {"sipConfig": {"password": "hunter2"}}
+            ))
+            .unwrap();
+        storage
+            .save_data(&serde_json::json!(
+                {"__clearSipPassword": true, "sipConfig": {"password": ""}}
+            ))
+            .unwrap();
+        let loaded = storage.load_data();
+        assert_eq!(loaded["sipConfig"]["password"], "");
+    }
+
+    #[test]
+    fn test_nonempty_new_password_overwrites_stored() {
+        let (storage, _dir) = temp_storage();
+        storage
+            .save_data(&serde_json::json!(
+                {"sipConfig": {"password": "old"}}
+            ))
+            .unwrap();
+        storage
+            .save_data(&serde_json::json!(
+                {"sipConfig": {"password": "new"}}
+            ))
+            .unwrap();
+        let raw = fs::read_to_string(&storage.settings_path).unwrap();
+        let on_disk: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let stored = on_disk["sipConfig"]["password"].as_str().unwrap();
+        assert!(stored.starts_with("dpapi:"));
+        assert_ne!(stored, "old");
+        assert_eq!(storage.load_data()["sipConfig"]["password"], "new");
     }
 
     #[test]
