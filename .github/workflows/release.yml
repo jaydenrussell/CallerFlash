@@ -89,15 +89,18 @@ jobs:
           $v = "${{ steps.classify.outputs.version }}"
 
           $cargo = Get-Content src-tauri/Cargo.toml -Raw
-          $new = [regex]::Replace($cargo, '(?m)^version = "[^"]*"$', 'version = "' + $v + '"', 1)
-          if ($new -eq $cargo) { throw "Could not find version in Cargo.toml" }
+          # Guard checks PRESENCE of the version line, not that the replace
+          # changed anything - main manifests may already carry the tagged
+          # version (they are bumped post-release), which is fine.
+          if ($cargo -notmatch '(?m)^version = "[^"]*"$') { throw "Could not find version in Cargo.toml" }
+          $new = [regex]::Replace($cargo, '(?m)^version = "[^"]*"$', 'version = "' + $v + '"')
           Set-Content src-tauri/Cargo.toml $new -Encoding utf8 -NoNewline
 
           $lock = Get-Content src-tauri/Cargo.lock -Raw
           $nl = if ($lock -match "`r`n") { "`r`n" } else { "`n" }
           $pattern = 'name = "callerflash"' + $nl + 'version = "[^"]+"'
+          if ($lock -notmatch $pattern) { throw "Could not find callerflash in Cargo.lock" }
           $newLock = [regex]::Replace($lock, $pattern, 'name = "callerflash"' + $nl + 'version = "' + $v + '"')
-          if ($newLock -eq $lock) { throw "Could not find callerflash in Cargo.lock" }
           Set-Content src-tauri/Cargo.lock $newLock -Encoding utf8 -NoNewline
 
           $pkg = Get-Content package.json -Raw | ConvertFrom-Json
@@ -114,7 +117,9 @@ jobs:
           git config user.email "bot@callerflash.app"
           git checkout -B "${{ steps.classify.outputs.target_branch }}"
           git add src-tauri/Cargo.toml src-tauri/Cargo.lock package.json src-tauri/tauri.conf.json
-          git commit -m "chore: bump version to ${{ steps.classify.outputs.version }}"
+          # Manifests may already be at the tagged version (bumped on main
+          # post-release) - allow the no-op promote commit.
+          git commit --allow-empty -m "chore: bump version to ${{ steps.classify.outputs.version }}"
           git push --force origin "${{ steps.classify.outputs.target_branch }}"
 
   build:
