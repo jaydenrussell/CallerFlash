@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { useAppStore } from '../store/useAppStore';
 
 interface Props {
   children: ReactNode;
@@ -23,6 +24,17 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('[ErrorBoundary]', error, info.componentStack);
+    try {
+      // Webview console is not captured in packaged builds - mirror the
+      // crash into the diagnostics log so it survives a restart.
+      useAppStore.getState().addDiagnosticLog({
+        level: 'error',
+        category: 'SYSTEM',
+        message: `Render crash: ${error.message}`,
+      });
+    } catch {
+      // Never rethrow from componentDidCatch - the fallback UI must render.
+    }
   }
 
   private handleReload = () => {

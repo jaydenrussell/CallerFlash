@@ -10,6 +10,8 @@
 
 CallerFlash: a Windows SIP caller-ID app (registers to a SIP trunk, shows toast notifications on inbound calls, optional Acuity client lookup). `main` is the **Tauri (Rust backend + React frontend)** rewrite. It is NOT the Electron version.
 
+Version manifests (`package.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, `src-tauri/tauri.conf.json`) are bumped on `main` after each release to match the latest tag; release builds themselves always build from the version-stamped `beta`/`stable` branch, never from the tag.
+
 ## Architecture map
 
 - `src-tauri/src/` — Rust backend (compiled with `cargo`):

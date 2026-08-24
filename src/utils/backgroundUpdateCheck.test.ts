@@ -52,11 +52,39 @@ describe("backgroundUpdateCheck", () => {
   });
 
   it("does NOT advance lastChecked on a failed check (scheduler must retry)", async () => {
-    check.mockRejectedValue(new Error("network down"));
+    check.mockResolvedValue({ error: "network down" });
     await backgroundUpdateCheck("startup");
     expect(useAppStore.getState().updateInfo.lastChecked).toBeNull();
     const logs = useAppStore.getState().diagnosticLogs;
-    expect(logs[0].level).toBe("error");
+    expect(logs[0].level).toBe("warning");
     expect(logs[0].message).toContain("network down");
+  });
+
+  it("logs a warning if the bridge violates its resolve-errors contract", async () => {
+    check.mockRejectedValue(new Error("bridge blew up"));
+    await backgroundUpdateCheck("startup");
+    expect(useAppStore.getState().updateInfo.lastChecked).toBeNull();
+    const logs = useAppStore.getState().diagnosticLogs;
+    expect(logs[0].level).toBe("warning");
+    expect(logs[0].message).toContain("bridge blew up");
+  });
+
+  it("never checks when the frequency is off", async () => {
+    const current = useAppStore.getState().updateInfo;
+    useAppStore.setState({ updateInfo: { ...current, updateCheckFrequency: "off", lastChecked: null } });
+    await backgroundUpdateCheck("startup");
+    await backgroundUpdateCheck("scheduled");
+    expect(check).not.toHaveBeenCalled();
+    expect(useAppStore.getState().diagnosticLogs).toHaveLength(0);
+  });
+
+  it("skips the startup check when one already ran within the interval", async () => {
+    const current = useAppStore.getState().updateInfo;
+    useAppStore.setState({
+      updateInfo: { ...current, updateCheckFrequency: "daily", lastChecked: new Date(Date.now() - 60 * 60 * 1000) },
+    });
+    await backgroundUpdateCheck("startup");
+    expect(check).not.toHaveBeenCalled();
+    expect(useAppStore.getState().diagnosticLogs).toHaveLength(0);
   });
 });

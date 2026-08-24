@@ -14,7 +14,7 @@ import { StartupBanner } from './components/StartupBanner';
 import { useAppStore, runStorageMigration, persistLastRunVersion, type DiagnosticLog } from './store/useAppStore';
 import { useShallow } from 'zustand/react/shallow';
 import { sanitizeCallerNumberForClipboard, sanitizeCallerName } from './security/secretRedactor';
-import { isUpdateCheckDue, UPDATE_SCHEDULER_TICK_MS } from './utils/updateSchedule';
+import { UPDATE_SCHEDULER_TICK_MS } from './utils/updateSchedule';
 import { backgroundUpdateCheck } from './utils/backgroundUpdateCheck';
 
 // Threshold below which the sidebar collapses to icons only
@@ -391,19 +391,18 @@ export default function App() {
     window.callerflash.tray.setSipStatus(label);
   }, [sipConnected, sipRegistered]);
 
-  // Background update check on app startup (Tauri only).
+  // Background update check on app startup (Tauri only). Due-ness policy
+  // (frequency + lastChecked) lives inside backgroundUpdateCheck itself.
   useEffect(() => {
     void backgroundUpdateCheck('startup');
   }, []);
 
-  // Periodic update checks driven by the user-selected frequency
-  // (off/daily/weekly/monthly). The interval re-evaluates from the store on
-  // every tick, so changing the frequency takes effect without remounting.
+  // Periodic update checks. The interval re-evaluates from the store on
+  // every tick via backgroundUpdateCheck, so changing the frequency takes
+  // effect without remounting.
   useEffect(() => {
     if (!window.callerflash?.updater?.check) return;
     const id = setInterval(() => {
-      const { updateCheckFrequency, lastChecked } = useAppStore.getState().updateInfo;
-      if (!isUpdateCheckDue(updateCheckFrequency, lastChecked ?? null, Date.now())) return;
       void backgroundUpdateCheck('scheduled');
     }, UPDATE_SCHEDULER_TICK_MS);
     return () => clearInterval(id);

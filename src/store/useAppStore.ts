@@ -302,8 +302,13 @@ async function initStorageMigration() {
       }
     }
   } catch (e) {
-    // initStorageMigration failure is non-fatal — localStorage fallback still works
+    // initStorageMigration failure is non-fatal - localStorage fallback still works
     console.warn('[store] initStorageMigration failed:', e);
+    useAppStore.getState().addDiagnosticLog({
+      level: 'warning',
+      category: 'SYSTEM',
+      message: `Storage migration failed (non-fatal): ${e}`,
+    });
   }
 }
 
