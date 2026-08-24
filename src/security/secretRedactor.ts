@@ -44,6 +44,8 @@ const TOKEN_PATTERNS: Array<{ re: RegExp; replace: string }> = [
   { re: /\b[a-f0-9]{48,}\b/gi, replace: '***REDACTED***' },
   // JWT-like three-segment base64
   { re: /\beyJ[a-z0-9_-]+\.[a-z0-9_-]+\.[a-z0-9_-]+\b/gi, replace: '***REDACTED-JWT***' },
+  // Credential assignments in free-form text (pass=hunter2, password: hunter2)
+  { re: /\b(pass(word)?|pwd|secret|token)\s*[=:]\s*(?!\*\*\*)\S+/gi, replace: '$1=***REDACTED***' },
 ];
 
 export function redactKeyedValue(key: string, value: string): string {

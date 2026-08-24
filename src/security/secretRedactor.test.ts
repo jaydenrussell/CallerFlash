@@ -33,6 +33,22 @@ describe("redactMessage", () => {
     expect(redactMessage(hex)).toBe("***REDACTED***");
   });
 
+  it("redacts credential assignments in free-form text", () => {
+    expect(redactMessage("register failed pass=hunter2")).toBe(
+      "register failed pass=***REDACTED***"
+    );
+    expect(redactMessage("auth error password: hunter2")).toBe(
+      "auth error password=***REDACTED***"
+    );
+    expect(redactMessage("token=abc123 rejected")).toBe("token=***REDACTED*** rejected");
+  });
+
+  it("does not redact words merely containing key substrings", () => {
+    expect(redactMessage("supported=true and tokens remaining: 5")).toBe(
+      "supported=true and tokens remaining: 5"
+    );
+  });
+
   it("passes through safe messages", () => {
     const msg = "Registered successfully";
     expect(redactMessage(msg)).toBe("Registered successfully");

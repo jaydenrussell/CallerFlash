@@ -45,7 +45,7 @@ async fn shell_open_external(url: String) -> Result<(), CommandError> {
     let parsed = url::Url::parse(&url)
         .map_err(|e| CommandError::invalid_input(format!("Invalid URL: {}", e)))?;
     if let Some(host) = parsed.host_str() {
-        if host_is_private(host) {
+        if host_is_private(host).await {
             return Err(CommandError::invalid_input(
                 "URL points to a private or loopback address",
             ));
@@ -56,8 +56,8 @@ async fn shell_open_external(url: String) -> Result<(), CommandError> {
     Ok(())
 }
 
-fn host_is_private(host: &str) -> bool {
-    let check = |ip: std::net::IpAddr| match ip {
+fn ip_is_private(ip: std::net::IpAddr) -> bool {
+    match ip {
         std::net::IpAddr::V4(v4) => {
             v4.is_loopback()
                 || v4.is_private()
@@ -75,9 +75,12 @@ fn host_is_private(host: &str) -> bool {
                 || is_link_local
                 || is_unique_local
         }
-    };
+    }
+}
+
+async fn host_is_private(host: &str) -> bool {
     if let Ok(ip) = host.parse::<std::net::IpAddr>() {
-        return check(ip);
+        return ip_is_private(ip);
     }
     // Reject host strings that a browser would normalize into a numeric
     // address even though Rust's parser won't (e.g. decimal "2130706433",
@@ -89,8 +92,11 @@ fn host_is_private(host: &str) -> bool {
         return true;
     }
     // Hostname (e.g. github.com) — reject if it resolves to a private address.
-    std::net::ToSocketAddrs::to_socket_addrs(&(host.to_string(), 443))
-        .map(|addrs| addrs.map(|a| a.ip()).any(check))
+    // Resolved asynchronously: a slow or unreachable DNS server must not stall
+    // the async runtime thread this command runs on.
+    tokio::net::lookup_host((host.to_string(), 443u16))
+        .await
+        .map(|addrs| addrs.map(|a| a.ip()).any(ip_is_private))
         .unwrap_or(false)
 }
 
@@ -114,7 +120,14 @@ async fn copy_to_clipboard(text: String) -> Result<(), CommandError> {
 }
 
 #[tauri::command]
-async fn notify_show(app: AppHandle, title: String, body: String) -> Result<(), CommandError> {
+async fn notify_show(
+    app: AppHandle,
+    title: String,
+    body: String,
+    urgency: Option<String>,
+    timeout_type: Option<String>,
+    sound_enabled: Option<bool>,
+) -> Result<(), CommandError> {
     if !RATE_LIMITER.check("notify_show") {
         return Err(CommandError::rate_limited());
     }
@@ -131,6 +144,23 @@ async fn notify_show(app: AppHandle, title: String, body: String) -> Result<(), 
     if body.len() > MAX_NOTIFY_BODY_LENGTH {
         return Err(CommandError::invalid_input("Notification body too long"));
     }
+    // The bridge forwards these advisory fields so the contract is explicit
+    // end-to-end rather than silently stripped. Validate them, but note they
+    // are inert here: tauri-plugin-notification's desktop backend (Windows
+    // toast via notify-rust) exposes no urgency or timeout controls.
+    if let Some(u) = &urgency {
+        if !matches!(u.as_str(), "critical" | "normal" | "low") {
+            return Err(CommandError::invalid_input("Invalid notification urgency"));
+        }
+    }
+    if let Some(t) = &timeout_type {
+        if !matches!(t.as_str(), "default" | "never") {
+            return Err(CommandError::invalid_input(
+                "Invalid notification timeout type",
+            ));
+        }
+    }
+    let _ = (urgency, timeout_type, sound_enabled);
     use tauri_plugin_notification::NotificationExt;
     app.notification()
         .builder()
@@ -448,7 +478,9 @@ pub fn run() {
                     }),
                 ])
                 .max_file_size(512_000)
-                .rotation_strategy(RotationStrategy::KeepAll)
+                // KeepSome bounds total on-disk log volume (current + N-1
+                // rotated); KeepAll accumulated rotated files forever.
+                .rotation_strategy(RotationStrategy::KeepSome(3))
                 .build()
         })
         .plugin(tauri_plugin_shell::init())
@@ -598,48 +630,70 @@ mod tests {
 
     #[test]
     fn rejects_loopback_ipv4() {
-        assert!(host_is_private("127.0.0.1"));
+        tauri::async_runtime::block_on(async {
+            assert!(host_is_private("127.0.0.1").await);
+        });
     }
 
     #[test]
     fn rejects_loopback_ipv6() {
-        assert!(host_is_private("::1"));
+        tauri::async_runtime::block_on(async {
+            assert!(host_is_private("::1").await);
+        });
     }
 
     #[test]
     fn rejects_private_ranges() {
-        assert!(host_is_private("10.0.0.1"));
-        assert!(host_is_private("192.168.1.100"));
-        assert!(host_is_private("172.16.5.5"));
+        tauri::async_runtime::block_on(async {
+            assert!(host_is_private("10.0.0.1").await);
+            assert!(host_is_private("192.168.1.100").await);
+            assert!(host_is_private("172.16.5.5").await);
+        });
     }
 
     #[test]
     fn rejects_obfuscated_forms() {
-        assert!(host_is_private("2130706433"));
-        assert!(host_is_private("0x7f000001"));
-        assert!(host_is_private("127.1"));
-        assert!(host_is_private("0177.0.0.1"));
+        tauri::async_runtime::block_on(async {
+            assert!(host_is_private("2130706433").await);
+            assert!(host_is_private("0x7f000001").await);
+            assert!(host_is_private("127.1").await);
+            assert!(host_is_private("0177.0.0.1").await);
+        });
     }
 
     #[test]
+    fn rejects_unspecified_address() {
+        tauri::async_runtime::block_on(async {
+            assert!(host_is_private("0.0.0.0").await);
+        });
+    }
+    #[test]
     fn rejects_link_local_and_multicast() {
-        assert!(host_is_private("169.254.10.10"));
-        assert!(host_is_private("224.0.0.1"));
+        tauri::async_runtime::block_on(async {
+            assert!(host_is_private("169.254.10.10").await);
+            assert!(host_is_private("224.0.0.1").await);
+        });
     }
 
     #[test]
     fn accepts_public_ipv4() {
-        assert!(!host_is_private("8.8.8.8"));
-        assert!(!host_is_private("1.1.1.1"));
+        tauri::async_runtime::block_on(async {
+            assert!(!host_is_private("8.8.8.8").await);
+            assert!(!host_is_private("1.1.1.1").await);
+        });
     }
 
     #[test]
     fn accepts_public_hostname() {
-        assert!(!host_is_private("github.com"));
+        tauri::async_runtime::block_on(async {
+            assert!(!host_is_private("github.com").await);
+        });
     }
 
     #[test]
     fn handles_unspecified() {
-        assert!(host_is_private("0.0.0.0"));
+        tauri::async_runtime::block_on(async {
+            assert!(host_is_private("0.0.0.0").await);
+        });
     }
 }

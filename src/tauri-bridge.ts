@@ -101,7 +101,15 @@ function setup(): void {
 
     notify: {
       show: (data: { title: string; body: string; urgency?: 'critical' | 'normal' | 'low'; timeoutType?: 'default' | 'never'; soundEnabled?: boolean }) => {
-        invoke('notify_show', { title: data.title, body: data.body }).catch((e) => logError('notify.show', e));
+        // Forward the advisory fields too - the backend validates them and
+        // documents which are inert on the Windows toast backend.
+        invoke('notify_show', {
+          title: data.title,
+          body: data.body,
+          urgency: data.urgency ?? null,
+          timeoutType: data.timeoutType ?? null,
+          soundEnabled: data.soundEnabled ?? null,
+        }).catch((e) => logError('notify.show', e));
       },
     },
 
