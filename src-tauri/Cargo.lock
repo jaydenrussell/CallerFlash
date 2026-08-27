@@ -522,7 +522,7 @@ dependencies = [
 
 [[package]]
 name = "callerflash"
-version = "2.3.4"
+version = "2.3.5-beta"
 dependencies = [
  "aes-gcm",
  "arboard",

@@ -262,7 +262,7 @@ export default function App() {
     if (!window.callerflash?.sip?.onStatus) return;
     const unsubStatus = window.callerflash.sip.onStatus((data) => {
       if (data.status === 'registered') {
-        useAppStore.setState({ sipRegistered: true, isConnecting: false });
+        useAppStore.setState({ sipConnected: true, sipRegistered: true, isConnecting: false });
         addDiagnosticLog({ level: 'success', category: 'SIP', message: 'REGISTER 200 OK (Registration active)' });
         addDiagnosticLog({ level: 'info', category: 'SIP', message: 'Ready for incoming calls' });
       } else if (data.status === 'error') {
